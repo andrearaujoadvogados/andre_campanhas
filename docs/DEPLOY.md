@@ -138,9 +138,11 @@ Sem ele, os links dentro dos e-mails aparecem para o destinatário como `awstrac
 | `link.mail`               | CNAME | Console do SES em `us-east-2`, Configuration Set |
 | validação do rastreamento | CNAME | Console do ACM em `us-east-2`                    |
 
-### 6.2 Domínio do painel — opcional
+### 6.2 Domínio do painel — obrigatório para o painel funcionar
 
-Sem isso, o painel responde no domínio do CloudFront (`d111....cloudfront.net`). Funciona; só é feio de digitar.
+Não é cosmético, ao contrário do que esta seção afirmava. O `corsPreflight` da API libera um único origin, `https://${cfg.dominioPainel}`, e o domínio padrão do CloudFront (`d111....cloudfront.net`) não está nele. Servido de lá, o painel carrega e o login passa — o Amplify fala direto com o Cognito —, mas toda chamada à API é barrada pelo navegador.
+
+Sintoma: telas vazias, sem mensagem que mencione CORS. Antes de investigar o painel, confira de qual origin ele está sendo servido.
 
 O certificado é emitido **fora do deploy, de propósito**. Um certificado validado por DNS criado pelo CloudFormation deixa a implantação **bloqueada** até alguém publicar o CNAME de validação — e o CNAME só é conhecido depois que o certificado é solicitado. O deploy fica pendurado por até uma hora e falha com a stack em estado intermediário. Separando, o passo lento acontece uma vez, manualmente, e o deploy segue rápido e previsível.
 

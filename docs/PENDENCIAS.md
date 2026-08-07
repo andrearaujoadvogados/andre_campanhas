@@ -57,60 +57,92 @@ Estes valores **não são segredo** — id de user pool e de client ficam embuti
 > Terminal local
 
 ```bash
-pnpm run verificar
+AWS_ACCOUNT_DEV=000000000000 EMAIL_ALARMES=local@exemplo.invalido pnpm run verificar
 ```
+
+As duas variáveis existem porque a última etapa do `verificar` é o `cdk synth`, e o [config.ts](../infra/lib/config.ts) se recusa a assumir valores padrão para conta e destinatário de alarme. Os valores acima são fictícios de propósito: `synth` não toca a AWS. São os mesmos que o pipeline usa — ver o passo _Synth + cdk-nag_ em [ci.yml](../.github/workflows/ci.yml).
 
 ---
 
-## Parte B — CNAME de rastreamento (prioridade)
+## Parte B — rastreamento com certificado próprio (prioridade)
 
 > **Os links dos e-mails estão mortos.**
 >
-> O Configuration Set já foi implantado com domínio de rastreamento próprio (`link.mail.andrearaujoadvogados.com.br`, em [sending-stack.ts](../infra/lib/stacks/sending-stack.ts)). O SES **já reescreve todo link do e-mail** para esse endereço. Como ele não existe no DNS, quem clicar recebe erro — não é um link feio, é um link quebrado. Nenhuma campanha deve sair antes disso.
+> O Configuration Set foi implantado com domínio de rastreamento próprio (`link.mail.andrearaujoadvogados.com.br`, em [sending-stack.ts](../infra/lib/stacks/sending-stack.ts)). O SES **já reescreve todo link do e-mail** para esse endereço. Como ele não existe no DNS, quem clicar recebe erro. Nenhuma campanha deve sair antes disso.
 
-### B1. Ver o que está configurado
+### Por que um CNAME direto não serve
 
-> CloudShell
+O destino natural seria o endpoint regional `r.us-east-2.awstrack.me`, que de fato existe e resolve para um ALB da AWS. Mas ele serve um certificado de `CN=r.us-east-2.awstrack.me`, que **não cobre** o domínio do escritório — verificado em 2026-08-07:
 
-```bash
-aws sesv2 get-configuration-set --configuration-set-name emailmkt-prod-config-set --region us-east-2 --query TrackingOptions
+```
+curl: (60) SSL: no alternative certificate subject name matches
+      target hostname 'link.mail.andrearaujoadvogados.com.br'
 ```
 
-### B2. Pegar o valor do CNAME
+Um CNAME cru, portanto, não conserta: troca "link que não abre" por "link com aviso de certificado inválido" — em e-mail de escritório de advocacia, indistinguível de phishing. É pior que o estado atual.
 
-> Navegador
+Por isso o `link.mail` é servido por uma **distribuição CloudFront própria**, em [web-stack.ts](../infra/lib/stacks/web-stack.ts): ela termina o TLS com certificado nosso e repassa para o endpoint do SES, que continua registrando o clique. Duas decisões dela não são ajuste de desempenho e sim correção:
 
-**SES → Configuration sets → `emailmkt-prod-config-set`**, região **Ohio (us-east-2)**.
+- **Cache desligado.** Cada URL de rastreamento identifica um destinatário e uma mensagem. Resposta servida do cache não chega ao SES, e o clique não é contado.
+- **`AllViewerExceptHostHeader`.** O SES roteia pelo host da origem; mandar o nosso faria o endpoint não reconhecer a requisição.
 
-O destino esperado é o endpoint regional `r.us-east-2.awstrack.me`, mas **use o que o console mostrar** — isto não foi verificado. Se o SES pedir algum passo extra de certificado para servir HTTPS nesse subdomínio, ele aparece nessa mesma tela.
+No mesmo movimento, o `HttpsPolicy` do Configuration Set passou de `OPTIONAL` para `REQUIRE`. O padrão embrulha o pixel de abertura em `http://`, que clientes de e-mail bloqueiam dentro de mensagem HTTPS — a métrica de abertura vinha subnotificada sem nada acusar erro.
 
-### B3. Criar o registro
+### B1. Certificado ACM para o domínio de rastreamento
 
-> Painel do provedor de DNS
+> CloudShell — em `us-east-1`, exigência do CloudFront
 
-| Nome        | Tipo  | Valor                          |
-| ----------- | ----- | ------------------------------ |
-| `link.mail` | CNAME | o que o console do SES mostrar |
+```bash
+ARN_LINK=$(aws acm request-certificate --domain-name link.mail.andrearaujoadvogados.com.br --validation-method DNS --region us-east-1 --query CertificateArn --output text) && echo "$ARN_LINK"
+```
 
-Alguns provedores exigem o nome completo em vez do prefixo. Se não funcionar, é o primeiro palpite.
+```bash
+aws acm describe-certificate --region us-east-1 --certificate-arn "$ARN_LINK" --query "Certificate.DomainValidationOptions[0].ResourceRecord" --output table
+```
+
+Publique o CNAME de validação e espere a emissão. **A distribuição só é criada se o certificado for informado** — sem ele a stack sobe sem o rastreamento, sem quebrar.
+
+### B2. Registrar o ARN
+
+> Terminal local — o `gh` não existe no CloudShell
+
+```bash
+gh variable set CERTIFICADO_RASTREAMENTO_ARN_PROD --repo andrearaujoadvogados/andre_campanhas --body "$ARN_LINK"
+```
+
+### B3. Implantar e apontar o DNS
+
+Depois do deploy, a stack Web devolve a saída `RastreamentoDominio`. É esse o destino:
+
+| Nome        | Tipo  | Valor                                      |
+| ----------- | ----- | ------------------------------------------ |
+| `link.mail` | CNAME | a saída `RastreamentoDominio` da stack Web |
+
+Apontar antes do deploy não funciona: o CloudFront recusa host que não esteja na lista de aliases da distribuição.
 
 ### B4. Conferir a propagação
-
-> CloudShell
 
 ```bash
 dig +short link.mail.andrearaujoadvogados.com.br
 ```
 
+Na HostGator, o cluster de DNS leva ~2-3 minutos para o registro aparecer no autoritativo. Sumiço nesse intervalo é normal e não indica erro de publicação.
+
 ### Saída alternativa
 
-Se o DNS demorar e você quiser destravar o envio antes: remova `customTrackingRedirectDomain` de `infra/lib/stacks/sending-stack.ts` e reimplante. Os links voltam a funcionar via `awstrack.me` — feios, mas vivos. É uma escolha legítima.
+Se for preciso destravar o envio antes de tudo isso: remova `customTrackingRedirectDomain` de [sending-stack.ts](../infra/lib/stacks/sending-stack.ts) e reimplante. Os links voltam a funcionar via `awstrack.me` — feios, mas com certificado válido. É uma escolha legítima, e a volta é a mesma linha.
 
 ---
 
-## Parte C — domínio do painel (opcional)
+## Parte C — domínio do painel (não é cosmético)
 
-Cosmético. Sem isso o painel responde no domínio do CloudFront, que funciona. A sequência completa de emissão do certificado está no passo 6.2 de [DEPLOY.md](DEPLOY.md).
+> **O painel não funciona de lugar nenhum hoje.**
+>
+> O `corsPreflight` da API aceita um único origin, `https://campanhas.andrearaujoadvogados.com.br` — ver [core-stack.ts](../infra/lib/stacks/core-stack.ts). O domínio padrão do CloudFront **não está na lista**, e o mesmo vale para o CORS do bucket de uploads.
+>
+> Servido pelo CloudFront, o painel carrega e o login até passa — o Amplify fala direto com o Cognito, que aceita qualquer origin. Mas toda chamada à API é barrada pelo navegador, e as telas ficam vazias com um erro de rede que não menciona CORS. Enquanto `campanhas` não apontar para a distribuição, não há de onde usar o painel.
+
+A sequência completa de emissão do certificado está no passo 6.2 de [DEPLOY.md](DEPLOY.md).
 
 ### C1. Ver se o certificado já foi emitido
 
