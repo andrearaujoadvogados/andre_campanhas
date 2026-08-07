@@ -4,6 +4,7 @@ import { carregarConfig, type Ambiente } from '../lib/config.js';
 import { CoreStack } from '../lib/stacks/core-stack.js';
 import { SendingStack } from '../lib/stacks/sending-stack.js';
 import { WebStack } from '../lib/stacks/web-stack.js';
+import { GithubOidcStack } from '../lib/stacks/github-oidc-stack.js';
 import { aplicarSupressoes } from '../lib/nag-suppressions.js';
 
 const app = new App();
@@ -48,6 +49,22 @@ const web = new WebStack(app, `EmailMktWeb${sufixo}`, {
   description: `Painel administrativo — ${ambiente} (CloudFront + ACM em us-east-1)`,
 });
 
+/**
+ * Papéis de deploy do GitHub Actions — implantada uma vez, à mão.
+ *
+ * Fica no mesmo app para ser versionada e revisável, mas não é implantada pelo
+ * pipeline: ela é o que *permite* o pipeline existir. Sintetiza junto com as
+ * demais sem custo, e só entra na conta quando alguém rodar o deploy dela
+ * explicitamente (ver docs/DEPLOY.md).
+ */
+const oidc = new GithubOidcStack(app, `EmailMktGithubOidc${sufixo}`, {
+  cfg,
+  env: { account: cfg.conta, region: cfg.regiaoDados },
+  repositorio: app.node.tryGetContext('repositorio') ?? 'andrearaujoadvogados/andre_campanhas',
+  // Provedor OIDC é recurso por conta. Se já existir, rode com
+  // `-c criarProvedorOidc=false` para reaproveitar.
+  criarProvedor: app.node.tryGetContext('criarProvedorOidc') !== 'false',
+});
 // Tags em tudo: rastreabilidade de custo por ambiente e por dono do recurso.
 Tags.of(app).add('projeto', 'emailmkt');
 Tags.of(app).add('ambiente', ambiente);
@@ -57,4 +74,4 @@ Tags.of(app).add('gerenciadoPor', 'cdk');
 // cdk-nag no synth: regra de segurança que só roda no CI é regra que se descobre
 // tarde. Aqui ela falha na máquina de quem escreveu (§9.2).
 Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
-aplicarSupressoes(core, sending, web);
+aplicarSupressoes(core, sending, web, oidc);

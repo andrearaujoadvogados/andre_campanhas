@@ -73,7 +73,11 @@ jobs:
   deploy-dev:
     name: Deploy — dev
     needs: verificar
-    if: false # TODO: habilitar após criar o papel OIDC na conta dev
+    # Ligado por variável do repositório, não por edição de código: depois de
+    # criar os papéis OIDC, basta definir DEPLOY_HABILITADO=true em
+    # Settings → Variables. Enquanto não existir, o pipeline segue verde sem
+    # tentar implantar.
+    if: vars.DEPLOY_HABILITADO == 'true'
     runs-on: ubuntu-latest
     environment: dev
     steps:
@@ -108,7 +112,7 @@ jobs:
   deploy-prod:
     name: Deploy — produção
     needs: deploy-dev
-    if: false # TODO: habilitar junto com deploy-dev
+    if: vars.DEPLOY_HABILITADO == 'true'
     runs-on: ubuntu-latest
     # Aprovação manual configurada no GitHub Environment. Inegociável: um deploy
     # ruim não é revertível depois que a mensagem saiu (§9.2).

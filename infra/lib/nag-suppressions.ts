@@ -32,7 +32,7 @@ const POLITICA_EXECUCAO_LAMBDA = {
     'Substituí-la por política inline equivalente não reduz privilégio real.',
 };
 
-export function aplicarSupressoes(core: Stack, sending: Stack, web: Stack): void {
+export function aplicarSupressoes(core: Stack, sending: Stack, web: Stack, oidc: Stack): void {
   // ── Núcleo — sa-east-1 ─────────────────────────────────────────────────────
 
   NagSuppressions.addStackSuppressions(
@@ -115,8 +115,8 @@ export function aplicarSupressoes(core: Stack, sending: Stack, web: Stack): void
       {
         id: 'AwsSolutions-CFR1',
         reason:
-          'Restrição geográfica não se aplica: o painel é usado pela equipe do escritório e da ' +
-          'agência, que viajam. O controle de acesso real é o Cognito, não a origem do IP.',
+          'Restrição geográfica não se aplica: o painel é usado pela equipe do escritório, que ' +
+          'viaja. O controle de acesso real é o Cognito, não a origem do IP.',
       },
       {
         id: 'AwsSolutions-CFR2',
@@ -165,6 +165,25 @@ export function aplicarSupressoes(core: Stack, sending: Stack, web: Stack): void
       {
         id: 'AwsSolutions-L1',
         reason: 'Runtime do custom resource de limpeza é definido pelo CDK, não por nós.',
+      },
+    ],
+    true,
+  );
+
+  // ── Papéis de deploy do GitHub — sa-east-1 ─────────────────────────────────
+
+  NagSuppressions.addStackSuppressions(
+    oidc,
+    [
+      {
+        id: 'AwsSolutions-IAM5',
+        reason:
+          'O curinga cobre apenas o sufixo de região dos papéis do bootstrap do CDK ' +
+          '(`cdk-hnb659fds-deploy-role-<conta>-<regiao>`), e o padrão está preso ao número ' +
+          'desta conta. Enumerar as três regiões daria a mesma permissão com mais linhas — e ' +
+          'quebraria silenciosamente ao adicionar uma quarta. O ponto relevante é o oposto do ' +
+          'que a regra sugere: estes papéis NÃO têm permissão de administrador, só podem ' +
+          'assumir os papéis que o bootstrap criou.',
       },
     ],
     true,
