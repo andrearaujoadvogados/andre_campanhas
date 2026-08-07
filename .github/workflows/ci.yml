@@ -102,7 +102,17 @@ jobs:
         env:
           AWS_ACCOUNT_DEV: ${{ secrets.AWS_ACCOUNT_DEV }}
           EMAIL_ALARMES: ${{ secrets.EMAIL_ALARMES }}
-        run: pnpm --filter @emailmkt/infra exec cdk deploy --all --require-approval never -c ambiente=dev
+        # Stacks explícitas, não `--all`.
+        #
+        # `--all` incluiria a EmailMktGithubOidc*, que é justamente o que dá
+        # acesso ao pipeline. Deixar o pipeline implantar a própria credencial é
+        # circular: uma implantação malsucedida poderia derrubar o acesso e
+        # exigir intervenção manual para voltar. Ela é implantada uma vez, à
+        # mão, conforme docs/DEPLOY.md.
+        run: |
+          pnpm --filter @emailmkt/infra exec cdk deploy \
+            EmailMktCoreDev EmailMktSendingDev EmailMktWebDev \
+            --require-approval never -c ambiente=dev
 
       - name: Smoke test
         # Envia para uma caixa de teste verificada. Em dev o SES fica em sandbox
@@ -139,4 +149,8 @@ jobs:
         env:
           AWS_ACCOUNT_PROD: ${{ secrets.AWS_ACCOUNT_PROD }}
           EMAIL_ALARMES: ${{ secrets.EMAIL_ALARMES }}
-        run: pnpm --filter @emailmkt/infra exec cdk deploy --all --require-approval never -c ambiente=prod
+        # Stacks explícitas — ver o comentário no deploy de dev.
+        run: |
+          pnpm --filter @emailmkt/infra exec cdk deploy \
+            EmailMktCoreProd EmailMktSendingProd EmailMktWebProd \
+            --require-approval never -c ambiente=prod

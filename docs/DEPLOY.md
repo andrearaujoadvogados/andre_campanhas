@@ -52,6 +52,8 @@ Se a conta já tiver um provedor OIDC do GitHub de outro projeto, acrescente `-c
 
 Ao final, o CDK imprime os ARNs. Guarde-os: são os secrets do próximo passo.
 
+> **Esta stack nunca é implantada pelo pipeline.** Ela é o que dá acesso ao pipeline — deixá-lo implantar a própria credencial é circular, e uma implantação malsucedida poderia derrubar o acesso. Por isso o workflow lista as stacks de aplicação explicitamente em vez de usar `--all`.
+
 > **Os IDs numéricos importam.** O GitHub assina o token OIDC com o `sub` no formato `repo:org@<id>/repo@<id>:environment:<nome>` — com identificadores imutáveis, não só com nomes. Uma política de confiança escrita apenas com nomes **nunca casa**, e o erro é o genérico `Not authorized to perform sts:AssumeRoleWithWebIdentity`, que não indica a causa.
 >
 > Se algum dia o repositório mudar de organização, atualize os IDs em `infra/bin/app.ts`:
