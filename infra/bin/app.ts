@@ -15,7 +15,7 @@ if (ambiente !== 'dev' && ambiente !== 'prod') {
 }
 
 const cfg = carregarConfig(ambiente);
-const habilitarDominioCustomizado = app.node.tryGetContext('dominioCustomizado') === 'true';
+const certificadoArn = app.node.tryGetContext('certificadoArn') as string | undefined;
 const sufixo = ambiente === 'prod' ? 'Prod' : 'Dev';
 
 /**
@@ -45,7 +45,7 @@ sending.addStackDependency(core);
 const web = new WebStack(app, `EmailMktWeb${sufixo}`, {
   cfg,
   env: { account: cfg.conta, region: cfg.regiaoCertificado },
-  habilitarDominioCustomizado,
+  ...(certificadoArn === undefined || certificadoArn === '' ? {} : { certificadoArn }),
   description: `Painel administrativo — ${ambiente} (CloudFront + ACM em us-east-1)`,
 });
 

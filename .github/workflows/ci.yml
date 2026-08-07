@@ -112,7 +112,8 @@ jobs:
         run: |
           pnpm --filter @emailmkt/infra exec cdk deploy \
             EmailMktCoreDev EmailMktSendingDev EmailMktWebDev \
-            --require-approval never -c ambiente=dev
+            --require-approval never -c ambiente=dev \
+            -c certificadoArn="${{ vars.CERTIFICADO_ARN_DEV }}"
 
       - name: Smoke test
         # Envia para uma caixa de teste verificada. Em dev o SES fica em sandbox
@@ -153,4 +154,5 @@ jobs:
         run: |
           pnpm --filter @emailmkt/infra exec cdk deploy \
             EmailMktCoreProd EmailMktSendingProd EmailMktWebProd \
-            --require-approval never -c ambiente=prod
+            --require-approval never -c ambiente=prod \
+            -c certificadoArn="${{ vars.CERTIFICADO_ARN_PROD }}"

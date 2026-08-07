@@ -9,19 +9,29 @@ import {
   ViewerProtocolPolicy,
 } from 'aws-cdk-lib/aws-cloudfront';
 import { S3BucketOrigin } from 'aws-cdk-lib/aws-cloudfront-origins';
-import { Certificate, CertificateValidation } from 'aws-cdk-lib/aws-certificatemanager';
+import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
 import type { Construct } from 'constructs';
 import { nome, type AmbienteConfig } from '../config.js';
 
 export interface WebStackProps extends StackProps {
   readonly cfg: AmbienteConfig;
   /**
-   * Domínio customizado exige certificado ACM validado por DNS. Enquanto o CNAME
-   * de validação não estiver publicado, o deploy trava esperando. Por isso é
-   * opt-in: a primeira implantação sobe no domínio do CloudFront e o domínio
-   * próprio entra quando o DNS estiver pronto (§9.1.2).
+   * ARN de um certificado ACM **já validado**, em `us-east-1`.
+   *
+   * Passar um certificado pronto, em vez de deixar a stack criar um, evita o
+   * pior comportamento operacional possível aqui: um certificado validado por
+   * DNS criado pelo CloudFormation deixa o deploy **bloqueado** até alguém
+   * publicar o CNAME de validação — e o CNAME só é conhecido depois que o
+   * certificado é solicitado. O deploy fica pendurado por até uma hora e então
+   * falha, com a stack em estado intermediário.
+   *
+   * Separando as duas coisas, a emissão do certificado vira um passo manual e
+   * demorado feito uma vez, e o deploy segue rápido e previsível.
+   *
+   * Sem ARN, a distribuição sobe no domínio do próprio CloudFront — que
+   * funciona e é o estado inicial (§9.1.2).
    */
-  readonly habilitarDominioCustomizado: boolean;
+  readonly certificadoArn?: string | undefined;
 }
 
 /**
@@ -47,12 +57,10 @@ export class WebStack extends Stack {
       autoDeleteObjects: cfg.ambiente === 'dev',
     });
 
-    const certificado = props.habilitarDominioCustomizado
-      ? new Certificate(this, 'Certificado', {
-          domainName: cfg.dominioPainel,
-          validation: CertificateValidation.fromDns(),
-        })
-      : undefined;
+    const certificado =
+      props.certificadoArn === undefined
+        ? undefined
+        : Certificate.fromCertificateArn(this, 'Certificado', props.certificadoArn);
 
     const distribuicao = new Distribution(this, 'Distribuicao', {
       comment: `Painel ${cfg.ambiente} — ${cfg.dominioPainel}`,
@@ -92,9 +100,10 @@ export class WebStack extends Stack {
     new CfnOutput(this, 'DistribuicaoId', { value: distribuicao.distributionId });
     new CfnOutput(this, 'DistribuicaoDominio', { value: distribuicao.distributionDomainName });
     new CfnOutput(this, 'DominioCustomizado', {
-      value: props.habilitarDominioCustomizado
-        ? cfg.dominioPainel
-        : 'desabilitado — publicar o CNAME de validacao do ACM e reimplantar com -c dominioCustomizado=true',
+      value:
+        props.certificadoArn === undefined
+          ? 'nao configurado — ver docs/DEPLOY.md, secao de DNS'
+          : cfg.dominioPainel,
     });
   }
 }
