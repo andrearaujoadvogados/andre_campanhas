@@ -32,7 +32,7 @@ function evento(opcoes: { sub?: string; grupos?: unknown; semAuthorizer?: boolea
         jwt: {
           claims: {
             sub: opcoes.sub ?? AUTOR,
-            email: 'alguem@avantejuntos.com.br',
+            email: 'alguem@escritorio.com.br',
             'cognito:groups': opcoes.grupos ?? ['operador'],
           },
         },

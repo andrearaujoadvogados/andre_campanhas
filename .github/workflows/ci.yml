@@ -63,6 +63,7 @@ jobs:
         # cdk-nag rodam aqui e falham o build (§9.2).
         env:
           AWS_ACCOUNT_DEV: '000000000000'
+          EMAIL_ALARMES: 'ci@exemplo.invalido'
         run: pnpm synth
 
   # ── Deploy ─────────────────────────────────────────────────────────────────
@@ -96,6 +97,7 @@ jobs:
       - name: Deploy
         env:
           AWS_ACCOUNT_DEV: ${{ secrets.AWS_ACCOUNT_DEV }}
+          EMAIL_ALARMES: ${{ secrets.EMAIL_ALARMES }}
         run: pnpm --filter @emailmkt/infra exec cdk deploy --all --require-approval never -c ambiente=dev
 
       - name: Smoke test
@@ -132,4 +134,5 @@ jobs:
       - name: Deploy
         env:
           AWS_ACCOUNT_PROD: ${{ secrets.AWS_ACCOUNT_PROD }}
+          EMAIL_ALARMES: ${{ secrets.EMAIL_ALARMES }}
         run: pnpm --filter @emailmkt/infra exec cdk deploy --all --require-approval never -c ambiente=prod

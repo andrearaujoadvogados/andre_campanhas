@@ -37,6 +37,14 @@ const BASE = {
   tenantPadrao: 'andrearaujo',
 } as const;
 
+function exigirEnv(nome: string): string {
+  const v = process.env[nome];
+  if (v === undefined || v === '') {
+    throw new Error(`Variável de ambiente obrigatória ausente: ${nome}`);
+  }
+  return v;
+}
+
 export function carregarConfig(ambiente: Ambiente): AmbienteConfig {
   const varConta = ambiente === 'prod' ? 'AWS_ACCOUNT_PROD' : 'AWS_ACCOUNT_DEV';
   const conta = process.env[varConta] ?? process.env['CDK_DEFAULT_ACCOUNT'];
@@ -52,7 +60,10 @@ export function carregarConfig(ambiente: Ambiente): AmbienteConfig {
     ...BASE,
     ambiente,
     conta,
-    emailAlarmes: process.env['EMAIL_ALARMES'] ?? 'contato@avantejuntos.com.br',
+    // Sem valor padrão de propósito: um endereço errado faria os alarmes de
+    // bounce e reclamação irem para uma caixa que ninguém lê — que é pior que
+    // não ter alarme, porque dá falsa sensação de cobertura (§10.4).
+    emailAlarmes: exigirEnv('EMAIL_ALARMES'),
   };
 
   if (ambiente === 'prod') {

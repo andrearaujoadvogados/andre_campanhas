@@ -1,6 +1,6 @@
 # LGPD — registro de tratamento
 
-> **Este documento é responsabilidade do escritório, não da Avante.** O que está aqui é o esqueleto e o que o sistema já garante tecnicamente. As decisões jurídicas — em especial o LIA — precisam do encarregado de dados.
+> **Este documento é responsabilidade do encarregado de dados do escritório.** O que está aqui é o esqueleto e o que o sistema já garante tecnicamente. As decisões jurídicas — em especial o LIA — precisam do encarregado de dados.
 
 **Base legal adotada:** legítimo interesse (art. 7º, IX), decidida em 2026-08-06.
 

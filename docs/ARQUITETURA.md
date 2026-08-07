@@ -1,12 +1,11 @@
 # Arquitetura — Sistema de E-mail Marketing
 
-**Cliente:** André Araújo Advogados · **Executor:** Avante
+**Escritório:** André Araújo Advogados
 **Versão:** 1.0 — todas as decisões arquiteturais fechadas · **Data:** 2026-08-06
 **Status:** 🟢 Completo · aguardando o aval final para iniciar o scaffolding — nenhuma implementação iniciada
 
 > **Decisões fechadas em 2026-08-06:**
 > `sa-east-1` para dados + `us-east-2` para envio · DynamoDB · base legal LGPD = **legítimo interesse** (art. 7º, IX) · **duas contas AWS** (dev/prod) · painel em `campanhas.andrearaujoadvogados.com.br` · domínio de rastreamento `link.mail.andrearaujoadvogados.com.br` · `tenantId` presente desde o dia 1 · estado **`EM_REVISÃO`** (aprovação por advogado responsável) incluído no MVP.
-> **O produto pertence ao escritório**, não à Avante — ver §9.0.
 > Pendência que não bloqueia o desenvolvimento: a base de contatos ainda não foi disponibilizada (§14).
 
 ---
@@ -738,21 +737,17 @@ email-mkt-escritorio/
 
 ## 9. IaC e CI/CD
 
-### 9.0 Titularidade — o produto é do escritório ✅ **DEFINIDO**
+### 9.0 Titularidade
 
-O sistema é produto de André Araújo Advogados; a Avante é executora. Isso não é detalhe comercial — determina onde os recursos vivem e o que a arquitetura precisa garantir:
+O sistema é do escritório André Araújo Advogados. Não há agência nem terceiro envolvido: o desenvolvimento é feito diretamente para o escritório.
 
-| Consequência                  | Como fica                                                                                                                                                              |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Titularidade dos recursos AWS | As contas AWS devem ser **do escritório** (o pagador é o escritório), com acesso da Avante por papel IAM assumido, não por usuário permanente                          |
-| Domínio do painel             | `campanhas.andrearaujoadvogados.com.br` — sob o domínio do escritório, sem marca da Avante na interface nem nos e-mails                                                |
-| Domínio de rastreamento       | `link.mail.andrearaujoadvogados.com.br`                                                                                                                                |
-| Repositório                   | Nenhuma dependência de infraestrutura privada da Avante (registry, pacotes internos, contas de serviço). O sistema tem de ser transferível "como está"                 |
-| Reversibilidade               | Se a Avante sair do projeto, o escritório fica com contas, dados, domínios e código funcionando. O `RUNBOOK.md` é escrito para alguém de fora, não para quem construiu |
-
-⚠️ **Ponto que precisa de decisão comercial, não técnica** (fora do meu escopo, mas registro porque afeta o repositório): a titularidade do **código-fonte**. O roadmap V3 prevê reaproveitar o sistema para outros clientes da Avante — o que só funciona se o código for licenciado/reutilizável pela agência, ainda que a implantação e os dados sejam do escritório. Vale acertar isso por escrito antes do primeiro commit, não depois.
-
-> Nota sobre o `tenantId` (§12, V3): mantê-lo desde o dia 1 continua correto mesmo com produto do escritório. Ele custa quase nada agora e o valor imediato é outro — isolamento lógico e chaves prontas para separar ambientes e dados de teste.
+| Consequência            | Como fica                                                                                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Recursos AWS            | Conta do escritório (`874726179037`), que é o pagador                                                                                          |
+| Domínio do painel       | `campanhas.andrearaujoadvogados.com.br`                                                                                                        |
+| Domínio de rastreamento | `link.mail.andrearaujoadvogados.com.br`                                                                                                        |
+| Repositório             | `andrearaujoadvogados/andre_campanhas`, privado                                                                                                |
+| Operação                | O `RUNBOOK.md` é escrito para quem não construiu o sistema — inclusive para o próprio escritório operar sem depender de quem escreveu o código |
 
 ### 9.1 Contas e ambientes ✅ **DUAS CONTAS**
 
@@ -760,27 +755,15 @@ O sistema é produto de André Araújo Advogados; a Avante é executora. Isso n�
 
 Nuance específica deste projeto: a identidade SES verificada existe **apenas na conta de produção**. A conta `dev` permanece em **sandbox do SES com endereços de teste verificados** — o que é exatamente o comportamento desejado em dev (impossível enviar para um contato real por engano). Um `FakeEmailProvider` cobre os testes automatizados.
 
-### 9.1.1 ⚠️ Checkpoint: titularidade da conta `874726179037`
+### 9.1.1 Conta AWS
 
-A conta que hospeda a identidade SES verificada é a `874726179037`. **Antes do scaffolding, é preciso confirmar de quem ela é.** Isto não é burocracia — é a única pendência capaz de invalidar uma decisão já fechada.
+A conta `874726179037`, que hospeda a identidade SES verificada, é do escritório — confirmado em 2026-08-06. Nada a migrar.
 
-| Cenário                     | Consequência                                                                                               |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| A conta é **do escritório** | ✅ Nada muda. Ela vira a conta `prod`; cria-se a `dev` ao lado, sob uma organização                        |
-| A conta é **da Avante**     | ⚠️ Conflita com a decisão do §9.0 (recursos de titularidade do escritório). Resolver **agora**, não depois |
+Boas práticas pendentes nela:
 
-**Por que resolver agora:** identidade SES, verificação DKIM e acesso a produção são **por conta**. Migrar depois significa nova identidade, novos 3 CNAMEs de DKIM, novo MX de MAIL FROM, **nova solicitação de acesso a produção** (recomeçando a fila em que vocês já estão) e novo aquecimento de reputação. É exatamente o custo que o ADR-01 evitou ao manter `us-east-2` — seria contraditório aceitá-lo aqui por falta de uma pergunta.
-
-**Se for conta da Avante**, há dois caminhos, ambos preferíveis à migração:
-
-1. **Transferir a titularidade da conta** ao escritório (troca de e-mail raiz, forma de pagamento e contatos). Preserva identidade, DKIM, reputação e a solicitação de produção em andamento. É o caminho recomendado.
-2. Convidar a conta para uma organização do escritório — resolve faturamento e governança, mas a titularidade jurídica da conta permanece com quem a criou. Solução parcial.
-
-**Outros pontos a definir junto:**
-
-- A conta que hospeda cargas de produção **não deve ser a conta de gestão** da organização (boa prática de isolamento e de blast radius). Se `874726179037` virar `prod`, criar uma conta de gestão separada, vazia.
-- Habilitar MFA na raiz e trocar o e-mail raiz para um endereço do escritório com custódia clara — não a caixa pessoal de quem configurou.
-- O ID da conta **não vai hardcoded no repositório**: entra como contexto do CDK por ambiente e como secret do GitHub Actions. Não é segredo, mas também não precisa estar em código versionado.
+- A conta que hospeda produção **não deve ser a conta de gestão** da organização. Se `874726179037` virar `prod`, criar uma conta de gestão separada e vazia.
+- MFA na raiz, com e-mail raiz em endereço do escritório e custódia clara — não a caixa pessoal de quem configurou.
+- O ID da conta entra como contexto do CDK e secret do GitHub Actions, não hardcoded em código.
 
 ### 9.1.2 DNS a configurar
 
@@ -846,7 +829,7 @@ flowchart LR
 > **Base legal definida: legítimo interesse (art. 7º, IX).** É defensável, e é a escolha pragmática dado que a base existente do escritório não tem registro de consentimento coletado. Mas ela **transfere o ônus da prova para o controlador**: com consentimento, a prova é o aceite; com legítimo interesse, a prova é a documentação de que o tratamento era esperado, necessário e proporcional. Os itens marcados ⚠️ abaixo não existiriam se a base fosse consentimento — são o preço dessa escolha, e nenhum deles é opcional.
 
 - [x] **Base legal definida:** legítimo interesse, registrada por contato na entidade `BASE_LEGAL`.
-- [ ] ⚠️ **LIA — teste de balanceamento documentado** (`docs/LGPD.md`), versionado, cobrindo: finalidade legítima, necessidade do tratamento, expectativa legítima do titular e salvaguardas oferecidas. Sem esse documento, a base legal é uma alegação, não uma justificativa. **É um entregável do escritório/encarregado, não da Avante** — mas o sistema referencia sua versão em cada registro.
+- [ ] ⚠️ **LIA — teste de balanceamento documentado** (`docs/LGPD.md`), versionado, cobrindo: finalidade legítima, necessidade do tratamento, expectativa legítima do titular e salvaguardas oferecidas. Sem esse documento, a base legal é uma alegação, não uma justificativa. **É um entregável do encarregado de dados do escritório** — mas o sistema referencia sua versão em cada registro.
 - [ ] ⚠️ **Vínculo comprovável por contato** (campo `relacionamento` + `evidenciaRelacionamento`). Legítimo interesse não alcança quem nunca teve relação com o escritório.
 - [ ] ⚠️ **Direito de oposição em destaque** (art. 18, §2º) — mais forte que o descadastro comum, com status próprio e fluxo próprio.
 - [ ] ⚠️ **Transparência reforçada**: o rodapé de todo e-mail deve informar a base legal, a finalidade e como se opor. Sob consentimento bastaria lembrar do aceite.
@@ -942,9 +925,9 @@ Isso significa que **este sistema não é uma ferramenta de prospecção** — �
 
 Segmentação avançada (Specification composto), testes A/B de assunto, automações e fluxos (Step Functions por contato, ou EventBridge Scheduler por passo), editor visual de template, centro de preferências (escolher tipos de comunicação em vez de sair de tudo), data lake para analytics (segundo destino de evento em Firehose → S3 → Athena), otimização por `SendBulkEmail` se o volume justificar.
 
-### V3 — multi-cliente (se a agência decidir)
+### V3 — multi-cliente (se um dia fizer sentido)
 
-Os pontos de extensão já existem no desenho: `tenantId` em toda chave; um Configuration Set e uma identidade de domínio por tenant; condições de chave de partição no IAM; `tenant` como custom attribute no Cognito; cota e reputação isoladas por tenant (**atenção: reputação do SES é por conta — tenants de alto risco exigem contas separadas ou IP dedicado, o que muda o perfil de custo**). Adicionar: onboarding de tenant, faturamento/limites por tenant, tema por marca. A conversão exigirá trabalho, mas não reescrita.
+Não está no horizonte, mas os pontos de extensão já existem no desenho e não custam nada hoje: `tenantId` em toda chave; um Configuration Set e uma identidade de domínio por tenant; condições de chave de partição no IAM; `tenant` como custom attribute no Cognito; cota e reputação isoladas por tenant (**atenção: reputação do SES é por conta — tenants de alto risco exigem contas separadas ou IP dedicado, o que muda o perfil de custo**). Adicionar: onboarding de tenant, faturamento/limites por tenant, tema por marca. A conversão exigirá trabalho, mas não reescrita.
 
 ---
 
@@ -1023,16 +1006,13 @@ Cenário: 5.000 contatos, 20.000 e-mails/mês, <20 usuários, ambientes dev + pr
 | 3   | Base legal LGPD          | **Legítimo interesse** (art. 7º, IX)                       | Modelo de dados e §10.2 alterados; 6 itens obrigatórios de conformidade |
 | 4   | Base de contatos         | Existe, ainda não disponibilizada                          | Ver pendência abaixo                                                    |
 | 5   | Contas AWS               | **Duas** (dev/prod), titularidade do escritório            | §9.0, §9.1                                                              |
-| 6   | Titularidade do produto  | **Do escritório**, sem marca da Avante                     | §9.0 — inclui um ponto comercial em aberto sobre o código-fonte         |
+| 6   | Titularidade do produto  | **Do escritório**                                          | §9.0                                                                    |
 | 7   | Domínio do painel        | `campanhas.andrearaujoadvogados.com.br`                    | §9.1.1                                                                  |
 | 8   | Domínio de rastreamento  | `link.mail.andrearaujoadvogados.com.br`, HTTPS obrigatório | §9.1.1                                                                  |
 | 9   | `tenantId` desde o dia 1 | Sim                                                        | Chaves de partição em §6.3                                              |
 | 10  | Estado `EM_REVISÃO`      | Sim, no MVP                                                | §5.8, §10.3, §11                                                        |
 
-**Nenhuma decisão arquitetural permanece aberta.** Restam dois pontos **não técnicos**, ambos a acertar antes do primeiro commit:
-
-1. **Titularidade da conta AWS `874726179037`** (§9.1.1) — é do escritório ou da Avante? É a única pendência capaz de invalidar uma decisão já fechada.
-2. **Titularidade e licenciamento do código-fonte** (§9.0) — o produto é do escritório, mas o roadmap V3 prevê reaproveitamento pela Avante.
+**Nenhuma decisão arquitetural permanece aberta.**
 
 ### ⚠️ Pendência bloqueante para o go-live (não para o desenvolvimento)
 

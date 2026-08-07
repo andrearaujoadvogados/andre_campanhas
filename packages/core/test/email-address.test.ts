@@ -39,10 +39,10 @@ describe('EmailAddress', () => {
   });
 
   it('mascara para log sem revelar o endereço nem o tamanho dele', () => {
-    const curto = unwrap(EmailAddress.create('ab@avante.com.br'));
-    const longo = unwrap(EmailAddress.create('fernando@avante.com.br'));
+    const curto = unwrap(EmailAddress.create('ab@exemplo.com.br'));
+    const longo = unwrap(EmailAddress.create('fernando@exemplo.com.br'));
 
-    expect(longo.mascarado).toBe('f***@avante.com.br');
+    expect(longo.mascarado).toBe('f***@exemplo.com.br');
     expect(longo.mascarado).not.toContain('fernando');
 
     // Largura fixa: o log não deixa inferir o tamanho da parte local.

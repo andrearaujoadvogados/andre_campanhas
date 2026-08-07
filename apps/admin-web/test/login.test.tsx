@@ -139,7 +139,7 @@ describe('etapas não suportadas', () => {
     render(<Login aoEntrar={vi.fn()} />);
     await credenciais();
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/procure a avante/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/procure o responsável/i);
   });
 
   it('avisa quando o Cognito não devolve os dados do TOTP', async () => {

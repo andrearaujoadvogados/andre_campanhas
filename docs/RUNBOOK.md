@@ -113,7 +113,7 @@ Confirmar depois de 24h que `/emailmkt/prod/ses/maxSendRate` mudou.
 
 | Assunto                               | Quem                                  |
 | ------------------------------------- | ------------------------------------- |
-| Infraestrutura e código               | Avante                                |
+| Infraestrutura e código               | Responsável técnico do sistema        |
 | Conteúdo e aprovação de campanha      | Advogado responsável pela comunicação |
 | LGPD, base legal, direitos do titular | Encarregado de dados do escritório    |
 | Conta AWS, faturamento                | Escritório (titular da conta)         |

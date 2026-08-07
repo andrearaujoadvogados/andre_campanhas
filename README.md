@@ -1,6 +1,6 @@
 # Sistema de E-mail Marketing — André Araújo Advogados
 
-Produto do escritório André Araújo Advogados. Executado pela Avante.
+Sistema de campanhas de e-mail do escritório André Araújo Advogados.
 
 A arquitetura completa está em **[docs/ARQUITETURA.md](docs/ARQUITETURA.md)** — leia antes de mexer em qualquer coisa. As decisões estão registradas como ADRs na seção 3, e nenhuma delas é acidental.
 

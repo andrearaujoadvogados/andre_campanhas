@@ -69,7 +69,7 @@ export function Login({ aoEntrar }: { aoEntrar: () => void }) {
       default:
         definirErro(
           new Error(
-            `Etapa de autenticação não suportada nesta tela: ${proxima.signInStep}. Procure a Avante.`,
+            `Etapa de autenticação não suportada nesta tela: ${proxima.signInStep}. Procure o responsável pelo sistema.`,
           ),
         );
         return false;
