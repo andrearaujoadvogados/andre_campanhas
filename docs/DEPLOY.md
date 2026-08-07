@@ -123,6 +123,14 @@ Um push na `main` dispara: verificação → deploy em dev → **aprovação man
 
 ---
 
+## Aumentar a cota de concorrência do Lambda
+
+Contas novas da AWS vêm com **10 execuções concorrentes** de Lambda no total — um limite baixo o bastante para o sistema funcionar, mas apertado.
+
+Peça o aumento em **Service Quotas → AWS Lambda → Concurrent executions**, para 1000 (o padrão histórico). É gratuito e costuma sair em algumas horas.
+
+Enquanto não sair, o sistema opera com o teto de concorrência no event source do SQS. Funciona, mas com margem menor para picos.
+
 ## O que continua travado de propósito
 
 O sistema **não envia e-mail para ninguém** até que:

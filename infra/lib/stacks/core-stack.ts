@@ -284,9 +284,18 @@ export class CoreStack extends Stack {
       nomeLogico: 'sender',
       entry: svc('workers', 'sender'),
       timeout: Duration.minutes(5),
-      // Controle de taxa — §5.6. Com cota de 1 msg/s, uma única execução
-      // concorrente já satura o SES; o limitador interno faz o resto.
-      reservedConcurrentExecutions: 1,
+      /**
+       * Sem `reservedConcurrentExecutions` — o limite de concorrência vem do
+       * event source, mais abaixo.
+       *
+       * Reservar concorrência subtrai da cota da conta, e a AWS exige que ao
+       * menos 10 execuções fiquem sem reserva. Numa conta nova, cuja cota total
+       * é exatamente 10, reservar uma única execução é rejeitado com
+       * `UnreservedConcurrentExecution below its minimum value of [10]`.
+       *
+       * `maxConcurrency` no event source do SQS limita a concorrência **sem**
+       * consumir cota — é a ferramenta certa para o que queríamos aqui.
+       */
       environment: {
         ...ambienteComum,
         PARAM_TAXA: paramTaxa.parameterName,
@@ -416,6 +425,21 @@ export class CoreStack extends Stack {
         batchSize: 10,
         // Falha parcial: uma mensagem com throttling não invalida o lote inteiro (§5.5).
         reportBatchItemFailures: true,
+        /**
+         * Teto de concorrência do envio — §5.6.
+         *
+         * O mínimo que o SQS aceita é 2, então o pior caso é dois `sender`
+         * simultâneos, cada um com seu próprio token bucket: até o dobro da
+         * taxa configurada. Com a cota de 1 msg/s do sandbox isso rende algum
+         * throttling do SES — que o `sender` trata como fluxo normal, adiando a
+         * mensagem em vez de falhar (§5.5). Degrada com desperdício, não com
+         * perda.
+         *
+         * A guarda que **não** depende disso é a cota diária, contada no
+         * DynamoDB com incremento condicional: essa é global e atômica,
+         * independente de quantos workers rodem.
+         */
+        maxConcurrency: 2,
       }),
     );
     fnEventProcessor.addEventSource(
