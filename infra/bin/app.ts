@@ -16,6 +16,8 @@ if (ambiente !== 'dev' && ambiente !== 'prod') {
 
 const cfg = carregarConfig(ambiente);
 const certificadoArn = app.node.tryGetContext('certificadoArn') as string | undefined;
+const certificadoRastreamentoArn = app.node.tryGetContext('certificadoRastreamentoArn') as
+  string | undefined;
 const sufixo = ambiente === 'prod' ? 'Prod' : 'Dev';
 
 /**
@@ -46,6 +48,9 @@ const web = new WebStack(app, `EmailMktWeb${sufixo}`, {
   cfg,
   env: { account: cfg.conta, region: cfg.regiaoCertificado },
   ...(certificadoArn === undefined || certificadoArn === '' ? {} : { certificadoArn }),
+  ...(certificadoRastreamentoArn === undefined || certificadoRastreamentoArn === ''
+    ? {}
+    : { certificadoRastreamentoArn }),
   description: `Painel administrativo — ${ambiente} (CloudFront + ACM em us-east-1)`,
 });
 

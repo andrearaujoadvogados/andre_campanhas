@@ -115,22 +115,30 @@ export function aplicarSupressoes(core: Stack, sending: Stack, web: Stack, oidc:
       {
         id: 'AwsSolutions-CFR1',
         reason:
-          'Restrição geográfica não se aplica: o painel é usado pela equipe do escritório, que ' +
-          'viaja. O controle de acesso real é o Cognito, não a origem do IP.',
+          'Restrição geográfica não se aplica a nenhuma das duas distribuições. No painel, a ' +
+          'equipe do escritório viaja, e o controle de acesso real é o Cognito, não a origem ' +
+          'do IP. No rastreamento, bloquear um país significaria quebrar o link do e-mail de ' +
+          'quem estivesse lá — inclusive o link de descadastro.',
       },
       {
         id: 'AwsSolutions-CFR2',
         reason:
           'WAF descartado explicitamente no §7 do documento de arquitetura: US$ 6-10/mês para ' +
-          'proteger um painel com menos de 20 usuários conhecidos e autenticados. A revisar se ' +
-          'o sistema virar multi-cliente (V3).',
+          'proteger um painel com menos de 20 usuários conhecidos e autenticados. Vale também ' +
+          'para a distribuição de rastreamento, que é pública mas não tem nada atrás de si: ' +
+          'ela termina o TLS e repassa a requisição a um endpoint gerenciado da própria AWS, ' +
+          'sem alcançar dado ou recurso nosso. A revisar se o sistema virar multi-cliente (V3).',
       },
       {
         id: 'AwsSolutions-CFR3',
         reason:
-          'O log de acesso do CloudFront registraria apenas requisições a arquivos estáticos ' +
-          'do painel — JavaScript, CSS e imagens, sem dado pessoal. A trilha de auditoria que ' +
-          'importa é a da aplicação (§11, item 10) e a do API Gateway, ambas ativas.',
+          'No painel, o log registraria apenas requisições a arquivos estáticos — JavaScript, ' +
+          'CSS e imagens, sem dado pessoal. No rastreamento o raciocínio se inverte e chega à ' +
+          'mesma conclusão: cada URL rastreada identifica destinatário e mensagem, então o log ' +
+          'de acesso seria um registro de comportamento de leitura, guardado fora do ciclo de ' +
+          'vida definido para o dado do titular. Não coletá-lo é minimização (§10.2), e não ' +
+          'perda de trilha: aberturas e cliques já chegam pelo destino de eventos do SES, que ' +
+          'é a fonte da verdade dessas métricas.',
       },
       {
         id: 'AwsSolutions-CFR4',

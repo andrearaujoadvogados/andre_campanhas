@@ -4,6 +4,7 @@ import {
   ConfigurationSetEventDestination,
   EmailSendingEvent,
   EventDestination,
+  HttpsPolicy,
   SuppressionReasons,
 } from 'aws-cdk-lib/aws-ses';
 import { Topic } from 'aws-cdk-lib/aws-sns';
@@ -74,8 +75,15 @@ export class SendingStack extends Stack {
     const configSet = new ConfigurationSet(this, 'ConfigSet', {
       configurationSetName: nome(cfg, 'config-set'),
       // Domínio de rastreamento próprio: evita links awstrack.me visíveis no
-      // e-mail de um escritório de advocacia (§9.1.2).
+      // e-mail de um escritório de advocacia (§9.1.2). Quem termina o TLS desse
+      // subdomínio é a distribuição de rastreamento da WebStack.
       customTrackingRedirectDomain: cfg.dominioRastreamento,
+      // O padrão do CDK aqui é OPTIONAL, que embrulha o pixel de abertura em
+      // `http://`. Cliente de e-mail moderno bloqueia conteúdo HTTP dentro de
+      // mensagem HTTPS, e a métrica de abertura vem subnotificada sem que nada
+      // acuse erro. Com certificado próprio no subdomínio, não há motivo para
+      // aceitar o downgrade.
+      customTrackingHttpsPolicy: HttpsPolicy.REQUIRE,
       // Segunda camada de defesa. A fonte da verdade é a nossa lista de
       // supressão; esta é a rede de segurança da conta (§11, item 6).
       suppressionReasons: SuppressionReasons.BOUNCES_AND_COMPLAINTS,
