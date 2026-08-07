@@ -155,15 +155,25 @@ export class GithubOidcStack extends Stack {
        * Enumerada ação por ação, e não `s3:*`: o mesmo pipeline não deve poder
        * tocar o bucket de uploads, que guarda CSV de contatos.
        */
+      /**
+       * Escopo por ambiente, e não pela configuração da stack.
+       *
+       * Esta stack cria os **dois** papéis, o de dev e o de produção. Derivar o
+       * nome do bucket de `cfg` daria a ambos o bucket do ambiente em que a
+       * stack foi sintetizada — na prática, o papel de dev recebendo acesso ao
+       * site de produção e nenhum ao seu próprio.
+       */
+      const Sufixo = sufixo === 'prod' ? 'Prod' : 'Dev';
+
       r.addToPolicy(
         new PolicyStatement({
           effect: Effect.ALLOW,
           actions: ['cloudformation:DescribeStacks'],
-          resources: [`arn:aws:cloudformation:*:${this.account}:stack/EmailMkt*/*`],
+          resources: [`arn:aws:cloudformation:*:${this.account}:stack/EmailMkt*${Sufixo}/*`],
         }),
       );
 
-      const bucketSite = `arn:aws:s3:::${nome(cfg, 'site')}-${this.account}`;
+      const bucketSite = `arn:aws:s3:::emailmkt-${sufixo}-site-${this.account}`;
       r.addToPolicy(
         new PolicyStatement({
           effect: Effect.ALLOW,

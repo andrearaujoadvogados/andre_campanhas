@@ -3,7 +3,7 @@
     "cdk_nag": {
       "rules_to_suppress": [
         {
-          "reason": "TyBjdXJpbmdhIGNvYnJlIGFwZW5hcyBvIHN1Zml4byBkZSByZWdpw6NvIGRvcyBwYXDDqWlzIGRvIGJvb3RzdHJhcCBkbyBDREsgKGBjZGstaG5iNjU5ZmRzLWRlcGxveS1yb2xlLTxjb250YT4tPHJlZ2lhbz5gKSwgZSBvIHBhZHLDo28gZXN0w6EgcHJlc28gYW8gbsO6bWVybyBkZXN0YSBjb250YS4gRW51bWVyYXIgYXMgdHLDqnMgcmVnacO1ZXMgZGFyaWEgYSBtZXNtYSBwZXJtaXNzw6NvIGNvbSBtYWlzIGxpbmhhcyDigJQgZSBxdWVicmFyaWEgc2lsZW5jaW9zYW1lbnRlIGFvIGFkaWNpb25hciB1bWEgcXVhcnRhLiBPIHBvbnRvIHJlbGV2YW50ZSDDqSBvIG9wb3N0byBkbyBxdWUgYSByZWdyYSBzdWdlcmU6IGVzdGVzIHBhcMOpaXMgTsODTyB0w6ptIHBlcm1pc3PDo28gZGUgYWRtaW5pc3RyYWRvciwgc8OzIHBvZGVtIGFzc3VtaXIgb3MgcGFww6lpcyBxdWUgbyBib290c3RyYXAgY3Jpb3Uu",
+          "reason": "UXVhdHJvIGN1cmluZ2FzLCB0b2RvcyBwcmVzb3MgYW8gbsO6bWVybyBkZXN0YSBjb250YS4gKDEpIFN1Zml4byBkZSByZWdpw6NvIGRvcyBwYXDDqWlzIGRvIGJvb3RzdHJhcCBkbyBDREsgKGBjZGstaG5iNjU5ZmRzLWRlcGxveS1yb2xlLTxjb250YT4tPHJlZ2lhbz5gKTogZW51bWVyYXIgYXMgdHLDqnMgcmVnacO1ZXMgZGFyaWEgYSBtZXNtYSBwZXJtaXNzw6NvIGNvbSBtYWlzIGxpbmhhcywgZSBxdWVicmFyaWEgc2lsZW5jaW9zYW1lbnRlIGFvIGFkaWNpb25hciB1bWEgcXVhcnRhLiAoMikgYHN0YWNrL0VtYWlsTWt0Ki8qYCBlbSBjbG91ZGZvcm1hdGlvbjpEZXNjcmliZVN0YWNrcywgcXVlIMOpIGxlaXR1cmEgZGUgc2HDrWRhIGRlIHN0YWNrIGUgbsOjbyBhbGNhbsOnYSBzdGFjayBkZSBvdXRybyBwcm9qZXRvLiAoMykgT2JqZXRvcyBkbyBidWNrZXQgZG8gc2l0ZSwgcmVzdHJpdG8gYW8gYnVja2V0IGRvIGFtYmllbnRlIOKAlCBvIHBpcGVsaW5lIHB1YmxpY2EgYSBTUEEgZSBuw6NvIHBvZGUgdG9jYXIgbyBidWNrZXQgZGUgdXBsb2FkcywgcXVlIGd1YXJkYSBDU1YgZGUgY29udGF0b3MuICg0KSBgZGlzdHJpYnV0aW9uLypgIGVtIGNsb3VkZnJvbnQ6Q3JlYXRlSW52YWxpZGF0aW9uLCBxdWUgbsOjbyBhY2VpdGEgaWQgZXNwZWPDrWZpY28gbnVtYSBwb2zDrXRpY2EgZXNjcml0YSBhbnRlcyBkYSBwcmltZWlyYSBpbXBsYW50YcOnw6NvOyBhIGHDp8OjbyBkZXNjYXJ0YSBjYWNoZSBlIG7Do28gbMOqIG5lbSBhbHRlcmEgY29udGXDumRvLiBGb3JhIGlzc28sIGVzdGVzIHBhcMOpaXMgY29udGludWFtIHNlbSBwZXJtaXNzw6NvIGRlIGFkbWluaXN0cmFkb3I6IG8gdHJhYmFsaG8gcGVzYWRvIMOpIGZlaXRvIHBlbG9zIHBhcMOpaXMgZG8gYm9vdHN0cmFwLg==",
           "id": "AwsSolutions-IAM5",
           "is_reason_encoded": true
         }
@@ -102,6 +102,26 @@
                 "arn:aws:iam::874726179037:role/cdk-hnb659fds-image-publishing-role-874726179037-*",
                 "arn:aws:iam::874726179037:role/cdk-hnb659fds-lookup-role-874726179037-*"
               ]
+            },
+            {
+              "Action": "cloudformation:DescribeStacks",
+              "Effect": "Allow",
+              "Resource": "arn:aws:cloudformation:*:874726179037:stack/EmailMkt*Dev/*"
+            },
+            {
+              "Action": "s3:ListBucket",
+              "Effect": "Allow",
+              "Resource": "arn:aws:s3:::emailmkt-dev-site-874726179037"
+            },
+            {
+              "Action": ["s3:DeleteObject", "s3:PutObject"],
+              "Effect": "Allow",
+              "Resource": "arn:aws:s3:::emailmkt-dev-site-874726179037/*"
+            },
+            {
+              "Action": "cloudfront:CreateInvalidation",
+              "Effect": "Allow",
+              "Resource": "arn:aws:cloudfront::874726179037:distribution/*"
             }
           ],
           "Version": "2012-10-17"
@@ -179,6 +199,26 @@
                 "arn:aws:iam::874726179037:role/cdk-hnb659fds-image-publishing-role-874726179037-*",
                 "arn:aws:iam::874726179037:role/cdk-hnb659fds-lookup-role-874726179037-*"
               ]
+            },
+            {
+              "Action": "cloudformation:DescribeStacks",
+              "Effect": "Allow",
+              "Resource": "arn:aws:cloudformation:*:874726179037:stack/EmailMkt*Prod/*"
+            },
+            {
+              "Action": "s3:ListBucket",
+              "Effect": "Allow",
+              "Resource": "arn:aws:s3:::emailmkt-prod-site-874726179037"
+            },
+            {
+              "Action": ["s3:DeleteObject", "s3:PutObject"],
+              "Effect": "Allow",
+              "Resource": "arn:aws:s3:::emailmkt-prod-site-874726179037/*"
+            },
+            {
+              "Action": "cloudfront:CreateInvalidation",
+              "Effect": "Allow",
+              "Resource": "arn:aws:cloudfront::874726179037:distribution/*"
             }
           ],
           "Version": "2012-10-17"
