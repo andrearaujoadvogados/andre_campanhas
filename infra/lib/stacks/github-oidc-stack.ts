@@ -123,16 +123,22 @@ export class GithubOidcStack extends Stack {
     };
 
     /**
-     * Dev: restrito à branch `main`.
+     * Dev: restrito ao GitHub Environment `dev`.
      *
-     * Um pull request de terceiro não consegue assumir este papel — o `sub` de
-     * um PR é `pull_request`, não `ref:refs/heads/main`. Sem essa distinção,
-     * qualquer um que abrisse um PR poderia executar código com acesso à conta.
+     * **O `sub` precisa espelhar o que o workflow declara.** Quando um job roda
+     * dentro de um Environment, o token do GitHub troca o `sub` de
+     * `ref:refs/heads/main` para `environment:<nome>` — e uma condição amarrada
+     * à branch nunca casa. Foi exatamente esse descompasso que derrubou o
+     * primeiro deploy: a condição dizia `ref`, o workflow declarava
+     * `environment: dev`.
+     *
+     * Ambos os papéis usam Environment agora. Misturar os dois critérios é
+     * convite para o mesmo bug voltar.
      */
     const papelDev = papel(
       'PapelDeployDev',
       'dev',
-      `repo:${repositorio}:ref:refs/heads/main`,
+      `repo:${repositorio}:environment:dev`,
       'Assumido pelo GitHub Actions para implantar em desenvolvimento.',
     );
 
@@ -145,7 +151,9 @@ export class GithubOidcStack extends Stack {
      * num sistema que envia e-mail em nome de um escritório de advocacia.
      *
      * Amarrar à branch, em vez do Environment, deixaria qualquer push na `main`
-     * implantar em produção sem aprovação.
+     * implantar em produção sem aprovação — e, do jeito que o workflow está
+     * escrito, nem funcionaria: o `sub` de um job com Environment nunca traz o
+     * `ref`.
      */
     const papelProd = papel(
       'PapelDeployProd',
