@@ -25,7 +25,14 @@ export interface AmbienteConfig {
   /** Cota inicial. Em runtime vale o SSM, sincronizado do SES (§1.3). */
   readonly envioPorSegundoInicial: number;
   readonly cotaDiariaInicial: number;
-  readonly emailAlarmes: string;
+  /**
+   * Destinatários dos alarmes, separados por vírgula.
+   *
+   * Plural de propósito: quem opera o sistema e quem responde pelo escritório
+   * raramente são a mesma pessoa, e um alarme que chega só a um dos dois vira
+   * silêncio quando essa pessoa está de férias.
+   */
+  readonly emailsAlarmes: readonly string[];
 }
 
 const BASE = {
@@ -63,7 +70,10 @@ export function carregarConfig(ambiente: Ambiente): AmbienteConfig {
     // Sem valor padrão de propósito: um endereço errado faria os alarmes de
     // bounce e reclamação irem para uma caixa que ninguém lê — que é pior que
     // não ter alarme, porque dá falsa sensação de cobertura (§10.4).
-    emailAlarmes: exigirEnv('EMAIL_ALARMES'),
+    emailsAlarmes: exigirEnv('EMAIL_ALARMES')
+      .split(',')
+      .map((e) => e.trim())
+      .filter((e) => e !== ''),
   };
 
   if (ambiente === 'prod') {

@@ -14,6 +14,7 @@ import { Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import type { Construct } from 'constructs';
 import { nome, type AmbienteConfig } from '../config.js';
 import { funcaoNode } from '../constructs/lambda-node.js';
+import { criarAlarmesDeReputacao } from '../constructs/alarmes.js';
 import { join } from 'node:path';
 
 const RAIZ = join(import.meta.dirname, '..', '..', '..');
@@ -131,6 +132,17 @@ export class SendingStack extends Stack {
       }),
     );
 
+    /**
+     * Os alarmes de reputação vivem aqui, não no núcleo.
+     *
+     * O SES publica `Reputation.BounceRate` e `Reputation.ComplaintRate` na
+     * região de envio, e o CloudWatch não consulta métrica de outra região.
+     * Criá-los em sa-east-1 produziria alarmes que nunca disparam — a falha
+     * mais perigosa possível, porque tudo pareceria configurado.
+     */
+    const topicoReputacao = criarAlarmesDeReputacao(this, cfg, cfg.emailsAlarmes);
+
+    new CfnOutput(this, 'TopicoAlarmesReputacaoArn', { value: topicoReputacao.topicArn });
     new CfnOutput(this, 'ConfigurationSetName', { value: configSet.configurationSetName });
     new CfnOutput(this, 'TopicoEventosArn', { value: topico.topicArn });
     new CfnOutput(this, 'AvisoDns', {

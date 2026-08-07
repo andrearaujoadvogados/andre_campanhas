@@ -78,7 +78,11 @@ Em **Settings → Secrets and variables → Actions**:
 | `AWS_ACCOUNT_PROD`     | `874726179037`                                    |
 | `EMAIL_ALARMES`        | Endereço que recebe alarme de bounce e reclamação |
 
-> **O `EMAIL_ALARMES` merece atenção.** É para onde vai o aviso de "taxa de bounce em nível crítico" — o alarme que evita a AWS suspender a conta. Um endereço que ninguém lê é pior que alarme nenhum, porque dá falsa sensação de cobertura.
+> **O `EMAIL_ALARMES` merece atenção.** É para onde vai o aviso de "taxa de bounce em nível crítico" — o alarme que evita a AWS suspender a conta.
+>
+> Aceita vários endereços separados por vírgula, e vale usar mais de um: quem opera o sistema e quem responde pelo escritório raramente são a mesma pessoa, e um alarme que chega só a um dos dois vira silêncio quando essa pessoa está de férias.
+>
+> **Cada endereço recebe um pedido de confirmação do SNS no primeiro deploy e precisa clicar nele.** Até alguém confirmar, a inscrição fica pendente e o alarme dispara para o vazio — o pior estado possível, porque parece protegido e não está.
 
 ### Environment
 
@@ -106,7 +110,8 @@ Um push na `main` dispara: verificação → deploy em dev → **aprovação man
 - [ ] Publicar os 4 registros DNS (§9.1.2 da arquitetura)
 - [ ] Preencher o `.env.local` do painel com as saídas
 - [ ] Criar o primeiro usuário no Cognito e passar pelo fluxo de MFA
-- [ ] Confirmar que os alarmes chegaram ao endereço configurado
+- [ ] **Confirmar a inscrição do SNS** em cada endereço de `EMAIL_ALARMES` (chega um e-mail com link)
+- [ ] Verificar no console do CloudWatch que os 7 alarmes estão em `OK`, não em `INSUFFICIENT_DATA` sem inscrição confirmada
 
 ---
 

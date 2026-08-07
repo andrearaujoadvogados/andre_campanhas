@@ -35,6 +35,7 @@ import type { Construct } from 'constructs';
 import { nome, type AmbienteConfig } from '../config.js';
 import { funcaoNode } from '../constructs/lambda-node.js';
 import { criarOrquestrador } from '../constructs/orquestrador-campanha.js';
+import { criarAlarmes } from '../constructs/alarmes.js';
 import { join } from 'node:path';
 
 const RAIZ = join(import.meta.dirname, '..', '..', '..');
@@ -157,9 +158,9 @@ export class CoreStack extends Stack {
       return { fila, dlq };
     };
 
-    const { fila: filaEnvio } = criarFila('send-queue', Duration.minutes(6));
-    const { fila: filaEventos } = criarFila('event-queue', Duration.minutes(3));
-    const { fila: filaImport } = criarFila('import-queue', Duration.minutes(16));
+    const { fila: filaEnvio, dlq: dlqEnvio } = criarFila('send-queue', Duration.minutes(6));
+    const { fila: filaEventos, dlq: dlqEventos } = criarFila('event-queue', Duration.minutes(3));
+    const { fila: filaImport, dlq: dlqImport } = criarFila('import-queue', Duration.minutes(16));
     this.filaEventos = filaEventos;
 
     // ── Configuração e segredos ──────────────────────────────────────────────
@@ -580,6 +581,20 @@ export class CoreStack extends Stack {
     );
     fnAdminApi.addEnvironment('PAPEL_SCHEDULER_ARN', papelScheduler.roleArn);
 
+    // ── Alarmes — §10.4 ──────────────────────────────────────────────────────
+
+    const topicoAlarmes = criarAlarmes(this, {
+      cfg,
+      filaEnvio,
+      dlqs: [
+        { nome: 'envio', fila: dlqEnvio },
+        { nome: 'eventos', fila: dlqEventos },
+        { nome: 'importacao', fila: dlqImport },
+      ],
+      fnSender,
+      configurationSet: nome(cfg, 'config-set'),
+    });
+
     // ── Saídas ───────────────────────────────────────────────────────────────
 
     new CfnOutput(this, 'FilaEventosUrl', { value: filaEventos.queueUrl });
@@ -590,5 +605,9 @@ export class CoreStack extends Stack {
     new CfnOutput(this, 'UserPoolClientId', { value: clienteUserPool.userPoolClientId });
     new CfnOutput(this, 'BucketUploadsNome', { value: bucketUploads.bucketName });
     new CfnOutput(this, 'OrquestradorArn', { value: orquestrador.stateMachineArn });
+    new CfnOutput(this, 'TopicoAlarmesArn', {
+      value: topicoAlarmes.topicArn,
+      description: 'Confirme a inscrição no e-mail antes de considerar os alarmes ativos',
+    });
   }
 }
