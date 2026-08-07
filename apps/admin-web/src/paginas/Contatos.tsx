@@ -36,7 +36,7 @@ interface Contato {
 
 const RELACIONAMENTOS = Object.keys(ROTULO_RELACIONAMENTO);
 
-export function Contatos() {
+export function Contatos({ usuario }: { usuario: Usuario }) {
   const qc = useQueryClient();
   const [email, definirEmail] = useState('');
   const [nome, definirNome] = useState('');
@@ -63,7 +63,22 @@ export function Contatos() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Contatos</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-slate-900">Contatos</h1>
+        {/**
+         * Só para ADMIN, espelhando o `exigirPapel` da rota — quem importa
+         * declara a origem do lote e, com ela, a base legal de todo mundo que
+         * entra. Esconder o link não é o controle: o controle é o 403 da API.
+         */}
+        {temPapel(usuario, 'ADMIN') && (
+          <Link
+            to="/contatos/importar"
+            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Importar CSV
+          </Link>
+        )}
+      </div>
 
       <Cartao titulo="Novo contato">
         <div className="grid gap-4 sm:grid-cols-3">

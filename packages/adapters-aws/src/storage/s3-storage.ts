@@ -20,16 +20,29 @@ export class S3Storage {
    *
    * 15 minutos: tempo de sobra para enviar um CSV, curto o bastante para que uma
    * URL vazada em log ou histórico não seja útil por muito tempo.
+   *
+   * O `checksumSha256` é o digest do arquivo, em base64, calculado por quem vai
+   * enviá-lo. Ele entra na assinatura, então o S3 recusa qualquer corpo que não
+   * seja exatamente aquele arquivo — a URL serve para um upload e só para ele.
+   *
+   * Precisa ser o valor real, e não `ChecksumAlgorithm: 'SHA256'`. Este segundo
+   * parece equivalente e não é: sem corpo no momento de assinar, o SDK grava na
+   * URL o digest da string vazia, e aí a única coisa que o S3 aceita é um
+   * arquivo vazio.
    */
-  async urlUpload(chave: string, contentType: string, validadeSegundos = 900): Promise<string> {
+  async urlUpload(
+    chave: string,
+    contentType: string,
+    checksumSha256: string,
+    validadeSegundos = 900,
+  ): Promise<string> {
     return getSignedUrl(
       this.cliente,
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: chave,
         ContentType: contentType,
-        // Bloqueia troca de tipo entre a assinatura e o upload.
-        ChecksumAlgorithm: 'SHA256',
+        ChecksumSHA256: checksumSha256,
       }),
       { expiresIn: validadeSegundos },
     );

@@ -22,6 +22,7 @@ export * from './email/fake-email-provider.js';
 export * from './email/ses-event-parser.js';
 
 export * from './queue/sqs-send-queue-publisher.js';
+export * from './queue/sqs-import-queue-publisher.js';
 export * from './storage/s3-storage.js';
 export * from './config/ssm-config-provider.js';
 export * from './scheduler/eventbridge-campaign-scheduler.js';

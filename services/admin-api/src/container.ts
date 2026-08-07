@@ -13,11 +13,13 @@ import {
   S3Storage,
   SecretsProvider,
   Sha256EmailHasher,
+  SqsImportQueuePublisher,
   SystemClock,
   UuidGenerator,
   dynamoDoc,
   s3,
   secrets,
+  sqs,
 } from '@emailmkt/adapters-aws';
 import { SchedulerClient } from '@aws-sdk/client-scheduler';
 import { SFNClient } from '@aws-sdk/client-sfn';
@@ -60,6 +62,7 @@ export interface Dependencias {
   readonly supressao: SuppressionRepository;
   readonly auditoria: AuditLogger;
   readonly armazenamento: S3Storage;
+  readonly filaImportacao: SqsImportQueuePublisher;
   readonly hasher: EmailHasher;
   readonly hasherConteudo: ContentHasher;
   readonly clock: Clock;
@@ -116,6 +119,7 @@ async function montar(): Promise<Dependencias> {
     supressao: new DynamoSuppressionRepository(doc, tabela),
     auditoria: new DynamoAuditLogger(doc, tabela, ids),
     armazenamento: new S3Storage(s3(), exigirEnv('BUCKET_UPLOADS')),
+    filaImportacao: new SqsImportQueuePublisher(sqs(), exigirEnv('FILA_IMPORT')),
     hasher,
     hasherConteudo: new CanonicalContentHasher(),
     clock: new SystemClock(),

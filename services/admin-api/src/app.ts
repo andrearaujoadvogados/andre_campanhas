@@ -8,6 +8,7 @@ import { rotasTemplates } from './rotas/templates.js';
 import { rotasListas } from './rotas/listas.js';
 import { rotasRelatorios } from './rotas/relatorios.js';
 import { rotasExportacao } from './rotas/exportacao.js';
+import { rotasImportacoes } from './rotas/importacoes.js';
 
 export function criarApp() {
   const app = new Hono<{ Variables: Variaveis }>();
@@ -58,7 +59,9 @@ export function criarApp() {
     app.use(`/${prefixo}/*`, autenticar());
   }
 
-  // Antes das rotas de contato: `/:id/exportacao` precisa casar antes de `/:id`.
+  // Antes das rotas de contato: `/:id/exportacao` e `/importacoes` precisam
+  // casar antes de `/:id`, que aceitaria "importacoes" como identificador.
+  app.route('/contatos/importacoes', rotasImportacoes);
   app.route('/contatos', rotasExportacao);
   app.route('/contatos', rotasContatos);
   app.route('/campanhas', rotasCampanhas);

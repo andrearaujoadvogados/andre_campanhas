@@ -100,6 +100,53 @@ export const iniciarImportacaoSchema = z.object({
 });
 export type IniciarImportacaoInput = z.infer<typeof iniciarImportacaoSchema>;
 
+/**
+ * Pedido da URL de upload — o primeiro dos dois passos da importação.
+ *
+ * O arquivo vai do navegador direto para o S3, não pela API: o API Gateway tem
+ * teto de 10 MB por requisição, e um CSV de 200.000 contatos passaria muito
+ * disso. A API só assina a URL e, depois, é avisada de que o arquivo chegou.
+ */
+export const solicitarUploadImportacaoSchema = z.object({
+  nomeArquivo: z.string().trim().min(1).max(255),
+  /**
+   * SHA-256 do arquivo, em base64 — 32 bytes, que em base64 dão 44 caracteres.
+   *
+   * Calculado no navegador antes de pedir a URL. Vai para dentro da assinatura,
+   * de modo que a URL sirva para aquele arquivo e nenhum outro.
+   */
+  checksumSha256: z.string().regex(/^[A-Za-z0-9+/]{43}=$/, 'Checksum SHA-256 em base64 inválido.'),
+});
+export type SolicitarUploadImportacaoInput = z.infer<typeof solicitarUploadImportacaoSchema>;
+
+/**
+ * Segundo passo: o arquivo já está no S3 e a importação pode começar.
+ *
+ * O `importacaoId` é o que amarra os dois passos. Ele vem da resposta do
+ * primeiro e **não** carrega a chave do S3 — a chave é derivada dele no
+ * servidor. Aceitar uma chave escolhida por quem chama deixaria qualquer
+ * operador apontar o importador para outro objeto do mesmo bucket, inclusive os
+ * dossiês de `exports/`, que são dado pessoal reunido num arquivo só.
+ */
+export const confirmarImportacaoSchema = iniciarImportacaoSchema.extend({
+  importacaoId: z.string().uuid(),
+});
+export type ConfirmarImportacaoInput = z.infer<typeof confirmarImportacaoSchema>;
+
+/**
+ * O que trafega na fila entre a API e o `csv-importer`.
+ *
+ * Mora aqui, e não em cada ponta, pela mesma razão que os schemas de requisição:
+ * duas definições da mesma mensagem divergem em silêncio, e o sintoma seria uma
+ * importação que some na fila sem erro visível.
+ */
+export const mensagemImportacaoSchema = iniciarImportacaoSchema.extend({
+  importacaoId: z.string().min(1),
+  chaveS3: z.string().min(1),
+  solicitadoPor: z.string().min(1),
+});
+export type MensagemImportacao = z.infer<typeof mensagemImportacaoSchema>;
+
 export const resultadoImportacaoSchema = z.object({
   importacaoId: z.string(),
   totalLinhas: z.number().int().nonnegative(),

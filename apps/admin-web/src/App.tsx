@@ -5,6 +5,7 @@ import { Carregando } from './componentes/base.tsx';
 import { useSessao } from './lib/auth.js';
 import { Login } from './paginas/Login.tsx';
 import { Contatos, ContatoDetalhe } from './paginas/Contatos.tsx';
+import { ImportarContatos } from './paginas/ImportarContatos.tsx';
 import { Listas, ListaDetalhe } from './paginas/Listas.tsx';
 import { Templates, TemplateEditor } from './paginas/Templates.tsx';
 import { Campanhas, CampanhaDetalhe } from './paginas/Campanhas.tsx';
@@ -40,7 +41,9 @@ export function App() {
             <Route path="/campanhas/:id" element={<CampanhaDetalhe usuario={usuario} />} />
             <Route path="/listas" element={<Listas />} />
             <Route path="/listas/:id" element={<ListaDetalhe />} />
-            <Route path="/contatos" element={<Contatos />} />
+            <Route path="/contatos" element={<Contatos usuario={usuario} />} />
+            {/* Antes de `/:id`, que aceitaria "importar" como identificador. */}
+            <Route path="/contatos/importar" element={<ImportarContatos />} />
             <Route path="/contatos/:id" element={<ContatoDetalhe usuario={usuario} />} />
             <Route path="/templates" element={<Templates />} />
             <Route path="/templates/:id" element={<TemplateEditor />} />

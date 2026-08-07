@@ -20,8 +20,7 @@ import {
   type Contact,
   type Relacionamento,
 } from '@emailmkt/core';
-import { iniciarImportacaoSchema } from '@emailmkt/contracts';
-import { z } from 'zod';
+import { mensagemImportacaoSchema, type MensagemImportacao } from '@emailmkt/contracts';
 
 function env(nome: string): string {
   const v = process.env[nome];
@@ -34,12 +33,6 @@ const log = (nivel: 'INFO' | 'ERROR', mensagem: string, dados: Record<string, un
   if (nivel === 'ERROR') console.error(linha);
   else console.warn(linha);
 };
-
-const mensagemImportacaoSchema = iniciarImportacaoSchema.extend({
-  importacaoId: z.string().min(1),
-  chaveS3: z.string().min(1),
-  solicitadoPor: z.string().min(1),
-});
 
 /** Lotes de 500 para não segurar milhares de contatos em memória de uma vez. */
 const TAMANHO_LOTE = 500;
@@ -76,7 +69,7 @@ export const handler = async (evento: SQSEvent): Promise<SQSBatchResponse> => {
   return { batchItemFailures: falhas };
 };
 
-async function importar(msg: z.infer<typeof mensagemImportacaoSchema>): Promise<void> {
+async function importar(msg: MensagemImportacao): Promise<void> {
   const tabela = env('TABELA_PRINCIPAL');
   const doc = dynamoDoc();
   const segredo = await new SecretsProvider(secrets()).ler(env('SEGREDO_HMAC_ARN'));
@@ -229,7 +222,7 @@ const RELACIONAMENTOS: readonly Relacionamento[] = [
 
 function resolverRelacionamento(
   linha: Record<string, string>,
-  msg: z.infer<typeof mensagemImportacaoSchema>,
+  msg: MensagemImportacao,
 ): Relacionamento {
   const coluna = msg.mapeamentoColunas.relacionamento;
   const bruto = coluna === undefined ? undefined : texto(linha[coluna])?.toUpperCase();
@@ -244,10 +237,7 @@ function resolverRelacionamento(
   return msg.relacionamentoPadrao;
 }
 
-function resolverDesde(
-  linha: Record<string, string>,
-  msg: z.infer<typeof mensagemImportacaoSchema>,
-): Date | undefined {
+function resolverDesde(linha: Record<string, string>, msg: MensagemImportacao): Date | undefined {
   const coluna = msg.mapeamentoColunas.relacionamentoDesde;
   const bruto = coluna === undefined ? undefined : texto(linha[coluna]);
   if (bruto === undefined) return undefined;

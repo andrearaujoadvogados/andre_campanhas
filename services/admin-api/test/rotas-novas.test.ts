@@ -14,6 +14,7 @@ import {
   type Template,
   type VersaoTemplate,
 } from '@emailmkt/core';
+import type { MensagemImportacao } from '@emailmkt/contracts';
 import { LiquidEmailRenderer } from '@emailmkt/email-render';
 import { CanonicalContentHasher } from '@emailmkt/adapters-aws';
 import { criarApp } from '../src/app.js';
@@ -64,6 +65,7 @@ interface Estado {
   auditados: { acao: string; recursoTipo: string }[];
   gravados: string[];
   adicionados: number;
+  importacoesPublicadas: MensagemImportacao[];
 }
 
 let estado: Estado;
@@ -168,8 +170,11 @@ function montarDeps(): Dependencias {
     armazenamento: {
       gravar: async (chave: string) => void estado.gravados.push(chave),
       urlDownload: async (chave: string) => `https://s3/${chave}?assinado`,
-      urlUpload: async () => 'https://s3/upload',
+      urlUpload: async (chave: string) => `https://s3/${chave}?upload`,
     } as unknown as Dependencias['armazenamento'],
+    filaImportacao: {
+      publicar: async (m: MensagemImportacao) => void estado.importacoesPublicadas.push(m),
+    } as unknown as Dependencias['filaImportacao'],
     hasher: { hash: (e) => `h:${e.value}` },
     hasherConteudo: new CanonicalContentHasher(),
     clock: { agora: () => AGORA },
@@ -190,6 +195,7 @@ beforeEach(() => {
     auditados: [],
     gravados: [],
     adicionados: 0,
+    importacoesPublicadas: [],
   };
   definirDependenciasParaTeste(montarDeps());
 });
@@ -502,5 +508,148 @@ describe('exportação de portabilidade — art. 18, II e V', () => {
     estado.contatoParaExportar = null;
     const r = await req('/contatos/c-1/exportacao', { method: 'POST' }, ['admin']);
     expect(r.status).toBe(404);
+  });
+});
+
+// ── Importação de CSV ────────────────────────────────────────────────────────
+
+describe('importação de CSV — §11, item 1', () => {
+  const IMPORTACAO = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+
+  const pedido = (over: Record<string, unknown> = {}) => ({
+    importacaoId: IMPORTACAO,
+    nomeArquivo: 'clientes.csv',
+    origemDeclarada: 'Cadastro de clientes do escritório, exportado do sistema interno',
+    relacionamentoPadrao: 'CLIENTE_ATIVO',
+    confirmaSemListaComprada: true,
+    mapeamentoColunas: { email: 'E-mail', nome: 'Nome', relacionamento: 'Vinculo' },
+    ...over,
+  });
+
+  const CHECKSUM = '47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=';
+
+  it('assina a URL de upload sem receber o arquivo', async () => {
+    // O CSV vai do navegador direto ao S3: o API Gateway tem teto de 10 MB.
+    const r = await req(
+      '/contatos/importacoes',
+      json({ nomeArquivo: 'clientes.csv', checksumSha256: CHECKSUM }),
+      ['admin'],
+    );
+    const corpo = (await r.json()) as { importacaoId: string; url: string };
+
+    expect(r.status).toBe(201);
+    expect(corpo.importacaoId).toBe('id-novo');
+    expect(corpo.url).toContain('imports/');
+  });
+
+  it('assina o digest do arquivo, não o de um corpo vazio', async () => {
+    // `ChecksumAlgorithm: SHA256` na URL presignada grava o digest da string
+    // vazia — e aí o S3 só aceita arquivo vazio. O valor real vem do cliente.
+    const r = await req(
+      '/contatos/importacoes',
+      json({ nomeArquivo: 'clientes.csv', checksumSha256: CHECKSUM }),
+      ['admin'],
+    );
+    const corpo = (await r.json()) as { cabecalhosObrigatorios: Record<string, string> };
+
+    expect(corpo.cabecalhosObrigatorios['x-amz-checksum-sha256']).toBe(CHECKSUM);
+  });
+
+  it('recusa checksum malformado', async () => {
+    const r = await req(
+      '/contatos/importacoes',
+      json({ nomeArquivo: 'clientes.csv', checksumSha256: 'nao-e-base64' }),
+      ['admin'],
+    );
+
+    expect(r.status).toBe(400);
+  });
+
+  it('deriva a chave do S3 do tenant e do id, não do nome do arquivo', async () => {
+    // Nome de arquivo é entrada do usuário; dentro de uma chave de objeto, é
+    // como se constrói um caminho para fora do prefixo pretendido.
+    const r = await req(
+      '/contatos/importacoes',
+      json({ nomeArquivo: '../../exports/roubo.csv', checksumSha256: CHECKSUM }),
+      ['admin'],
+    );
+    const corpo = (await r.json()) as { url: string };
+
+    expect(corpo.url).toContain('imports/andrearaujo/id-novo/origem.csv');
+    expect(corpo.url).not.toContain('exports/');
+  });
+
+  it('enfileira a importação em vez de processar na requisição', async () => {
+    const r = await req(`/contatos/importacoes/${IMPORTACAO}/iniciar`, json(pedido()), ['admin']);
+
+    expect(r.status).toBe(202);
+    expect(estado.importacoesPublicadas).toHaveLength(1);
+    expect(estado.importacoesPublicadas[0]).toMatchObject({
+      importacaoId: IMPORTACAO,
+      chaveS3: `imports/andrearaujo/${IMPORTACAO}/origem.csv`,
+      solicitadoPor: 'u-1',
+    });
+  });
+
+  it('exige a declaração de origem — é a prova da base legal (§10.2)', async () => {
+    const r = await req(
+      `/contatos/importacoes/${IMPORTACAO}/iniciar`,
+      json(pedido({ origemDeclarada: 'planilha' })),
+      ['admin'],
+    );
+
+    expect(r.status).toBe(400);
+    expect(estado.importacoesPublicadas).toHaveLength(0);
+  });
+
+  it('exige a confirmação de que a lista não foi comprada', async () => {
+    const r = await req(
+      `/contatos/importacoes/${IMPORTACAO}/iniciar`,
+      json(pedido({ confirmaSemListaComprada: false })),
+      ['admin'],
+    );
+
+    expect(r.status).toBe(400);
+    expect(estado.importacoesPublicadas).toHaveLength(0);
+  });
+
+  it('recusa id divergente entre o endereço e o corpo', async () => {
+    // Divergirem significa que o corpo não é o do upload recém-assinado.
+    const r = await req(
+      '/contatos/importacoes/00000000-0000-4000-8000-000000000000/iniciar',
+      json(pedido()),
+      ['admin'],
+    );
+
+    expect(r.status).toBe(400);
+    expect(estado.importacoesPublicadas).toHaveLength(0);
+  });
+
+  it('avisa quando o lote inteiro herda o vínculo padrão', async () => {
+    // Sem coluna de vínculo, uma escolha errada no formulário classifica
+    // milhares de pessoas de uma vez.
+    const r = await req(
+      `/contatos/importacoes/${IMPORTACAO}/iniciar`,
+      json(pedido({ mapeamentoColunas: { email: 'E-mail' } })),
+      ['admin'],
+    );
+    const corpo = (await r.json()) as { aviso: string };
+
+    expect(corpo.aviso).toMatch(/todos os contatos entram como CLIENTE_ATIVO/i);
+  });
+
+  it('registra auditoria de quem declarou a origem', async () => {
+    // A pergunta "de onde vieram estes 4.000 contatos" se responde aqui.
+    await req(`/contatos/importacoes/${IMPORTACAO}/iniciar`, json(pedido()), ['admin']);
+    expect(estado.auditados).toContainEqual({ acao: 'IMPORTOU', recursoTipo: 'Importacao' });
+  });
+
+  it('operador não importa — declarar base legal é decisão do controlador', async () => {
+    const r = await req(`/contatos/importacoes/${IMPORTACAO}/iniciar`, json(pedido()), [
+      'operador',
+    ]);
+
+    expect(r.status).toBe(403);
+    expect(estado.importacoesPublicadas).toHaveLength(0);
   });
 });
