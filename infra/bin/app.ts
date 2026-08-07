@@ -61,6 +61,10 @@ const oidc = new GithubOidcStack(app, `EmailMktGithubOidc${sufixo}`, {
   cfg,
   env: { account: cfg.conta, region: cfg.regiaoDados },
   repositorio: app.node.tryGetContext('repositorio') ?? 'andrearaujoadvogados/andre_campanhas',
+  // Obtidos com `gh api orgs/<org> --jq .id` e `gh api repos/<org>/<repo> --jq .id`.
+  // São imutáveis: sobrevivem a renomeação da organização ou do repositório.
+  idOrganizacao: app.node.tryGetContext('idOrganizacao') ?? '314317862',
+  idRepositorio: app.node.tryGetContext('idRepositorio') ?? '1326774323',
   // Provedor OIDC é recurso por conta. Se já existir, rode com
   // `-c criarProvedorOidc=false` para reaproveitar.
   criarProvedor: app.node.tryGetContext('criarProvedorOidc') !== 'false',

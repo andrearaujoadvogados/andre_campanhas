@@ -50,7 +50,7 @@
               "Condition": {
                 "StringEquals": {
                   "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-                  "token.actions.githubusercontent.com:sub": "repo:andrearaujoadvogados/andre_campanhas:environment:dev"
+                  "token.actions.githubusercontent.com:sub": "repo:andrearaujoadvogados@314317862/andre_campanhas@1326774323:environment:dev"
                 }
               },
               "Effect": "Allow",
@@ -127,7 +127,7 @@
               "Condition": {
                 "StringEquals": {
                   "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-                  "token.actions.githubusercontent.com:sub": "repo:andrearaujoadvogados/andre_campanhas:environment:producao"
+                  "token.actions.githubusercontent.com:sub": "repo:andrearaujoadvogados@314317862/andre_campanhas@1326774323:environment:producao"
                 }
               },
               "Effect": "Allow",

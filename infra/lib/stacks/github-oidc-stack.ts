@@ -22,6 +22,25 @@ export interface GithubOidcStackProps extends StackProps {
   /** `organizacao/repositorio`. */
   readonly repositorio: string;
   /**
+   * Identificadores numéricos da organização e do repositório no GitHub.
+   *
+   * O GitHub emite o `sub` do token OIDC no formato
+   * `repo:org@<idOrg>/repo@<idRepo>:environment:<nome>` — com os IDs, não só
+   * com os nomes. É deliberado: renomear o repositório passa a **não**
+   * transferir a confiança, e ninguém herda acesso ocupando um nome liberado.
+   *
+   * Consequência prática: a política precisa dos IDs. Uma condição escrita só
+   * com nomes nunca casa, e o erro que aparece é o genérico
+   * `Not authorized to perform sts:AssumeRoleWithWebIdentity` — que não dá
+   * nenhuma pista da causa.
+   *
+   * Obtenha com:
+   *   gh api orgs/<org> --jq .id
+   *   gh api repos/<org>/<repo> --jq .id
+   */
+  readonly idOrganizacao: string;
+  readonly idRepositorio: string;
+  /**
    * O provedor OIDC é um recurso **por conta**, não por stack.
    *
    * Se a conta já tiver um — de outro projeto, por exemplo —, criar de novo
@@ -52,6 +71,10 @@ export class GithubOidcStack extends Stack {
   constructor(escopo: Construct, id: string, props: GithubOidcStackProps) {
     super(escopo, id, props);
     const { cfg, repositorio } = props;
+
+    // `org/repo` → `org@idOrg/repo@idRepo`, que é a forma que o GitHub assina.
+    const [organizacao = '', nomeRepo = ''] = repositorio.split('/');
+    const repositorioComIds = `${organizacao}@${props.idOrganizacao}/${nomeRepo}@${props.idRepositorio}`;
 
     /**
      * Recurso nativo do CloudFormation, não o construto L2 do CDK.
@@ -138,7 +161,7 @@ export class GithubOidcStack extends Stack {
     const papelDev = papel(
       'PapelDeployDev',
       'dev',
-      `repo:${repositorio}:environment:dev`,
+      `repo:${repositorioComIds}:environment:dev`,
       'Assumido pelo GitHub Actions para implantar em desenvolvimento.',
     );
 
@@ -158,7 +181,7 @@ export class GithubOidcStack extends Stack {
     const papelProd = papel(
       'PapelDeployProd',
       'prod',
-      `repo:${repositorio}:environment:producao`,
+      `repo:${repositorioComIds}:environment:producao`,
       'Assumido pelo GitHub Actions para implantar em produção, após aprovação manual.',
     );
 
