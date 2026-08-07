@@ -92,6 +92,22 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
+      # TEMPORÁRIO — diagnóstico do OIDC. Remover depois.
+      # Imprime apenas as claims `sub` e `aud`, nunca o token: o token é
+      # credencial de curta duração e não deve aparecer em log.
+      - name: Diagnóstico do token OIDC
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken('sts.amazonaws.com');
+            const claims = JSON.parse(
+              Buffer.from(token.split('.')[1], 'base64').toString('utf8'),
+            );
+            core.info(`sub = ${claims.sub}`);
+            core.info(`aud = ${claims.aud}`);
+            core.info(`repository = ${claims.repository}`);
+            core.info(`environment = ${claims.environment ?? '(nenhum)'}`);
+
       - name: Assumir papel na conta dev
         uses: aws-actions/configure-aws-credentials@v4
         with:
