@@ -116,6 +116,11 @@ jobs:
             -c certificadoArn="${{ vars.CERTIFICADO_ARN_DEV }}" \
             -c certificadoRastreamentoArn="${{ vars.CERTIFICADO_RASTREAMENTO_ARN_DEV }}"
 
+      - name: Publicar o painel
+        env:
+          AMBIENTE: Dev
+        run: ./scripts/publicar-painel.sh
+
       - name: Smoke test
         # Envia para uma caixa de teste verificada. Em dev o SES fica em sandbox
         # de propósito: é impossível atingir um contato real por engano (§9.1).
@@ -158,3 +163,8 @@ jobs:
             --require-approval never -c ambiente=prod \
             -c certificadoArn="${{ vars.CERTIFICADO_ARN_PROD }}" \
             -c certificadoRastreamentoArn="${{ vars.CERTIFICADO_RASTREAMENTO_ARN_PROD }}"
+
+      - name: Publicar o painel
+        env:
+          AMBIENTE: Prod
+        run: ./scripts/publicar-painel.sh

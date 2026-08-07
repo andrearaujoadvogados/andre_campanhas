@@ -142,6 +142,58 @@ export class GithubOidcStack extends Stack {
         }),
       );
 
+      /**
+       * Publicar o painel no bucket do site — a única coisa que o pipeline faz
+       * fora do `cdk deploy`.
+       *
+       * O CDK cria o bucket e a distribuição, mas não põe os arquivos dentro:
+       * o bundle da SPA só pode ser compilado **depois** da implantação, porque
+       * a URL da API e os identificadores do Cognito entram nele em tempo de
+       * compilação e são saídas das stacks. Por isso este passo existe, e por
+       * isso precisa de permissão própria.
+       *
+       * Enumerada ação por ação, e não `s3:*`: o mesmo pipeline não deve poder
+       * tocar o bucket de uploads, que guarda CSV de contatos.
+       */
+      r.addToPolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: ['cloudformation:DescribeStacks'],
+          resources: [`arn:aws:cloudformation:*:${this.account}:stack/EmailMkt*/*`],
+        }),
+      );
+
+      const bucketSite = `arn:aws:s3:::${nome(cfg, 'site')}-${this.account}`;
+      r.addToPolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: ['s3:ListBucket'],
+          resources: [bucketSite],
+        }),
+      );
+      r.addToPolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: ['s3:PutObject', 's3:DeleteObject'],
+          resources: [`${bucketSite}/*`],
+        }),
+      );
+
+      /**
+       * A invalidação não aceita ARN de distribuição específica em política
+       * baseada em identidade sem que se conheça o id — que só existe depois do
+       * primeiro deploy. O escopo real vem de outro lado: a conta só tem as
+       * distribuições deste projeto, e criar invalidação não lê nem altera
+       * conteúdo, apenas descarta cache.
+       */
+      r.addToPolicy(
+        new PolicyStatement({
+          effect: Effect.ALLOW,
+          actions: ['cloudfront:CreateInvalidation'],
+          resources: [`arn:aws:cloudfront::${this.account}:distribution/*`],
+        }),
+      );
+
       return r;
     };
 
