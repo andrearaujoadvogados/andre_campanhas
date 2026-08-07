@@ -9,7 +9,8 @@
     "test": "exit 0",
     "synth": "cdk synth --quiet",
     "diff": "cdk diff",
-    "deploy": "cdk deploy"
+    "deploy": "cdk deploy",
+    "template-oidc": "node scripts/gerar-template-oidc.mjs"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.170.0",

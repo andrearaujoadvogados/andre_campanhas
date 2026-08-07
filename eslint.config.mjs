@@ -97,6 +97,22 @@ export default tseslint.config(
     },
   },
 
+  /**
+   * Scripts utilitários de infraestrutura.
+   *
+   * Rodam no Node diretamente, não em bundle: `process` e `console` são globais
+   * legítimos aqui, e `console.log` é a interface do script com quem o executa.
+   */
+  {
+    files: ['infra/scripts/**/*.mjs'],
+    languageOptions: {
+      globals: { process: 'readonly', console: 'readonly' },
+    },
+    rules: {
+      'no-console': 'off',
+    },
+  },
+
   // Infra é CDK — nada das regras acima se aplica.
   {
     files: ['infra/**/*.ts'],

@@ -1,11 +1,10 @@
 import { CfnOutput, Stack, type StackProps } from 'aws-cdk-lib';
 import {
+  CfnOIDCProvider,
   Effect,
   FederatedPrincipal,
-  OpenIdConnectProvider,
   PolicyStatement,
   Role,
-  type IOpenIdConnectProvider,
 } from 'aws-cdk-lib/aws-iam';
 import type { Construct } from 'constructs';
 import { nome, type AmbienteConfig } from '../config.js';
@@ -54,16 +53,25 @@ export class GithubOidcStack extends Stack {
     super(escopo, id, props);
     const { cfg, repositorio } = props;
 
-    const provedor: IOpenIdConnectProvider = props.criarProvedor
-      ? new OpenIdConnectProvider(this, 'ProvedorGithub', {
+    /**
+     * Recurso nativo do CloudFormation, não o construto L2 do CDK.
+     *
+     * O `OpenIdConnectProvider` do CDK cria uma Lambda de custom resource só
+     * para registrar o provedor — o que deixa uma função órfã na conta para
+     * sempre e faz esta stack depender do bootstrap. `AWS::IAM::OIDCProvider` é
+     * nativo desde 2023 e torna o template autocontido: dá para implantá-lo
+     * antes de qualquer outra coisa, inclusive do CloudShell.
+     */
+    const arnProvedor = props.criarProvedor
+      ? new CfnOIDCProvider(this, 'ProvedorGithub', {
           url: `https://${EMISSOR}`,
-          clientIds: ['sts.amazonaws.com'],
-        })
-      : OpenIdConnectProvider.fromOpenIdConnectProviderArn(
-          this,
-          'ProvedorGithub',
-          `arn:aws:iam::${this.account}:oidc-provider/${EMISSOR}`,
-        );
+          clientIdList: ['sts.amazonaws.com'],
+          // A AWS valida o certificado do GitHub por conta própria desde 2023 e
+          // ignora este valor. Mantido porque o recurso ainda o aceita e porque
+          // omiti-lo tem comportamento menos previsível entre regiões.
+          thumbprintList: ['6938fd4d98bab03faadb97b34396831e3780aea1'],
+        }).attrArn
+      : `arn:aws:iam::${this.account}:oidc-provider/${EMISSOR}`;
 
     /**
      * A condição `sub` é o que amarra o papel a este repositório.
@@ -84,7 +92,7 @@ export class GithubOidcStack extends Stack {
         roleName: nome(cfg, `github-deploy-${sufixo}`),
         description: descricao,
         assumedBy: new FederatedPrincipal(
-          provedor.openIdConnectProviderArn,
+          arnProvedor,
           condicao(sub),
           'sts:AssumeRoleWithWebIdentity',
         ),

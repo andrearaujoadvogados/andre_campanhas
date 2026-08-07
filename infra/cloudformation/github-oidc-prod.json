@@ -1,0 +1,217 @@
+{
+  "Metadata": {
+    "cdk_nag": {
+      "rules_to_suppress": [
+        {
+          "reason": "TyBjdXJpbmdhIGNvYnJlIGFwZW5hcyBvIHN1Zml4byBkZSByZWdpw6NvIGRvcyBwYXDDqWlzIGRvIGJvb3RzdHJhcCBkbyBDREsgKGBjZGstaG5iNjU5ZmRzLWRlcGxveS1yb2xlLTxjb250YT4tPHJlZ2lhbz5gKSwgZSBvIHBhZHLDo28gZXN0w6EgcHJlc28gYW8gbsO6bWVybyBkZXN0YSBjb250YS4gRW51bWVyYXIgYXMgdHLDqnMgcmVnacO1ZXMgZGFyaWEgYSBtZXNtYSBwZXJtaXNzw6NvIGNvbSBtYWlzIGxpbmhhcyDigJQgZSBxdWVicmFyaWEgc2lsZW5jaW9zYW1lbnRlIGFvIGFkaWNpb25hciB1bWEgcXVhcnRhLiBPIHBvbnRvIHJlbGV2YW50ZSDDqSBvIG9wb3N0byBkbyBxdWUgYSByZWdyYSBzdWdlcmU6IGVzdGVzIHBhcMOpaXMgTsODTyB0w6ptIHBlcm1pc3PDo28gZGUgYWRtaW5pc3RyYWRvciwgc8OzIHBvZGVtIGFzc3VtaXIgb3MgcGFww6lpcyBxdWUgbyBib290c3RyYXAgY3Jpb3Uu",
+          "id": "AwsSolutions-IAM5",
+          "is_reason_encoded": true
+        }
+      ]
+    }
+  },
+  "Resources": {
+    "ProvedorGithub": {
+      "Type": "AWS::IAM::OIDCProvider",
+      "Properties": {
+        "ClientIdList": ["sts.amazonaws.com"],
+        "Tags": [
+          {
+            "Key": "ambiente",
+            "Value": "prod"
+          },
+          {
+            "Key": "cliente",
+            "Value": "andrearaujoadvogados"
+          },
+          {
+            "Key": "gerenciadoPor",
+            "Value": "cdk"
+          },
+          {
+            "Key": "projeto",
+            "Value": "emailmkt"
+          }
+        ],
+        "ThumbprintList": ["6938fd4d98bab03faadb97b34396831e3780aea1"],
+        "Url": "https://token.actions.githubusercontent.com"
+      },
+      "Metadata": {
+        "aws:cdk:path": "EmailMktGithubOidcProd/ProvedorGithub"
+      }
+    },
+    "PapelDeployDevA392E5C3": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringEquals": {
+                  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                  "token.actions.githubusercontent.com:sub": "repo:andrearaujoadvogados/andre_campanhas:ref:refs/heads/main"
+                }
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Federated": {
+                  "Fn::GetAtt": ["ProvedorGithub", "Arn"]
+                }
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Description": "Assumido pelo GitHub Actions para implantar em desenvolvimento.",
+        "RoleName": "emailmkt-prod-github-deploy-dev",
+        "Tags": [
+          {
+            "Key": "ambiente",
+            "Value": "prod"
+          },
+          {
+            "Key": "cliente",
+            "Value": "andrearaujoadvogados"
+          },
+          {
+            "Key": "gerenciadoPor",
+            "Value": "cdk"
+          },
+          {
+            "Key": "projeto",
+            "Value": "emailmkt"
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "EmailMktGithubOidcProd/PapelDeployDev/Resource"
+      }
+    },
+    "PapelDeployDevDefaultPolicy3397A68B": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Resource": [
+                "arn:aws:iam::874726179037:role/cdk-hnb659fds-deploy-role-874726179037-*",
+                "arn:aws:iam::874726179037:role/cdk-hnb659fds-file-publishing-role-874726179037-*",
+                "arn:aws:iam::874726179037:role/cdk-hnb659fds-image-publishing-role-874726179037-*",
+                "arn:aws:iam::874726179037:role/cdk-hnb659fds-lookup-role-874726179037-*"
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "PapelDeployDevDefaultPolicy3397A68B",
+        "Roles": [
+          {
+            "Ref": "PapelDeployDevA392E5C3"
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "EmailMktGithubOidcProd/PapelDeployDev/DefaultPolicy/Resource"
+      }
+    },
+    "PapelDeployProd900AA4AD": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringEquals": {
+                  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                  "token.actions.githubusercontent.com:sub": "repo:andrearaujoadvogados/andre_campanhas:environment:producao"
+                }
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Federated": {
+                  "Fn::GetAtt": ["ProvedorGithub", "Arn"]
+                }
+              }
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "Description": "Assumido pelo GitHub Actions para implantar em produção, após aprovação manual.",
+        "RoleName": "emailmkt-prod-github-deploy-prod",
+        "Tags": [
+          {
+            "Key": "ambiente",
+            "Value": "prod"
+          },
+          {
+            "Key": "cliente",
+            "Value": "andrearaujoadvogados"
+          },
+          {
+            "Key": "gerenciadoPor",
+            "Value": "cdk"
+          },
+          {
+            "Key": "projeto",
+            "Value": "emailmkt"
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "EmailMktGithubOidcProd/PapelDeployProd/Resource"
+      }
+    },
+    "PapelDeployProdDefaultPolicyEA1787D2": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Resource": [
+                "arn:aws:iam::874726179037:role/cdk-hnb659fds-deploy-role-874726179037-*",
+                "arn:aws:iam::874726179037:role/cdk-hnb659fds-file-publishing-role-874726179037-*",
+                "arn:aws:iam::874726179037:role/cdk-hnb659fds-image-publishing-role-874726179037-*",
+                "arn:aws:iam::874726179037:role/cdk-hnb659fds-lookup-role-874726179037-*"
+              ]
+            }
+          ],
+          "Version": "2012-10-17"
+        },
+        "PolicyName": "PapelDeployProdDefaultPolicyEA1787D2",
+        "Roles": [
+          {
+            "Ref": "PapelDeployProd900AA4AD"
+          }
+        ]
+      },
+      "Metadata": {
+        "aws:cdk:path": "EmailMktGithubOidcProd/PapelDeployProd/DefaultPolicy/Resource"
+      }
+    }
+  },
+  "Outputs": {
+    "PapelDeployDevArn": {
+      "Description": "Secret AWS_DEPLOY_ROLE_DEV no GitHub",
+      "Value": {
+        "Fn::GetAtt": ["PapelDeployDevA392E5C3", "Arn"]
+      }
+    },
+    "PapelDeployProdArn": {
+      "Description": "Secret AWS_DEPLOY_ROLE_PROD no GitHub",
+      "Value": {
+        "Fn::GetAtt": ["PapelDeployProd900AA4AD", "Arn"]
+      }
+    },
+    "ContaAws": {
+      "Description": "Secret AWS_ACCOUNT_DEV ou AWS_ACCOUNT_PROD no GitHub",
+      "Value": "874726179037"
+    }
+  },
+  "Description": "Papeis de deploy assumidos pelo GitHub Actions via OIDC. Gerado de infra/lib/stacks/github-oidc-stack.ts — nao editar a mao."
+}
