@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Sem chaves de acesso de longa duração: o Actions assume um papel IAM via OIDC
+# federado (§9.2). `id-token: write` é o que habilita isso.
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  verificar:
+    name: Lint, tipos, testes e synth
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        # Inclui a fronteira da arquitetura hexagonal: se packages/core importar
+        # AWS, o build quebra aqui (§5.1).
+        run: pnpm lint
+
+      - name: Formatação
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Testes
+        run: pnpm test
+
+      - name: Build do painel
+        # Compila a SPA. O `tsc --noEmit` do painel roda aqui e não no typecheck
+        # geral porque o build também valida o bundle do Vite.
+        run: pnpm --filter @emailmkt/admin-web build
+
+      - name: Synth + cdk-nag
+        # Conta fictícia: synth não toca a AWS. As regras de segurança do
+        # cdk-nag rodam aqui e falham o build (§9.2).
+        env:
+          AWS_ACCOUNT_DEV: '000000000000'
+        run: pnpm synth
+
+  # ── Deploy ─────────────────────────────────────────────────────────────────
+  # Desabilitado até que os papéis OIDC existam nas contas do escritório
+  # (§9.1.1). Ativar removendo o `if: false` e preenchendo os secrets.
+
+  deploy-dev:
+    name: Deploy — dev
+    needs: verificar
+    if: false # TODO: habilitar após criar o papel OIDC na conta dev
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Assumir papel na conta dev
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_DEV }}
+          aws-region: sa-east-1
+
+      - name: Deploy
+        env:
+          AWS_ACCOUNT_DEV: ${{ secrets.AWS_ACCOUNT_DEV }}
+        run: pnpm --filter @emailmkt/infra exec cdk deploy --all --require-approval never -c ambiente=dev
+
+      - name: Smoke test
+        # Envia para uma caixa de teste verificada. Em dev o SES fica em sandbox
+        # de propósito: é impossível atingir um contato real por engano (§9.1).
+        run: echo 'TODO — implementar quando o admin-api existir'
+
+  deploy-prod:
+    name: Deploy — produção
+    needs: deploy-dev
+    if: false # TODO: habilitar junto com deploy-dev
+    runs-on: ubuntu-latest
+    # Aprovação manual configurada no GitHub Environment. Inegociável: um deploy
+    # ruim não é revertível depois que a mensagem saiu (§9.2).
+    environment: producao
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Assumir papel na conta de produção
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_PROD }}
+          aws-region: sa-east-1
+
+      - name: Deploy
+        env:
+          AWS_ACCOUNT_PROD: ${{ secrets.AWS_ACCOUNT_PROD }}
+        run: pnpm --filter @emailmkt/infra exec cdk deploy --all --require-approval never -c ambiente=prod

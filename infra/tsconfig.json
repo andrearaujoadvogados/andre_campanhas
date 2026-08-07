@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    // O aws-cdk-lib não é escrito com exactOptionalPropertyTypes, e várias de
+    // suas interfaces declaram `prop?: T` onde o consumidor legítimo passa
+    // `undefined`. Relaxamos aqui, e só aqui: em packages/core e
+    // packages/contracts — o código que é nosso — a flag continua ligada.
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["bin/**/*.ts", "lib/**/*.ts"]
+}

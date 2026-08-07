@@ -1,0 +1,24 @@
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+cdk.out/
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Nunca versionar dados de contato — LGPD, §10.2 do documento de arquitetura.
+*.csv
+!**/fixtures/*.csv
+/tmp/
+/exports/
+
+.DS_Store
+.vscode/
+.idea/
+*.log

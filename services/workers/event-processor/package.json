@@ -1,0 +1,19 @@
+{
+  "name": "@emailmkt/worker-event-processor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "exit 0"
+  },
+  "dependencies": {
+    "@emailmkt/adapters-aws": "workspace:*",
+    "@emailmkt/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,13 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+  - 'services/*'
+  - 'services/workers/*'
+  - 'infra'
+# Scripts de instalação aprovados explicitamente. O pnpm bloqueia por padrão —
+# manter a lista curta e justificada é controle de cadeia de suprimentos, não
+# burocracia (§10.1).
+allowBuilds:
+  # Baixa o binário nativo da plataforma. Sem isto, Vitest e o bundling das
+  # Lambdas não funcionam.
+  esbuild: true

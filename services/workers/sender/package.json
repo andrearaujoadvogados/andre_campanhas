@@ -1,0 +1,22 @@
+{
+  "name": "@emailmkt/worker-sender",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "exit 0"
+  },
+  "dependencies": {
+    "@emailmkt/adapters-aws": "workspace:*",
+    "@emailmkt/contracts": "workspace:*",
+    "@emailmkt/core": "workspace:*",
+    "@emailmkt/email-render": "workspace:*",
+    "@aws-sdk/lib-dynamodb": "^3.700.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.0",
+    "typescript": "^5.7.0"
+  }
+}

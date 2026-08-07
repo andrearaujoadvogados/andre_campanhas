@@ -1,0 +1,16 @@
+// exactOptionalPropertyTypes desligado aqui, e só aqui: passar `undefined`
+// explicitamente a uma prop opcional é o idioma normal do React
+// (`texto={talvezIndefinido}`), e a flag brigaria com isso em toda tela.
+// Em packages/core e packages/contracts — o código onde a distinção entre
+// "ausente" e "undefined" tem consequência — ela continua ligada.
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    "allowImportingTsExtensions": true,
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test/**/*.tsx"]
+}
