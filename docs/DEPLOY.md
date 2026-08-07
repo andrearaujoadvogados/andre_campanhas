@@ -117,11 +117,62 @@ Um push na `main` dispara: verificação → deploy em dev → **aprovação man
 ### O que conferir depois
 
 - [ ] As saídas do CDK: `ApiUrl`, `UserPoolId`, `UserPoolClientId`, `UrlDescadastro`
-- [ ] Publicar os 4 registros DNS (§9.1.2 da arquitetura)
+- [ ] Publicar os registros DNS (passo 6)
 - [ ] Preencher o `.env.local` do painel com as saídas
 - [ ] Criar o primeiro usuário no Cognito e passar pelo fluxo de MFA
 - [ ] **Confirmar a inscrição do SNS** em cada endereço de `EMAIL_ALARMES` (chega um e-mail com link)
 - [ ] Verificar no console do CloudWatch que os 7 alarmes estão em `OK`, não em `INSUFFICIENT_DATA` sem inscrição confirmada
+
+---
+
+## 6. Registros DNS
+
+Dois assuntos independentes, com urgências diferentes. O de rastreamento precisa existir **antes do primeiro envio**; o do painel pode esperar.
+
+### 6.1 Domínio de rastreamento — antes de enviar
+
+Sem ele, os links dentro dos e-mails aparecem para o destinatário como `awstrack.me`. Num e-mail de escritório de advocacia, um domínio desconhecido no link é motivo suficiente para o leitor marcar como spam — e reclamação é a métrica que custa a conta.
+
+| Registro                  | Tipo  | Onde pegar o valor                               |
+| ------------------------- | ----- | ------------------------------------------------ |
+| `link.mail`               | CNAME | Console do SES em `us-east-2`, Configuration Set |
+| validação do rastreamento | CNAME | Console do ACM em `us-east-2`                    |
+
+### 6.2 Domínio do painel — opcional
+
+Sem isso, o painel responde no domínio do CloudFront (`d111....cloudfront.net`). Funciona; só é feio de digitar.
+
+O certificado é emitido **fora do deploy, de propósito**. Um certificado validado por DNS criado pelo CloudFormation deixa a implantação **bloqueada** até alguém publicar o CNAME de validação — e o CNAME só é conhecido depois que o certificado é solicitado. O deploy fica pendurado por até uma hora e falha com a stack em estado intermediário. Separando, o passo lento acontece uma vez, manualmente, e o deploy segue rápido e previsível.
+
+**Solicite o certificado** — em `us-east-1`, exigência do CloudFront. O ARN fica numa variável de shell para os comandos seguintes, evitando copiar e colar:
+
+```bash
+ARN=$(aws acm request-certificate --domain-name campanhas.andrearaujoadvogados.com.br --validation-method DNS --region us-east-1 --query CertificateArn --output text) && echo "$ARN"
+```
+
+**Pegue o CNAME de validação.** Se vier vazio, espere alguns segundos — o ACM leva um instante para gerar o registro:
+
+```bash
+aws acm describe-certificate --region us-east-1 --certificate-arn "$ARN" --query "Certificate.DomainValidationOptions[0].ResourceRecord" --output table
+```
+
+**Publique esse CNAME** no provedor de DNS e aguarde a emissão:
+
+```bash
+aws acm wait certificate-validated --region us-east-1 --certificate-arn "$ARN" && echo "emitido"
+```
+
+> Se a sessão do CloudShell reiniciar, recupere o ARN com `aws acm list-certificates --region us-east-1 --query "CertificateSummaryList[?DomainName=='campanhas.andrearaujoadvogados.com.br'].CertificateArn" --output text`.
+
+**Registre o ARN como variável do repositório.** É ela que o pipeline passa para a stack:
+
+```bash
+gh variable set CERTIFICADO_ARN_PROD --repo andrearaujoadvogados/andre_campanhas --body "$ARN"
+```
+
+**Reimplante** (qualquer push na `main`, ou disparo manual do workflow). Só depois que a distribuição subir com o alias, aponte o registro do painel para a saída `DistribuicaoDominio` da stack Web.
+
+Enquanto `CERTIFICADO_ARN_PROD` não existir, a stack sobe sem domínio customizado — que é o estado atual e não quebra nada.
 
 ---
 
