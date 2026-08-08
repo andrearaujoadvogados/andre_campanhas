@@ -254,14 +254,13 @@ describe('aprovação de campanha — §5.8 e §10.3', () => {
     expect(r.status).toBe(403);
   });
 
-  it('o autor não aprova a própria campanha, mesmo sendo ADMIN', async () => {
-    // Duas barreiras distintas: o papel diz quem revisa; a segregação diz que
-    // ninguém revisa a si mesmo.
+  it('o autor aprova a própria campanha', async () => {
+    // O papel continua sendo barreira — só ADMIN aprova. O que caiu foi a
+    // exigência de que fosse outra pessoa.
     estado.campanha = campanhaFalsa({ status: 'EM_REVISAO', criadoPor: userId(REVISOR) });
     const r = await aprovar({ hashConteudoRevisado: hash(estado.campanha) }, REVISOR);
 
-    expect(r.status).toBe(409);
-    expect(await r.json()).toMatchObject({ code: 'APROVADOR_IGUAL_AUTOR' });
+    expect(r.status).toBe(200);
   });
 
   it('recusa aprovação se o conteúdo mudou desde a tela de revisão', async () => {

@@ -430,7 +430,7 @@ RASCUNHO → EM_REVISÃO → APROVADA → AGENDADA → ENVIANDO ⇄ PAUSADA → 
 
 **Por quê:** torna ilegal representar estados impossíveis (pausar uma campanha concluída, agendar uma não aprovada) e dá compensação clara em falha parcial.
 
-⚠️ **Regra da aprovação (decorrente de §10.3):** só o papel `ADMIN` aprova, e quem aprova não pode ser quem criou. A aprovação grava `aprovadoPor`, `aprovadoEm` e um **hash do conteúdo aprovado** — qualquer edição posterior de template, assunto ou audiência invalida a aprovação e devolve a campanha para `EM_REVISÃO`. Sem esse hash, "aprovado" seria um carimbo sem valor probatório, que é justamente o oposto do que a exigência da OAB pede.
+⚠️ **Regra da aprovação:** só o papel `ADMIN` aprova. A exigência de que o aprovador fosse **outra pessoa** caiu em 2026-08-08, por decisão do escritório: o sistema é de uso interno e quem escreve as campanhas é o advogado responsável por elas — a segunda pessoa não acrescentava revisão, só um passo que não podia ser cumprido. A etapa em si permanece, e não como formalidade: é o último ponto de parada antes de um disparo irreversível. A aprovação grava `aprovadoPor`, `aprovadoEm` e um **hash do conteúdo aprovado** — qualquer edição posterior de template, assunto ou audiência invalida a aprovação e devolve a campanha para `EM_REVISÃO`. Sem esse hash, "aprovado" seria um carimbo sem valor probatório, que é justamente o oposto do que a exigência da OAB pede.
 
 ### 5.9 Specification pattern
 
@@ -888,18 +888,18 @@ Isso significa que **este sistema não é uma ferramenta de prospecção** — �
 
 ## 11. Como cada requisito funcional é atendido
 
-| Req                     | Como                                                                                                                                                                                                                               |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Gestão de contatos   | Upload CSV via URL presignada S3 → evento S3 → `csv-importer` em streaming com validação Zod, deduplicação por `emailHash`, relatório de erros por linha. Histórico de status como itens append-only                               |
-| 2. Templates            | HTML + variáveis Liquid, versionado, com prévia renderizada e envio de teste. Sem editor drag-and-drop no MVP (V2)                                                                                                                 |
-| 3. Campanhas            | Máquina de estados no domínio + Step Functions, com aprovação obrigatória (`EM_REVISÃO → APROVADA`) por `ADMIN` distinto do autor. Agendamento por EventBridge Scheduler. Pausa/cancelamento por flag consultada pelo `sender`     |
-| 4. Limites do SES       | Token bucket + concorrência reservada + cota lida do SSM e sincronizada diariamente do próprio SES. Throttling tratado como fluxo normal com backoff                                                                               |
-| 5. Rastreamento         | Configuration Set com todos os tipos de evento → SNS → SQS → processador. Abertura e clique nativos do SES, com domínio de rastreamento customizado recomendado                                                                    |
-| 6. Supressão automática | `event-processor` grava hard bounce e reclamação na lista de supressão; o `campaign-launcher` filtra na resolução da audiência. Duas camadas: nossa lista (fonte da verdade) + lista de supressão da conta SES (rede de segurança) |
-| 7. Descadastro          | Function URL pública + token HMAC. GET mostra confirmação; POST executa em um clique (RFC 8058). Status atualizado na hora                                                                                                         |
-| 8. Relatórios           | Contadores pré-agregados por campanha (CQRS-lite) + visão agregada por período                                                                                                                                                     |
-| 9. Auth e papéis        | Cognito com grupos `admin`/`operador`; autorização verificada no backend por caso de uso                                                                                                                                           |
-| 10. Auditoria           | Entidade append-only com antes/depois, autor, IP e timestamp, gravada nos casos de uso — não nos handlers, para não haver caminho que escape                                                                                       |
+| Req                     | Como                                                                                                                                                                                                                                      |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Gestão de contatos   | Upload CSV via URL presignada S3 → evento S3 → `csv-importer` em streaming com validação Zod, deduplicação por `emailHash`, relatório de erros por linha. Histórico de status como itens append-only                                      |
+| 2. Templates            | HTML + variáveis Liquid, versionado, com prévia renderizada e envio de teste. Sem editor drag-and-drop no MVP (V2)                                                                                                                        |
+| 3. Campanhas            | Máquina de estados no domínio + Step Functions, com aprovação obrigatória (`EM_REVISÃO → APROVADA`) por `ADMIN`, podendo ser o próprio autor. Agendamento por EventBridge Scheduler. Pausa/cancelamento por flag consultada pelo `sender` |
+| 4. Limites do SES       | Token bucket + concorrência reservada + cota lida do SSM e sincronizada diariamente do próprio SES. Throttling tratado como fluxo normal com backoff                                                                                      |
+| 5. Rastreamento         | Configuration Set com todos os tipos de evento → SNS → SQS → processador. Abertura e clique nativos do SES, com domínio de rastreamento customizado recomendado                                                                           |
+| 6. Supressão automática | `event-processor` grava hard bounce e reclamação na lista de supressão; o `campaign-launcher` filtra na resolução da audiência. Duas camadas: nossa lista (fonte da verdade) + lista de supressão da conta SES (rede de segurança)        |
+| 7. Descadastro          | Function URL pública + token HMAC. GET mostra confirmação; POST executa em um clique (RFC 8058). Status atualizado na hora                                                                                                                |
+| 8. Relatórios           | Contadores pré-agregados por campanha (CQRS-lite) + visão agregada por período                                                                                                                                                            |
+| 9. Auth e papéis        | Cognito com grupos `admin`/`operador`; autorização verificada no backend por caso de uso                                                                                                                                                  |
+| 10. Auditoria           | Entidade append-only com antes/depois, autor, IP e timestamp, gravada nos casos de uso — não nos handlers, para não haver caminho que escape                                                                                              |
 
 ---
 

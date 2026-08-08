@@ -95,12 +95,19 @@ export function enviarParaRevisao(campanha: Campaign): Result<Campaign, DomainEr
 /**
  * Aprovação — §5.8.
  *
- * Duas regras que não são detalhe:
+ * O autor pode aprovar a própria campanha.
  *
- * 1. Quem aprova não pode ser quem criou. Aprovação por si mesmo não é revisão,
- *    é formalidade — e o ponto do estado EM_REVISAO é ter um advogado
- *    responsável olhando o conteúdo antes de sair em nome do escritório.
- * 2. O hash do conteúdo é gravado junto. Ver `verificarAprovacaoVigente`.
+ * Já foi diferente: exigia-se um segundo `ADMIN`. A regra caiu por decisão do
+ * escritório em 2026-08-08 — o sistema é de uso interno, e quem escreve as
+ * campanhas é o advogado responsável por elas. Exigir uma segunda pessoa não
+ * acrescentava revisão nenhuma, só um passo que não podia ser cumprido.
+ *
+ * **A etapa continua existindo, e não é formalidade.** Ela é o último ponto de
+ * parada antes de um disparo que não tem volta: grava quem aprovou, quando, e um
+ * hash do conteúdo aprovado — de modo que editar template, assunto ou audiência
+ * depois invalida a aprovação e devolve a campanha para EM_REVISAO. Ver
+ * `verificarAprovacaoVigente`. Sem esse hash, "aprovado" seria um carimbo sem
+ * valor nenhum.
  */
 export function aprovar(
   campanha: Campaign,
@@ -116,15 +123,6 @@ export function aprovar(
       ),
     );
   }
-  if (aprovadoPor === campanha.criadoPor) {
-    return err(
-      domainError(
-        'APROVADOR_IGUAL_AUTOR',
-        'Quem criou a campanha não pode aprová-la. É necessário um segundo revisor.',
-      ),
-    );
-  }
-
   const aprovada = transicionar(campanha, 'APROVADA');
   if (!aprovada.ok) return aprovada;
 

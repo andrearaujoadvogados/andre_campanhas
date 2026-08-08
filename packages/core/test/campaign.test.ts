@@ -81,13 +81,15 @@ describe('máquina de estados da campanha', () => {
   });
 });
 
-describe('aprovação — exigência da OAB, §10.3', () => {
-  it('impede que o autor aprove a própria campanha', () => {
+describe('aprovação', () => {
+  it('o autor aprova a própria campanha', () => {
+    // A exigência de um segundo revisor caiu em 2026-08-08: o sistema é de uso
+    // interno e quem escreve a campanha é o advogado responsável por ela.
     const emRevisao = unwrap(enviarParaRevisao(campanha()));
     const r = aprovar(emRevisao, AUTOR, 'hash-abc', AGORA);
 
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('APROVADOR_IGUAL_AUTOR');
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.status).toBe('APROVADA');
   });
 
   it('só aprova campanha em revisão', () => {
