@@ -8,3 +8,67 @@
 body {
   font-family: var(--font-sans);
 }
+
+/**
+ * Aparência do conteúdo dentro do editor de e-mail.
+ *
+ * O Tailwind zera as margens e os marcadores por padrão, o que é ótimo na
+ * interface e péssimo aqui: sem isto, uma lista aparece sem bolinhas e um título
+ * do mesmo tamanho do corpo — quem escreve clica em "lista", não vê diferença
+ * nenhuma e conclui que o botão não funciona.
+ *
+ * Não é o estilo do e-mail enviado. Aquele nasce do `juice`, no email-render.
+ */
+.prose-email h2 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin: 1rem 0 0.5rem;
+}
+.prose-email h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0.9rem 0 0.4rem;
+}
+.prose-email p {
+  margin: 0.6rem 0;
+}
+.prose-email ul,
+.prose-email ol {
+  margin: 0.6rem 0;
+  padding-left: 1.5rem;
+}
+.prose-email ul {
+  list-style: disc;
+}
+.prose-email ol {
+  list-style: decimal;
+}
+.prose-email li {
+  margin: 0.2rem 0;
+}
+.prose-email a {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+.prose-email blockquote {
+  border-left: 3px solid #cbd5e1;
+  color: #475569;
+  margin: 0.8rem 0;
+  padding-left: 0.9rem;
+}
+.prose-email img {
+  max-width: 100%;
+  height: auto;
+}
+.prose-email strong {
+  font-weight: 600;
+}
+
+/* O editor vazio não dá pista nenhuma de que é editável. */
+.prose-email p.is-editor-empty:first-child::before {
+  color: #94a3b8;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}

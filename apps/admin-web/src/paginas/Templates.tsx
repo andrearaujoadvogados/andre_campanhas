@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
+
 import { api, type ComAviso } from '../lib/api.js';
 import { dataHora } from '../lib/formato.js';
 import {
@@ -97,6 +98,17 @@ export function Templates() {
   );
 }
 
+/**
+ * O editor carrega sob demanda.
+ *
+ * O TipTap e o ProseMirror somam ~400 KB — quase metade do painel. Quem abre
+ * campanhas, listas ou contatos nunca toca no editor, e não faz sentido que
+ * espere por ele no primeiro carregamento.
+ */
+const EditorEmail = lazy(() =>
+  import('../componentes/EditorEmail.tsx').then((m) => ({ default: m.EditorEmail })),
+);
+
 export function TemplateEditor() {
   const { id } = useParams();
   const ehNovo = id === undefined || id === 'novo';
@@ -168,17 +180,19 @@ export function TemplateEditor() {
               />
             </Campo>
             <Campo
-              rotulo="Corpo (HTML)"
+              rotulo="Corpo do e-mail"
               ajuda="O link de descadastro é acrescentado automaticamente no rodapé."
               obrigatorio
             >
-              <textarea
-                value={corpoHtml}
-                onChange={(e) => definirCorpo(e.target.value)}
-                rows={16}
-                spellCheck={false}
-                className={`${classeEntrada} font-mono text-xs`}
-              />
+              <Suspense
+                fallback={
+                  <div className="rounded-md border border-slate-300 px-4 py-12 text-center text-sm text-slate-500">
+                    Carregando o editor…
+                  </div>
+                }
+              >
+                <EditorEmail valor={corpoHtml} aoMudar={definirCorpo} />
+              </Suspense>
             </Campo>
 
             <div className="flex gap-2">
