@@ -238,3 +238,21 @@ export const erroApiSchema = z.object({
   correlationId: z.string().optional(),
 });
 export type ErroApi = z.infer<typeof erroApiSchema>;
+
+// ── Usuários do painel ───────────────────────────────────────────────────────
+
+/**
+ * Criar conta de acesso ao painel.
+ *
+ * Só e-mail e papel. **Não existe campo de senha, e é de propósito**: o Cognito
+ * gera a provisória e a envia direto para a pessoa. Um campo aqui colocaria uma
+ * senha no corpo de uma requisição HTTP, no log de erro e na tela de quem cria.
+ */
+export const criarUsuarioSchema = z.object({
+  email: emailSchema,
+  papel: papelUsuarioSchema,
+});
+export type CriarUsuarioInput = z.infer<typeof criarUsuarioSchema>;
+
+export const definirPapelSchema = z.object({ papel: papelUsuarioSchema });
+export type DefinirPapelInput = z.infer<typeof definirPapelSchema>;

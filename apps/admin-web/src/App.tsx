@@ -6,6 +6,7 @@ import { useSessao } from './lib/auth.js';
 import { Login } from './paginas/Login.tsx';
 import { Contatos, ContatoDetalhe } from './paginas/Contatos.tsx';
 import { ImportarContatos } from './paginas/ImportarContatos.tsx';
+import { Usuarios } from './paginas/Usuarios.tsx';
 import { Listas, ListaDetalhe } from './paginas/Listas.tsx';
 import { Templates, TemplateEditor } from './paginas/Templates.tsx';
 import { Campanhas, CampanhaDetalhe } from './paginas/Campanhas.tsx';
@@ -48,6 +49,7 @@ export function App() {
             <Route path="/templates" element={<Templates />} />
             <Route path="/templates/:id" element={<TemplateEditor />} />
             <Route path="/relatorios/:id" element={<Relatorio />} />
+            <Route path="/usuarios" element={<Usuarios usuario={usuario} />} />
             <Route path="*" element={<Navigate to="/campanhas" replace />} />
           </Route>
         </Routes>

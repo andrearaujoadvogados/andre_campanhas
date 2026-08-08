@@ -9,6 +9,7 @@ import { rotasListas } from './rotas/listas.js';
 import { rotasRelatorios } from './rotas/relatorios.js';
 import { rotasExportacao } from './rotas/exportacao.js';
 import { rotasImportacoes } from './rotas/importacoes.js';
+import { rotasUsuarios } from './rotas/usuarios.js';
 
 export function criarApp() {
   const app = new Hono<{ Variables: Variaveis }>();
@@ -54,10 +55,24 @@ export function criarApp() {
   // expõe nada — nem versão, que ajudaria a mapear vulnerabilidades conhecidas.
   app.get('/saude', (c) => c.json({ ok: true }));
 
-  for (const prefixo of ['contatos', 'campanhas', 'templates', 'listas', 'relatorios']) {
-    app.use(`/${prefixo}`, autenticar());
-    app.use(`/${prefixo}/*`, autenticar());
-  }
+  /**
+   * Autentica tudo, menos o que estiver declarado como público.
+   *
+   * Era uma lista de prefixos a autenticar, e a lista falhava em aberto: a rota
+   * de usuários entrou sem `autenticar()` porque ninguém lembrou de acrescentar
+   * o prefixo. Não deu acesso indevido — o `exigirPapel` quebrou ao ler um
+   * usuário inexistente e devolveu 500 —, mas quem depende de um 500 para não
+   * expor uma rota administrativa está dependendo de sorte.
+   *
+   * Invertido, o esquecimento passa a ser barulhento em vez de silencioso: rota
+   * nova nasce autenticada, e quem quiser abri-la precisa dizer isso aqui.
+   */
+  const PUBLICAS = new Set(['/saude']);
+
+  app.use('*', async (c, next) => {
+    if (PUBLICAS.has(c.req.path)) return next();
+    return autenticar()(c, next);
+  });
 
   // Antes das rotas de contato: `/:id/exportacao` e `/importacoes` precisam
   // casar antes de `/:id`, que aceitaria "importacoes" como identificador.
@@ -68,6 +83,7 @@ export function criarApp() {
   app.route('/templates', rotasTemplates);
   app.route('/listas', rotasListas);
   app.route('/relatorios', rotasRelatorios);
+  app.route('/usuarios', rotasUsuarios);
 
   app.notFound((c) => c.json({ code: 'ROTA_NAO_ENCONTRADA', message: 'Rota inexistente.' }, 404));
 

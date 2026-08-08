@@ -383,6 +383,32 @@ export class CoreStack extends Stack {
     tabelaIdempotencia.grantReadWriteData(fnSender);
     tabelaIdempotencia.grantReadWriteData(fnEventProcessor);
 
+    /**
+     * Gestão de contas do painel — §10.1.
+     *
+     * Enumerada ação por ação, e restrita a este user pool. Faltam de propósito
+     * `AdminSetUserPassword` e `AdminDeleteUser`: a primeira permitiria definir
+     * a senha de outra pessoa a partir da aplicação, e a segunda apagaria a
+     * conta cujo id as campanhas guardam em `criadoPor` e `aprovadoPor` — o
+     * registro de quem aprovou o quê passaria a apontar para o nada. Desativar
+     * resolve o caso real, que é tirar o acesso de alguém.
+     */
+    fnAdminApi.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'cognito-idp:ListUsers',
+          'cognito-idp:AdminCreateUser',
+          'cognito-idp:AdminAddUserToGroup',
+          'cognito-idp:AdminRemoveUserFromGroup',
+          'cognito-idp:AdminListGroupsForUser',
+          'cognito-idp:AdminDisableUser',
+          'cognito-idp:AdminEnableUser',
+        ],
+        resources: [userPool.userPoolArn],
+      }),
+    );
+
     bucketUploads.grantPut(fnAdminApi);
     bucketUploads.grantRead(fnCsvImporter);
     bucketUploads.grantReadWrite(fnAdminApi, 'exports/*');

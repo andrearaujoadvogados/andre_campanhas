@@ -12,6 +12,7 @@ import {
   type Contact,
   type Lista,
   type Template,
+  type UsuarioDoPainel,
   type VersaoTemplate,
 } from '@emailmkt/core';
 import type { MensagemImportacao } from '@emailmkt/contracts';
@@ -66,6 +67,10 @@ interface Estado {
   gravados: string[];
   adicionados: number;
   importacoesPublicadas: MensagemImportacao[];
+  usuarios: UsuarioDoPainel[];
+  papeisDefinidos: { id: string; papel: string }[];
+  convitesReenviados: string[];
+  desabilitados: string[];
 }
 
 let estado: Estado;
@@ -175,6 +180,27 @@ function montarDeps(): Dependencias {
     filaImportacao: {
       publicar: async (m: MensagemImportacao) => void estado.importacoesPublicadas.push(m),
     } as unknown as Dependencias['filaImportacao'],
+    gestaoUsuarios: {
+      listar: async () => estado.usuarios,
+      criar: async (email: string, papel: string) => {
+        const novo = {
+          id: email,
+          sub: `sub-${email}`,
+          email,
+          papeis: [papel],
+          habilitado: true,
+          aguardandoPrimeiroAcesso: true,
+          criadoEm: AGORA,
+        };
+        estado.usuarios.push(novo);
+        return novo;
+      },
+      definirPapel: async (id: string, papel: string) =>
+        void estado.papeisDefinidos.push({ id, papel }),
+      reenviarConvite: async (id: string) => void estado.convitesReenviados.push(id),
+      desabilitar: async (id: string) => void estado.desabilitados.push(id),
+      reabilitar: async () => undefined,
+    } as unknown as Dependencias['gestaoUsuarios'],
     hasher: { hash: (e) => `h:${e.value}` },
     hasherConteudo: new CanonicalContentHasher(),
     clock: { agora: () => AGORA },
@@ -196,6 +222,10 @@ beforeEach(() => {
     gravados: [],
     adicionados: 0,
     importacoesPublicadas: [],
+    usuarios: [],
+    papeisDefinidos: [],
+    convitesReenviados: [] as string[],
+    desabilitados: [] as string[],
   };
   definirDependenciasParaTeste(montarDeps());
 });
@@ -651,5 +681,112 @@ describe('importação de CSV — §11, item 1', () => {
 
     expect(r.status).toBe(403);
     expect(estado.importacoesPublicadas).toHaveLength(0);
+  });
+});
+
+// ── Usuários ─────────────────────────────────────────────────────────────────
+
+describe('usuários do painel', () => {
+  const EU = 'u-1';
+
+  const comoAdmin = (caminho: string, init: RequestInit = {}) =>
+    criarApp().fetch(new Request(`http://local${caminho}`, init), evento(['admin'], EU));
+
+  it('só ADMIN gerencia usuários', async () => {
+    const r = await req('/usuarios');
+    expect(r.status).toBe(403);
+  });
+
+  it('convida sem receber senha alguma', async () => {
+    // O corpo não tem campo de senha: o Cognito gera e envia por e-mail. Se um
+    // dia alguém acrescentar esse campo, este teste é onde a conversa começa.
+    const r = await comoAdmin('/usuarios', json({ email: 'novo@exemplo.com', papel: 'OPERADOR' }));
+    const corpo = (await r.json()) as { email: string; aviso: string };
+
+    expect(r.status).toBe(201);
+    expect(corpo.email).toBe('novo@exemplo.com');
+    expect(corpo.aviso).toMatch(/7 dias/);
+    expect(JSON.stringify(corpo)).not.toMatch(/senha.{0,20}[:=]/i);
+  });
+
+  it('recusa e-mail malformado', async () => {
+    const r = await comoAdmin('/usuarios', json({ email: 'nao-e-email', papel: 'ADMIN' }));
+    expect(r.status).toBe(400);
+  });
+
+  it('impede que o administrador remova o próprio acesso', async () => {
+    // Com poucos admins, quem se rebaixa tranca a conta: não sobraria ninguém
+    // para promover de volta, e o conserto voltaria a ser pelo CloudShell.
+    estado.usuarios = [
+      {
+        id: 'username-do-fernando',
+        sub: EU,
+        email: 'eu@exemplo.com',
+        papeis: ['ADMIN'],
+        habilitado: true,
+        aguardandoPrimeiroAcesso: false,
+        criadoEm: AGORA,
+      },
+    ];
+
+    const r = await comoAdmin(
+      '/usuarios/username-do-fernando/papel',
+      json({ papel: 'OPERADOR' }, 'PUT'),
+    );
+
+    expect(r.status).toBe(409);
+    expect(await r.json()).toMatchObject({ code: 'AUTO_REBAIXAMENTO' });
+    expect(estado.papeisDefinidos).toHaveLength(0);
+  });
+
+  it('compara identidade pelo sub, não pelo username do Cognito', async () => {
+    // Os dois divergem: conta criada pelo console tem username UUID, conta
+    // criada pela API tem o e-mail. Comparar pelo campo errado deixaria alguém
+    // rebaixar a si mesmo — ou impediria de rebaixar outra pessoa.
+    estado.usuarios = [
+      {
+        id: 'outra-pessoa@exemplo.com',
+        sub: 'sub-de-outra-pessoa',
+        email: 'outra-pessoa@exemplo.com',
+        papeis: ['ADMIN'],
+        habilitado: true,
+        aguardandoPrimeiroAcesso: false,
+        criadoEm: AGORA,
+      },
+    ];
+
+    const r = await comoAdmin(
+      '/usuarios/outra-pessoa@exemplo.com/papel',
+      json({ papel: 'OPERADOR' }, 'PUT'),
+    );
+
+    expect(r.status).toBe(200);
+    expect(estado.papeisDefinidos).toEqual([{ id: 'outra-pessoa@exemplo.com', papel: 'OPERADOR' }]);
+  });
+
+  it('desativa em vez de excluir', async () => {
+    estado.usuarios = [
+      {
+        id: 'alguem@exemplo.com',
+        sub: 'sub-alguem',
+        email: 'alguem@exemplo.com',
+        papeis: ['OPERADOR'],
+        habilitado: true,
+        aguardandoPrimeiroAcesso: false,
+        criadoEm: AGORA,
+      },
+    ];
+
+    const r = await comoAdmin('/usuarios/alguem@exemplo.com', { method: 'DELETE' });
+
+    expect(r.status).toBe(200);
+    expect(estado.desabilitados).toEqual(['alguem@exemplo.com']);
+  });
+
+  it('reenvia o convite quando a senha provisória expira', async () => {
+    const r = await comoAdmin('/usuarios/alguem@exemplo.com/convite', { method: 'POST' });
+
+    expect(r.status).toBe(200);
+    expect(estado.convitesReenviados).toEqual(['alguem@exemplo.com']);
   });
 });

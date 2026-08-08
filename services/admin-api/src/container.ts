@@ -10,6 +10,7 @@ import {
   DynamoEventRepository,
   DynamoSendRepository,
   DynamoSuppressionRepository,
+  CognitoGestaoUsuarios,
   S3Storage,
   SecretsProvider,
   Sha256EmailHasher,
@@ -17,6 +18,7 @@ import {
   SystemClock,
   UuidGenerator,
   dynamoDoc,
+  cognito,
   s3,
   secrets,
   sqs,
@@ -26,6 +28,7 @@ import { SFNClient } from '@aws-sdk/client-sfn';
 import { LiquidEmailRenderer } from '@emailmkt/email-render';
 import type {
   AuditLogger,
+  GestaoUsuarios,
   CampaignRepository,
   CampaignScheduler,
   EmailRenderer,
@@ -61,6 +64,7 @@ export interface Dependencias {
   readonly renderer: EmailRenderer;
   readonly supressao: SuppressionRepository;
   readonly auditoria: AuditLogger;
+  readonly gestaoUsuarios: GestaoUsuarios;
   readonly armazenamento: S3Storage;
   readonly filaImportacao: SqsImportQueuePublisher;
   readonly hasher: EmailHasher;
@@ -118,6 +122,7 @@ async function montar(): Promise<Dependencias> {
     renderer: new LiquidEmailRenderer(),
     supressao: new DynamoSuppressionRepository(doc, tabela),
     auditoria: new DynamoAuditLogger(doc, tabela, ids),
+    gestaoUsuarios: new CognitoGestaoUsuarios(cognito(), exigirEnv('USER_POOL_ID')),
     armazenamento: new S3Storage(s3(), exigirEnv('BUCKET_UPLOADS')),
     filaImportacao: new SqsImportQueuePublisher(sqs(), exigirEnv('FILA_IMPORT')),
     hasher,

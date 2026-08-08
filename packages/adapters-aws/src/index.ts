@@ -27,3 +27,4 @@ export * from './storage/s3-storage.js';
 export * from './config/ssm-config-provider.js';
 export * from './scheduler/eventbridge-campaign-scheduler.js';
 export * from './system/index.js';
+export * from './usuarios/cognito-gestao-usuarios.js';

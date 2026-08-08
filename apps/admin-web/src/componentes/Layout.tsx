@@ -6,6 +6,9 @@ const SECOES = [
   { para: '/listas', rotulo: 'Listas' },
   { para: '/contatos', rotulo: 'Contatos' },
   { para: '/templates', rotulo: 'Modelos' },
+  // Só ADMIN. Esconder não é o controle — o controle é o `exigirPapel` da API —,
+  // mas oferecer um link que devolve 403 é pior que não oferecer.
+  { para: '/usuarios', rotulo: 'Usuários', somenteAdmin: true },
 ];
 
 export function Layout({ usuario }: { usuario: Usuario }) {
@@ -19,7 +22,9 @@ export function Layout({ usuario }: { usuario: Usuario }) {
               <span className="ml-2 font-normal text-slate-500">André Araújo Advogados</span>
             </span>
             <nav className="flex gap-1">
-              {SECOES.map((s) => (
+              {SECOES.filter(
+                (s) => s.somenteAdmin !== true || usuario.papeis.includes('ADMIN'),
+              ).map((s) => (
                 <NavLink
                   key={s.para}
                   to={s.para}

@@ -4,6 +4,7 @@ import { SESv2Client } from '@aws-sdk/client-sesv2';
 import { SQSClient } from '@aws-sdk/client-sqs';
 import { S3Client } from '@aws-sdk/client-s3';
 import { SSMClient } from '@aws-sdk/client-ssm';
+import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
 import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 
 /**
@@ -61,6 +62,13 @@ export function ssm(): SSMClient {
   return _ssm;
 }
 
+let _cognito: CognitoIdentityProviderClient | undefined;
+export function cognito(): CognitoIdentityProviderClient {
+  // O user pool vive junto dos dados, em sa-east-1 — ADR-01.
+  _cognito ??= new CognitoIdentityProviderClient({ region: regiaoDados(), ...RETRY });
+  return _cognito;
+}
+
 let _secrets: SecretsManagerClient | undefined;
 export function secrets(): SecretsManagerClient {
   _secrets ??= new SecretsManagerClient({ region: regiaoDados(), ...RETRY });
@@ -75,4 +83,5 @@ export function resetarClientes(): void {
   _s3 = undefined;
   _ssm = undefined;
   _secrets = undefined;
+  _cognito = undefined;
 }

@@ -379,3 +379,53 @@ export interface ListRepository {
   removerContato(tenantId: TenantId, listId: ListId, contactId: ContactId): Promise<void>;
   excluir(tenantId: TenantId, listId: ListId): Promise<void>;
 }
+
+/**
+ * Contas de acesso ao painel.
+ *
+ * Não há domínio aqui — nenhuma regra de negócio do escritório decide quem pode
+ * entrar no sistema, só quem administra. Mesmo assim o port existe, e pela razão
+ * de sempre: o dia em que o Cognito for trocado, ou em que houver um segundo
+ * cliente com diretório próprio, o que muda é o adaptador.
+ *
+ * Senha nenhuma trafega por aqui. Quem cria um usuário informa o e-mail; o
+ * provedor gera a senha provisória e a envia direto para a pessoa. Um método que
+ * aceitasse senha seria um método que a coloca em log, em rastro de erro e no
+ * corpo de uma requisição HTTP.
+ */
+export interface UsuarioDoPainel {
+  /**
+   * O identificador das operações administrativas — o `Username` do Cognito.
+   *
+   * **Não é o mesmo que `sub`.** Conta criada pelo console ganha username UUID;
+   * conta criada com o e-mail como username guarda o e-mail. As duas convivem no
+   * mesmo pool, e usar um no lugar do outro falha só para metade dos usuários —
+   * que é o tipo de bug que passa em teste e aparece em produção.
+   */
+  readonly id: string;
+  /** A identidade que aparece na claim `sub` do token. É por ela que se compara. */
+  readonly sub: string;
+  readonly email: string;
+  readonly papeis: readonly ('ADMIN' | 'OPERADOR')[];
+  readonly habilitado: boolean;
+  /** `true` enquanto a pessoa não concluiu o primeiro acesso. */
+  readonly aguardandoPrimeiroAcesso: boolean;
+  readonly criadoEm: Date;
+}
+
+export interface GestaoUsuarios {
+  listar(): Promise<readonly UsuarioDoPainel[]>;
+  criar(email: string, papel: 'ADMIN' | 'OPERADOR'): Promise<UsuarioDoPainel>;
+  definirPapel(id: string, papel: 'ADMIN' | 'OPERADOR'): Promise<void>;
+  /** Reenvia o convite quando a senha provisória expira — 7 dias, por padrão. */
+  reenviarConvite(id: string): Promise<void>;
+  /**
+   * Desabilita em vez de excluir.
+   *
+   * O `criadoPor` e o `aprovadoPor` das campanhas guardam o id do usuário. Se a
+   * conta desaparecesse, o registro de quem aprovou o quê ficaria apontando para
+   * o nada — e é justamente esse registro que dá sentido à aprovação.
+   */
+  desabilitar(id: string): Promise<void>;
+  reabilitar(id: string): Promise<void>;
+}

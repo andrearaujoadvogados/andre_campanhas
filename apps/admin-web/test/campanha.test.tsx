@@ -37,8 +37,16 @@ function campanha(over: Partial<Campanha> = {}): Campanha {
   };
 }
 
-const ADMIN: Usuario = { email: 'admin@escritorio.com.br', papeis: ['ADMIN'] };
-const OPERADOR: Usuario = { email: 'operador@escritorio.com.br', papeis: ['OPERADOR'] };
+const ADMIN: Usuario = {
+  id: 'admin@escritorio.com.br',
+  email: 'admin@escritorio.com.br',
+  papeis: ['ADMIN'],
+};
+const OPERADOR: Usuario = {
+  id: 'operador@escritorio.com.br',
+  email: 'operador@escritorio.com.br',
+  papeis: ['OPERADOR'],
+};
 
 function montar(usuario: Usuario) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

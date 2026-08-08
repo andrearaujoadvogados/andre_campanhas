@@ -6,6 +6,8 @@ import { configuracao } from './configuracao.js';
 export type Papel = 'ADMIN' | 'OPERADOR';
 
 export interface Usuario {
+  /** A claim `sub`. É por ela que a tela de usuários sabe qual linha é a sua. */
+  readonly id: string;
   readonly email: string;
   readonly papeis: readonly Papel[];
 }
@@ -66,6 +68,7 @@ export function useSessao(): { estado: EstadoSessao; recarregar: () => void } {
           definir({
             situacao: 'autenticado',
             usuario: {
+              id: typeof claims['sub'] === 'string' ? claims['sub'] : '',
               email: typeof claims['email'] === 'string' ? claims['email'] : '',
               papeis: lerPapeis(claims as Record<string, unknown>),
             },
