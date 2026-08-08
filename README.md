@@ -6,7 +6,9 @@ A arquitetura completa está em **[docs/ARQUITETURA.md](docs/ARQUITETURA.md)** �
 
 ## Estado atual
 
-**Scaffolding.** A estrutura, o domínio e as stacks existem; os adaptadores AWS e a interface ainda não. Nada foi implantado na AWS.
+**No ar.** Seis stacks em três regiões, deploy automático a cada push na `main`, painel em <https://campanhas.andrearaujoadvogados.com.br>.
+
+Falta uma coisa para a primeira campanha: importar os contatos com vínculo classificado. O SES ainda está em sandbox — até a AWS liberar produção, só é possível enviar para endereços verificados. O estado detalhado fica em [docs/PENDENCIAS.md](docs/PENDENCIAS.md).
 
 ## Começando
 
@@ -45,6 +47,8 @@ pnpm --filter @emailmkt/admin-web dev
 ```
 
 O painel usa o **ID token** do Cognito, não o access token — o authorizer do HTTP API valida `aud`, e só o ID token o carrega.
+
+Em produção esses três valores **não** ficam no bundle: a stack Web escreve um `config.json` no bucket, com as saídas reais, e o painel o lê ao abrir. É o que permite compilar antes de implantar — e, com isso, o CDK publicar o painel sem que o pipeline precise de permissão para ler o CloudFormation. O `.env.local` existe só para o desenvolvimento local.
 
 ## Regiões
 
