@@ -1,15 +1,37 @@
 import type { ReactNode } from 'react';
 import { FalhaApi } from '../lib/api.js';
 
+/**
+ * Componentes compartilhados do painel.
+ *
+ * Seguem o design system do site do escritório — as cores e a tipografia estão
+ * em `index.css`, com os mesmos nomes que o site usa. O que **não** é herdado é
+ * a densidade: o site respira porque é peça de comunicação; isto é ferramenta de
+ * trabalho, usada por horas seguidas, e espaço demais vira rolagem demais.
+ *
+ * Três regras que valem para tudo aqui:
+ *
+ * 1. **Alvo de toque de 44px** em qualquer coisa clicável. É o mínimo que o
+ *    WCAG 2.1 pede (2.5.5) e a diferença entre usável e frustrante no celular.
+ * 2. **Cor nunca é o único sinal.** Selo tem texto, erro tem ícone e papel, campo
+ *    obrigatório tem asterisco *e* `required`. Quem não distingue vermelho de
+ *    verde — 8% dos homens — precisa da mesma informação.
+ * 3. **O foco é visível.** O anel está declarado uma vez no `index.css`, e não
+ *    se remove localmente.
+ */
+
 // ── Botão ────────────────────────────────────────────────────────────────────
 
-type VarianteBotao = 'primario' | 'secundario' | 'perigo';
+type VarianteBotao = 'primario' | 'secundario' | 'perigo' | 'discreto';
 
 const ESTILO_BOTAO: Record<VarianteBotao, string> = {
-  primario: 'bg-slate-900 text-white hover:bg-slate-700 disabled:bg-slate-400',
+  primario: 'bg-ink text-paper-light hover:bg-ink/90 disabled:bg-ink/40',
   secundario:
-    'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 disabled:text-slate-400',
-  perigo: 'bg-red-700 text-white hover:bg-red-800 disabled:bg-red-300',
+    'bg-paper-light text-ink border border-line hover:bg-accent-mist disabled:text-ink-suave/50',
+  // Vinho é a cor da marca e, aqui, a de ação sem volta. Não compete com o
+  // vermelho de erro, que é outro tom e outro papel.
+  perigo: 'bg-wine text-paper-light hover:bg-wine-escuro disabled:bg-wine/40',
+  discreto: 'text-ink-suave hover:bg-accent-mist hover:text-ink',
 };
 
 export function Botao({
@@ -22,13 +44,24 @@ export function Botao({
   carregando?: boolean;
   children: ReactNode;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const desabilitado = resto.disabled === true || carregando;
+
   return (
     <button
       type="button"
       {...resto}
-      disabled={resto.disabled === true || carregando}
-      className={`rounded-md px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed ${ESTILO_BOTAO[variante]} ${resto.className ?? ''}`}
+      disabled={desabilitado}
+      // Anuncia a espera a quem usa leitor de tela — trocar o rótulo por
+      // "Aguarde…" sozinho não informa que a ação está em andamento.
+      aria-busy={carregando}
+      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed ${ESTILO_BOTAO[variante]} ${resto.className ?? ''}`}
     >
+      {carregando && (
+        <span
+          aria-hidden="true"
+          className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+        />
+      )}
       {carregando ? 'Aguarde…' : children}
     </button>
   );
@@ -36,6 +69,11 @@ export function Botao({
 
 // ── Campo de formulário ──────────────────────────────────────────────────────
 
+/**
+ * O `<label>` envolve o controle, o que já cria a associação exigida pelo WCAG
+ * sem depender de `id` — e `id` gerado à mão é a fonte clássica de rótulo
+ * apontando para o campo errado depois de um copiar e colar.
+ */
 export function Campo({
   rotulo,
   ajuda,
@@ -51,14 +89,21 @@ export function Campo({
 }) {
   return (
     <label className="block">
-      <span className="text-sm font-medium text-slate-800">
+      <span className="text-sm font-medium text-ink">
         {rotulo}
-        {obrigatorio && <span className="ml-1 text-red-700">*</span>}
+        {obrigatorio && (
+          <>
+            <span aria-hidden="true" className="ml-1 text-wine">
+              *
+            </span>
+            <span className="sr-only"> (obrigatório)</span>
+          </>
+        )}
       </span>
-      {ajuda !== undefined && <span className="mt-0.5 block text-xs text-slate-500">{ajuda}</span>}
-      <div className="mt-1">{children}</div>
+      {ajuda !== undefined && <span className="mt-0.5 block text-xs text-ink-suave">{ajuda}</span>}
+      <div className="mt-1.5">{children}</div>
       {erro !== undefined && (
-        <span role="alert" className="mt-1 block text-xs font-medium text-red-700">
+        <span role="alert" className="mt-1.5 block text-xs font-medium text-erro">
           {erro}
         </span>
       )}
@@ -67,7 +112,7 @@ export function Campo({
 }
 
 export const classeEntrada =
-  'w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900';
+  'w-full min-h-11 rounded-md border border-line bg-paper-light px-3 py-2 text-sm text-ink placeholder:text-ink-suave/60 focus:border-gold focus:outline-none';
 
 // ── Aviso ────────────────────────────────────────────────────────────────────
 
@@ -90,12 +135,15 @@ export function Aviso({
 
   const estilo =
     tom === 'alerta'
-      ? 'border-amber-300 bg-amber-50 text-amber-900'
-      : 'border-sky-300 bg-sky-50 text-sky-900';
+      ? 'border-alerta/30 bg-alerta-fundo text-alerta'
+      : 'border-gold/30 bg-accent-mist text-gold';
 
   return (
-    <div role="status" className={`rounded-md border px-4 py-3 text-sm ${estilo}`}>
-      {texto}
+    <div role="status" className={`flex gap-2.5 rounded-md border px-4 py-3 text-sm ${estilo}`}>
+      <span aria-hidden="true" className="mt-px font-semibold">
+        {tom === 'alerta' ? '!' : 'i'}
+      </span>
+      <p>{texto}</p>
     </div>
   );
 }
@@ -109,14 +157,22 @@ export function ErroCaixa({ erro }: { erro: unknown }) {
   const mensagem = falha?.message ?? (erro instanceof Error ? erro.message : String(erro));
 
   return (
-    <div role="alert" className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm">
-      <p className="font-medium text-red-900">{mensagem}</p>
-      {falha?.erro.correlationId !== undefined && (
-        <p className="mt-1 text-xs text-red-800">
-          {/* Sem este código, um chamado de suporte vira adivinhação. */}
-          Código para o suporte: <code>{falha.erro.correlationId}</code>
-        </p>
-      )}
+    <div
+      role="alert"
+      className="flex gap-2.5 rounded-md border border-erro/30 bg-erro-fundo px-4 py-3 text-sm"
+    >
+      <span aria-hidden="true" className="mt-px font-semibold text-erro">
+        !
+      </span>
+      <div>
+        <p className="font-medium text-erro">{mensagem}</p>
+        {falha?.erro.correlationId !== undefined && (
+          <p className="mt-1 text-xs text-erro/80">
+            {/* Sem este código, um chamado de suporte vira adivinhação. */}
+            Código para o suporte: <code className="font-mono">{falha.erro.correlationId}</code>
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -126,17 +182,19 @@ export function ErroCaixa({ erro }: { erro: unknown }) {
 type TomSelo = 'neutro' | 'positivo' | 'atencao' | 'critico';
 
 const ESTILO_SELO: Record<TomSelo, string> = {
-  neutro: 'bg-slate-100 text-slate-700',
-  positivo: 'bg-emerald-100 text-emerald-800',
-  atencao: 'bg-amber-100 text-amber-900',
-  critico: 'bg-red-100 text-red-900',
+  neutro: 'bg-accent-mist text-gold',
+  positivo: 'bg-sucesso-fundo text-sucesso',
+  atencao: 'bg-alerta-fundo text-alerta',
+  critico: 'bg-erro-fundo text-erro',
 };
 
 export function Selo({ tom = 'neutro', children }: { tom?: TomSelo; children: ReactNode }) {
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${ESTILO_SELO[tom]}`}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${ESTILO_SELO[tom]}`}
     >
+      {/* O ponto reforça o estado sem depender de distinguir os tons. */}
+      <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
       {children}
     </span>
   );
@@ -160,19 +218,52 @@ export function tomDoStatusContato(status: string): TomSelo {
 
 export function Cartao({ titulo, children }: { titulo?: string; children: ReactNode }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-md border border-line bg-paper-light p-4 sm:p-5">
       {titulo !== undefined && (
-        <h2 className="mb-4 text-base font-semibold text-slate-900">{titulo}</h2>
+        <h2 className="mb-4 font-display text-lg font-medium text-ink">{titulo}</h2>
       )}
       {children}
     </section>
   );
 }
 
+/** Título de página, com a serifada do escritório. */
+export function TituloPagina({ children, acao }: { children: ReactNode; acao?: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <h1 className="font-display text-2xl font-medium tracking-tight text-ink">{children}</h1>
+      {acao}
+    </div>
+  );
+}
+
+/**
+ * Tabela que não estoura no celular.
+ *
+ * A rolagem horizontal fica **dentro** deste contêiner, e não no corpo da
+ * página: página que rola de lado torna toda a navegação escorregadia, e o
+ * usuário perde a coluna da esquerda sem entender por quê.
+ */
+export function TabelaRolavel({ children }: { children: ReactNode }) {
+  return (
+    <div className="-mx-4 overflow-x-auto sm:mx-0">
+      <div className="inline-block min-w-full px-4 align-middle sm:px-0">{children}</div>
+    </div>
+  );
+}
+
 export function Vazio({ mensagem }: { mensagem: string }) {
-  return <p className="py-8 text-center text-sm text-slate-500">{mensagem}</p>;
+  return (
+    <p className="py-10 text-center text-sm text-ink-suave" role="status">
+      {mensagem}
+    </p>
+  );
 }
 
 export function Carregando() {
-  return <p className="py-8 text-center text-sm text-slate-500">Carregando…</p>;
+  return (
+    <p className="py-10 text-center text-sm text-ink-suave" role="status" aria-live="polite">
+      Carregando…
+    </p>
+  );
 }

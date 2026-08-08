@@ -4,7 +4,15 @@ import { Link } from 'react-router-dom';
 import { FalhaApi, api } from '../lib/api.js';
 import { enviarParaS3, lerColunas, sha256Base64 } from '../lib/importacao.js';
 import { ROTULO_RELACIONAMENTO } from '../lib/formato.js';
-import { Aviso, Botao, Campo, Cartao, ErroCaixa, classeEntrada } from '../componentes/base.tsx';
+import {
+  Aviso,
+  Botao,
+  Campo,
+  Cartao,
+  ErroCaixa,
+  TituloPagina,
+  classeEntrada,
+} from '../componentes/base.tsx';
 
 interface RespostaUpload {
   importacaoId: string;
@@ -89,11 +97,15 @@ export function ImportarContatos() {
 
   return (
     <div className="space-y-6">
-      <Link to="/contatos" className="text-sm text-slate-500 hover:underline">
+      {/* Alvo de 44px: link solto de navegação, sem o <Botao> para garantir isso. */}
+      <Link
+        to="/contatos"
+        className="inline-flex min-h-11 items-center text-sm text-ink-suave hover:text-ink hover:underline"
+      >
         ← Voltar
       </Link>
 
-      <h1 className="text-xl font-semibold text-slate-900">Importar contatos</h1>
+      <TituloPagina>Importar contatos</TituloPagina>
 
       <Cartao titulo="Arquivo">
         <Campo
@@ -101,11 +113,16 @@ export function ImportarContatos() {
           ajuda="A primeira linha precisa ser o cabeçalho das colunas."
           obrigatorio
         >
+          {/**
+           * O botão do seletor de arquivo é desenhado pelo navegador, e sai fora
+           * do design system se não for estilizado à mão pelo `file:` — inclusive
+           * na altura, que sem `min-h-11` fica bem abaixo do alvo de toque.
+           */}
           <input
             type="file"
             accept=".csv,text/csv"
             onChange={(e) => void escolherArquivo(e.target.files?.[0] ?? null)}
-            className="block w-full text-sm text-slate-700 file:mr-4 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-4 file:py-2 file:text-sm file:font-medium"
+            className="block w-full text-sm text-ink-suave file:mr-4 file:min-h-11 file:cursor-pointer file:rounded-md file:border file:border-line file:bg-paper-light file:px-4 file:py-2 file:text-sm file:font-medium file:text-ink hover:file:bg-accent-mist"
           />
         </Campo>
 
@@ -121,7 +138,9 @@ export function ImportarContatos() {
 
       {colunas.length > 0 && (
         <Cartao titulo="De qual coluna vem cada campo">
-          <div className="grid gap-4 sm:grid-cols-2">
+          {/* Empilha no celular. O respiro vertical é maior que o horizontal
+              porque, empilhado, é ele que separa um campo do outro. */}
+          <div className="grid gap-x-4 gap-y-5 sm:grid-cols-2">
             <Campo rotulo="E-mail" obrigatorio erro={erros['mapeamentoColunas.email']}>
               <select
                 value={colunaEmail}
@@ -199,7 +218,7 @@ export function ImportarContatos() {
       )}
 
       <Cartao titulo="Base legal">
-        <div className="space-y-4">
+        <div className="space-y-5">
           {/**
            * A origem declarada não é burocracia de formulário: é a evidência que
            * sustenta o legítimo interesse do lote inteiro (§10.2). Ela fica
@@ -249,12 +268,17 @@ export function ImportarContatos() {
             />
           )}
 
-          <label className="flex items-start gap-2 text-sm text-slate-700">
+          {/**
+           * O rótulo inteiro é a área de clique: a caixa sozinha tem 20px, longe
+           * dos 44px que o WCAG pede. Com o <label> envolvendo o texto, o alvo
+           * passa a ser o bloco inteiro.
+           */}
+          <label className="flex min-h-11 cursor-pointer items-start gap-3 py-1 text-sm text-ink">
             <input
               type="checkbox"
               checked={confirmou}
               onChange={(e) => definirConfirmou(e.target.checked)}
-              className="mt-0.5"
+              className="mt-0.5 size-5 shrink-0 accent-ink"
             />
             <span>
               Confirmo que esta lista não foi comprada nem obtida de terceiros, e que estas pessoas
@@ -267,13 +291,25 @@ export function ImportarContatos() {
       <div className="space-y-3">
         <ErroCaixa erro={importar.error} />
 
+        {/**
+         * Botão apagado é só cor, e cor sozinha não diz o que falta preencher —
+         * ainda mais num formulário longo, em que o campo pendente pode estar
+         * fora da tela. O texto lista as mesmas quatro condições de `pronto`.
+         */}
+        {!pronto && (
+          <p className="text-sm text-ink-suave">
+            Para importar: escolha o arquivo, indique a coluna de e-mail, informe de onde vieram os
+            contatos e marque a confirmação acima.
+          </p>
+        )}
+
         <Botao onClick={() => importar.mutate()} disabled={!pronto} carregando={importar.isPending}>
           Importar
         </Botao>
 
         {resultado !== null && (
           <Cartao titulo="Importação enviada">
-            <p className="text-sm text-slate-700">
+            <p className="text-sm text-ink-suave">
               O arquivo entrou na fila de processamento. Contatos grandes levam alguns minutos, e os
               que já pediram descadastro são descartados automaticamente.
             </p>

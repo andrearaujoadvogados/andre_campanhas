@@ -11,6 +11,8 @@ import {
   Cartao,
   ErroCaixa,
   Selo,
+  TabelaRolavel,
+  TituloPagina,
   Vazio,
   classeEntrada,
   tomDoStatusContato,
@@ -59,10 +61,12 @@ export function Listas() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Listas</h1>
+      <TituloPagina>Listas</TituloPagina>
 
       <Cartao titulo="Nova lista">
-        <div className="flex items-end gap-3">
+        {/* No celular o campo e o botão empilham: lado a lado, o "Criar" ficaria
+            estreito demais para acertar com o dedo. */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1">
             <Campo rotulo="Nome" obrigatorio>
               <input
@@ -90,17 +94,23 @@ export function Listas() {
         <ErroCaixa erro={listas.error} />
         {listas.data?.itens.length === 0 && <Vazio mensagem="Nenhuma lista criada ainda." />}
 
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-line">
           {listas.data?.itens.map((l) => (
-            <li key={l.listId} className="flex items-center justify-between py-3">
-              <div>
+            <li
+              key={l.listId}
+              className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2"
+            >
+              {/* O nome da lista é digitado pelo operador: sem `min-w-0` e quebra
+                  de palavra, um nome longo empurra a página inteira para o lado
+                  no celular. */}
+              <div className="min-w-0">
                 <Link
                   to={`/listas/${l.listId}`}
-                  className="font-medium text-slate-900 hover:underline"
+                  className="inline-flex min-h-11 items-center font-medium break-words text-ink hover:underline"
                 >
                   {l.nome}
                 </Link>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-ink-suave">
                   {/* "Aproximado" não é modéstia: o número exato só existe depois
                       de aplicar supressão e elegibilidade. */}
                   ~{numero(l.totalContatosAproximado)} contatos · atualizada em{' '}
@@ -130,7 +140,10 @@ export function ListaDetalhe() {
 
   return (
     <div className="space-y-6">
-      <Link to="/listas" className="text-sm text-slate-500 hover:underline">
+      <Link
+        to="/listas"
+        className="inline-flex min-h-11 items-center text-sm text-ink-suave hover:text-ink hover:underline"
+      >
         ← Listas
       </Link>
 
@@ -147,27 +160,29 @@ export function ListaDetalhe() {
 
         {previa.data !== undefined && (
           <>
-            <div className="flex gap-8">
+            <div className="flex flex-wrap gap-x-10 gap-y-4">
               <div>
-                <p className="text-3xl font-semibold text-emerald-700">
+                <p className="text-3xl font-semibold text-sucesso">
                   {numero(previa.data.receberao)}
                 </p>
-                <p className="text-sm text-slate-600">vão receber</p>
+                <p className="text-sm text-ink-suave">vão receber</p>
               </div>
               <div>
-                <p className="text-3xl font-semibold text-slate-400">
+                {/* Os dois números não se distinguem só pelo tom: cada um traz o
+                    próprio rótulo embaixo. */}
+                <p className="text-3xl font-semibold text-ink-suave">
                   {numero(previa.data.naoReceberao)}
                 </p>
-                <p className="text-sm text-slate-600">não vão receber</p>
+                <p className="text-sm text-ink-suave">não vão receber</p>
               </div>
             </div>
 
             {previa.data.explicacoes.length > 0 && (
-              <ul className="mt-5 space-y-2 border-t border-slate-100 pt-4">
+              <ul className="mt-5 space-y-2 border-t border-line pt-4">
                 {previa.data.explicacoes.map((e) => (
                   <li key={e.motivo} className="text-sm">
-                    <span className="font-medium text-slate-900">{numero(e.quantidade)}</span>
-                    <span className="text-slate-600"> — {e.explicacao}</span>
+                    <span className="font-medium text-ink">{numero(e.quantidade)}</span>
+                    <span className="text-ink-suave"> — {e.explicacao}</span>
                   </li>
                 ))}
               </ul>
@@ -188,39 +203,69 @@ export function ListaDetalhe() {
       <Cartao titulo="Contatos da lista">
         {contatos.isLoading && <Carregando />}
         <ErroCaixa erro={contatos.error} />
-        {contatos.data?.itens.length === 0 && <Vazio mensagem="Lista sem contatos." />}
-
-        <table className="w-full text-sm">
-          <tbody className="divide-y divide-slate-100">
-            {contatos.data?.itens.map((c) => (
-              <tr key={c.contactId}>
-                <td className="py-2">
-                  <Link to={`/contatos/${c.contactId}`} className="hover:underline">
-                    {c.nome ?? c.email}
-                  </Link>
-                  {c.nome !== undefined && (
-                    <span className="ml-2 text-xs text-slate-500">{c.email}</span>
-                  )}
-                </td>
-                <td className="py-2">
-                  <Selo tom={tomDoStatusContato(c.status)}>
-                    {ROTULO_STATUS_CONTATO[c.status] ?? c.status}
-                  </Selo>
-                </td>
-                <td className="py-2 text-slate-600">
-                  {ROTULO_RELACIONAMENTO[c.relacionamento] ?? c.relacionamento}
-                </td>
-                <td className="py-2 text-right">
-                  {c.elegivelParaCampanha ? (
-                    <Selo tom="positivo">Apto</Selo>
-                  ) : (
-                    <Selo tom="atencao">Não recebe</Selo>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/* A tabela só aparece quando há linhas. Um cabeçalho "Contato · Situação ·
+            Vínculo · Recebe?" pairando sobre o vazio — ou sobre o "Carregando…" —
+            promete um conteúdo que não existe, e o leitor de tela anuncia uma
+            tabela de zero linhas. */}
+        {contatos.data !== undefined &&
+          (contatos.data.itens.length === 0 ? (
+            <Vazio mensagem="Lista sem contatos." />
+          ) : (
+            <TabelaRolavel>
+              <table className="w-full min-w-[34rem] text-sm">
+                {/* Sem cabeçalho, o leitor de tela anuncia "Ativo" e "Cliente" sem
+                    dizer de que coluna vieram. */}
+                <thead>
+                  <tr className="border-b border-line text-left text-xs font-medium text-ink-suave">
+                    <th scope="col" className="py-2 pr-3">
+                      Contato
+                    </th>
+                    <th scope="col" className="py-2 pr-3">
+                      Situação
+                    </th>
+                    <th scope="col" className="py-2 pr-3">
+                      Vínculo
+                    </th>
+                    <th scope="col" className="py-2 text-right">
+                      Recebe?
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {contatos.data.itens.map((c) => (
+                    <tr key={c.contactId}>
+                      <td className="py-2 pr-3">
+                        <Link
+                          to={`/contatos/${c.contactId}`}
+                          className="inline-flex min-h-11 items-center text-ink hover:underline"
+                        >
+                          {c.nome ?? c.email}
+                        </Link>
+                        {c.nome !== undefined && (
+                          <span className="ml-2 text-xs text-ink-suave">{c.email}</span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3">
+                        <Selo tom={tomDoStatusContato(c.status)}>
+                          {ROTULO_STATUS_CONTATO[c.status] ?? c.status}
+                        </Selo>
+                      </td>
+                      <td className="py-2 pr-3 text-ink-suave">
+                        {ROTULO_RELACIONAMENTO[c.relacionamento] ?? c.relacionamento}
+                      </td>
+                      <td className="py-2 text-right">
+                        {c.elegivelParaCampanha ? (
+                          <Selo tom="positivo">Apto</Selo>
+                        ) : (
+                          <Selo tom="atencao">Não recebe</Selo>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TabelaRolavel>
+          ))}
       </Cartao>
     </div>
   );

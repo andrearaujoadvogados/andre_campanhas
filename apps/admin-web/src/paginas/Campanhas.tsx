@@ -12,6 +12,7 @@ import {
   Cartao,
   ErroCaixa,
   Selo,
+  TituloPagina,
   Vazio,
   classeEntrada,
   tomDoStatusCampanha,
@@ -61,18 +62,21 @@ export function Campanhas() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Campanhas</h1>
+      <TituloPagina>Campanhas</TituloPagina>
 
-      <div className="flex flex-wrap gap-1">
+      <div role="group" aria-label="Filtrar por situação" className="flex flex-wrap gap-1.5">
         {FILTROS.map((f) => (
           <button
             key={f.valor}
             type="button"
+            // Qual filtro está ativo não pode ser só o contraste do fundo:
+            // `aria-pressed` diz o mesmo a quem usa leitor de tela.
+            aria-pressed={status === f.valor}
             onClick={() => definirStatus(f.valor)}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+            className={`inline-flex min-h-11 items-center rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
               status === f.valor
-                ? 'bg-slate-900 text-white'
-                : 'bg-white text-slate-600 hover:bg-slate-100'
+                ? 'border-ink bg-ink text-paper-light'
+                : 'border-line bg-paper-light text-ink-suave hover:bg-accent-mist hover:text-ink'
             }`}
           >
             {f.rotulo}
@@ -101,17 +105,20 @@ export function Campanhas() {
           />
         )}
 
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-line">
           {campanhas.data?.itens.map((c) => (
-            <li key={c.campaignId} className="flex items-center justify-between py-3">
-              <div>
+            <li
+              key={c.campaignId}
+              className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2"
+            >
+              <div className="min-w-0">
                 <Link
                   to={`/campanhas/${c.campaignId}`}
-                  className="font-medium text-slate-900 hover:underline"
+                  className="inline-flex min-h-11 items-center font-medium break-words text-ink hover:underline"
                 >
                   {c.nome}
                 </Link>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-ink-suave">
                   {c.agendadaPara === undefined
                     ? `criada em ${dataHora(c.criadoEm)}`
                     : `agendada para ${dataHora(c.agendadaPara)}`}
@@ -160,43 +167,55 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
 
   return (
     <div className="space-y-6">
-      <Link to="/campanhas" className="text-sm text-slate-500 hover:underline">
-        ← Campanhas
+      <Link
+        to="/campanhas"
+        className="inline-flex min-h-11 items-center text-sm text-ink-suave hover:text-ink hover:underline"
+      >
+        <span aria-hidden="true" className="mr-1">
+          ←
+        </span>
+        Campanhas
       </Link>
 
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">{c.nome}</h1>
-        <Selo tom={tomDoStatusCampanha(c.status)}>
-          {ROTULO_STATUS_CAMPANHA[c.status] ?? c.status}
-        </Selo>
-      </div>
+      <TituloPagina
+        acao={
+          <Selo tom={tomDoStatusCampanha(c.status)}>
+            {ROTULO_STATUS_CAMPANHA[c.status] ?? c.status}
+          </Selo>
+        }
+      >
+        {c.nome}
+      </TituloPagina>
 
       <Aviso texto={avisoAtual} tom="alerta" />
       <ErroCaixa erro={acao.error} />
 
       <Cartao titulo="Situação">
-        <dl className="grid grid-cols-2 gap-4 text-sm">
+        <dl className="grid gap-4 text-sm sm:grid-cols-2">
           <div>
-            <dt className="text-slate-500">Modelo</dt>
-            <dd>
-              {c.templateId} <span className="text-slate-500">versão {c.templateVersao}</span>
+            <dt className="text-ink-suave">Modelo</dt>
+            <dd className="text-ink">
+              {c.templateId} <span className="text-ink-suave">versão {c.templateVersao}</span>
             </dd>
           </div>
           <div>
-            <dt className="text-slate-500">Lista</dt>
+            <dt className="text-ink-suave">Lista</dt>
             <dd>
-              <Link to={`/listas/${c.listId}`} className="hover:underline">
+              <Link
+                to={`/listas/${c.listId}`}
+                className="inline-flex min-h-11 items-center text-ink hover:underline"
+              >
                 {c.listId}
               </Link>
             </dd>
           </div>
           <div>
-            <dt className="text-slate-500">Agendada para</dt>
-            <dd>{dataHora(c.agendadaPara)}</dd>
+            <dt className="text-ink-suave">Agendada para</dt>
+            <dd className="text-ink">{dataHora(c.agendadaPara)}</dd>
           </div>
           <div>
-            <dt className="text-slate-500">Aprovação</dt>
-            <dd>
+            <dt className="text-ink-suave">Aprovação</dt>
+            <dd className="text-ink">
               {c.aprovacao === null
                 ? '—'
                 : `${c.aprovacao.aprovadoPor} em ${dataHora(c.aprovacao.aprovadoEm)}`}
@@ -258,7 +277,7 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
         </div>
 
         {(c.status === 'APROVADA' || c.status === 'AGENDADA') && (
-          <div className="mt-5 flex items-end gap-3 border-t border-slate-100 pt-4">
+          <div className="mt-5 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-end">
             <div className="flex-1">
               <Campo rotulo="Agendar para" ajuda="Horário de Brasília.">
                 <input
@@ -286,8 +305,14 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
         )}
       </Cartao>
 
-      <Link to={`/relatorios/${c.campaignId}`} className="inline-block text-sm hover:underline">
-        Ver relatório desta campanha →
+      <Link
+        to={`/relatorios/${c.campaignId}`}
+        className="inline-flex min-h-11 items-center text-sm text-ink hover:underline"
+      >
+        Ver relatório desta campanha
+        <span aria-hidden="true" className="ml-1">
+          →
+        </span>
       </Link>
     </div>
   );

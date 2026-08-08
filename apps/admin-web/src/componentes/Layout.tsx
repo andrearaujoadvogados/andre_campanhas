@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { useState } from 'react';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { sair, type Usuario } from '../lib/auth.js';
 
 const SECOES = [
@@ -11,55 +12,129 @@ const SECOES = [
   { para: '/usuarios', rotulo: 'Usuários', somenteAdmin: true },
 ];
 
+const classeLink = ({ isActive }: { isActive: boolean }): string =>
+  `flex min-h-11 items-center rounded-md px-3 text-sm font-medium transition-colors ${
+    isActive ? 'bg-ink text-paper-light' : 'text-ink-suave hover:bg-accent-mist hover:text-ink'
+  }`;
+
 export function Layout({ usuario }: { usuario: Usuario }) {
+  const [menuAberto, definirMenuAberto] = useState(false);
+  const local = useLocation();
+  const ehAdmin = usuario.papeis.includes('ADMIN');
+  const visiveis = SECOES.filter((s) => s.somenteAdmin !== true || ehAdmin);
+
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-8">
-            <span className="text-sm font-semibold text-slate-900">
+    <div className="min-h-screen bg-paper">
+      {/**
+       * Primeiro elemento focável da página.
+       *
+       * Sem ele, quem navega por teclado percorre os cinco links do menu a cada
+       * troca de tela antes de chegar ao conteúdo. Fica invisível até receber
+       * foco — exigência 2.4.1 do WCAG.
+       */}
+      <a
+        href="#conteudo"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-ink focus:px-4 focus:py-2 focus:text-sm focus:text-paper-light"
+      >
+        Ir para o conteúdo
+      </a>
+
+      <header className="border-b border-line bg-paper-light">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+          <div className="flex items-center gap-6 lg:gap-8">
+            <span className="font-display text-base font-medium text-ink">
               Campanhas
-              <span className="ml-2 font-normal text-slate-500">André Araújo Advogados</span>
+              <span className="ml-2 hidden font-sans text-sm font-normal text-ink-suave sm:inline">
+                André Araújo Advogados
+              </span>
             </span>
-            <nav className="flex gap-1">
-              {SECOES.filter(
-                (s) => s.somenteAdmin !== true || usuario.papeis.includes('ADMIN'),
-              ).map((s) => (
-                <NavLink
-                  key={s.para}
-                  to={s.para}
-                  className={({ isActive }) =>
-                    `rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                      isActive
-                        ? 'bg-slate-900 text-white'
-                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                    }`
-                  }
-                >
+
+            <nav aria-label="Seções do painel" className="hidden gap-1 md:flex">
+              {visiveis.map((s) => (
+                <NavLink key={s.para} to={s.para} className={classeLink}>
                   {s.rotulo}
                 </NavLink>
               ))}
             </nav>
           </div>
 
-          <div className="flex items-center gap-3 text-sm">
-            <span className="text-slate-600">{usuario.email}</span>
-            {/* O papel fica visível: evita a dúvida "por que não vejo esse botão?" */}
-            <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-              {usuario.papeis.includes('ADMIN') ? 'Administrador' : 'Operador'}
-            </span>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="hidden text-right sm:block">
+              <p className="text-sm text-ink">{usuario.email}</p>
+              {/* O papel fica visível: evita a dúvida "por que não vejo esse botão?" */}
+              <p className="text-xs text-ink-suave">{ehAdmin ? 'Administrador' : 'Operador'}</p>
+            </div>
+
             <button
               type="button"
               onClick={() => void sair()}
-              className="text-slate-500 underline hover:text-slate-900"
+              className="hidden min-h-11 items-center rounded-md border border-line px-3 text-sm font-medium text-ink-suave transition-colors hover:bg-accent-mist hover:text-ink sm:inline-flex"
             >
               Sair
             </button>
+
+            <button
+              type="button"
+              onClick={() => definirMenuAberto((v) => !v)}
+              aria-expanded={menuAberto}
+              aria-controls="menu-movel"
+              className="inline-flex size-11 items-center justify-center rounded-md text-ink md:hidden"
+            >
+              <span className="sr-only">{menuAberto ? 'Fechar menu' : 'Abrir menu'}</span>
+              <span aria-hidden="true" className="text-lg">
+                {menuAberto ? '✕' : '☰'}
+              </span>
+            </button>
           </div>
         </div>
+
+        {menuAberto && (
+          <nav
+            id="menu-movel"
+            aria-label="Seções do painel"
+            className="border-t border-line px-4 py-2 md:hidden"
+          >
+            <div className="flex flex-col gap-1">
+              {visiveis.map((s) => (
+                <NavLink
+                  key={s.para}
+                  to={s.para}
+                  className={classeLink}
+                  // Fecha ao navegar: no celular o menu cobriria a tela recém-aberta.
+                  onClick={() => definirMenuAberto(false)}
+                >
+                  {s.rotulo}
+                </NavLink>
+              ))}
+            </div>
+            <div className="mt-2 border-t border-line pt-2">
+              <p className="px-3 text-sm text-ink">{usuario.email}</p>
+              <p className="px-3 text-xs text-ink-suave">
+                {ehAdmin ? 'Administrador' : 'Operador'}
+              </p>
+              <button
+                type="button"
+                onClick={() => void sair()}
+                className="mt-1 flex min-h-11 w-full items-center rounded-md px-3 text-sm font-medium text-ink-suave hover:bg-accent-mist hover:text-ink"
+              >
+                Sair
+              </button>
+            </div>
+          </nav>
+        )}
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 py-8">
+      {/**
+       * `key` no caminho faz o React remontar o conteúdo a cada navegação, o que
+       * devolve o foco ao topo. Sem isso, quem usa leitor de tela troca de tela e
+       * continua ouvindo a partir da posição da anterior.
+       */}
+      <main
+        id="conteudo"
+        key={local.pathname}
+        tabIndex={-1}
+        className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8"
+      >
         <Outlet />
       </main>
     </div>

@@ -2,7 +2,14 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { ROTULO_STATUS_CAMPANHA, numero, percentual } from '../lib/formato.js';
-import { Carregando, Cartao, ErroCaixa, Selo } from '../componentes/base.tsx';
+import {
+  Carregando,
+  Cartao,
+  ErroCaixa,
+  Selo,
+  TituloPagina,
+  tomDoStatusCampanha,
+} from '../componentes/base.tsx';
 
 interface Relatorio {
   campaignId: string;
@@ -20,6 +27,26 @@ interface Relatorio {
 }
 
 const NIVEL_TOM = { OK: 'positivo', ATENCAO: 'atencao', CRITICO: 'critico' } as const;
+
+const NIVEL_CAIXA = {
+  OK: 'border-line bg-paper-light',
+  ATENCAO: 'border-alerta/30 bg-alerta-fundo',
+  CRITICO: 'border-erro/30 bg-erro-fundo',
+} as const;
+
+const NIVEL_TITULO = {
+  OK: 'text-ink-suave',
+  ATENCAO: 'text-alerta',
+  CRITICO: 'text-erro',
+} as const;
+
+/** A gravidade vai escrita. O fundo âmbar e o fundo vermelho são parecidos demais
+ *  para carregarem sozinhos a diferença entre "olhe isto" e "pare agora". */
+const NIVEL_ROTULO = {
+  OK: 'Observação',
+  ATENCAO: 'Atenção',
+  CRITICO: 'Risco crítico',
+} as const;
 
 export function Relatorio() {
   const { id = '' } = useParams();
@@ -40,14 +67,25 @@ export function Relatorio() {
 
   return (
     <div className="space-y-6">
-      <Link to={`/campanhas/${r.campaignId}`} className="text-sm text-slate-500 hover:underline">
-        ← {r.nome}
+      <Link
+        to={`/campanhas/${r.campaignId}`}
+        className="inline-flex min-h-11 items-center gap-1.5 text-sm text-ink-suave hover:text-ink hover:underline"
+      >
+        <span aria-hidden="true">←</span>
+        {/* Fora de contexto, "← Nome da campanha" não diz que é um caminho de volta. */}
+        <span className="sr-only">Voltar para a campanha </span>
+        {r.nome}
       </Link>
 
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">Relatório</h1>
-        <Selo>{ROTULO_STATUS_CAMPANHA[r.status] ?? r.status}</Selo>
-      </div>
+      <TituloPagina
+        acao={
+          <Selo tom={tomDoStatusCampanha(r.status)}>
+            {ROTULO_STATUS_CAMPANHA[r.status] ?? r.status}
+          </Selo>
+        }
+      >
+        Relatório
+      </TituloPagina>
 
       {/**
        * O alerta de risco vem primeiro e usa o nível que a **API** calculou.
@@ -57,19 +95,16 @@ export function Relatorio() {
        * moram no domínio justamente para que isso não aconteça (§10.4).
        */}
       {r.risco.avisos.length > 0 && (
-        <div
-          role="alert"
-          className={`rounded-md border px-4 py-3 ${
-            r.risco.nivel === 'CRITICO'
-              ? 'border-red-300 bg-red-50'
-              : r.risco.nivel === 'ATENCAO'
-                ? 'border-amber-300 bg-amber-50'
-                : 'border-slate-200 bg-slate-50'
-          }`}
-        >
-          <ul className="space-y-1 text-sm">
+        <div role="alert" className={`rounded-md border px-4 py-3 ${NIVEL_CAIXA[r.risco.nivel]}`}>
+          <p
+            className={`flex items-center gap-2 text-sm font-medium ${NIVEL_TITULO[r.risco.nivel]}`}
+          >
+            <span aria-hidden="true">!</span>
+            {NIVEL_ROTULO[r.risco.nivel]}
+          </p>
+          <ul className="mt-2 space-y-1 text-sm">
             {r.risco.avisos.map((a, i) => (
-              <li key={i} className="text-slate-900">
+              <li key={i} className="text-ink">
                 {a}
               </li>
             ))}
@@ -77,7 +112,7 @@ export function Relatorio() {
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Numero rotulo="Enviados" valor={numero(r.contadores['enviados'] ?? 0)} />
         <Numero
           rotulo="Entregues"
@@ -97,7 +132,7 @@ export function Relatorio() {
       </div>
 
       <Cartao titulo="Saúde do envio">
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Indicador
             rotulo="Endereços inválidos"
             valor={percentual(r.taxas['bounceHard'] ?? 0)}
@@ -127,8 +162,8 @@ export function Relatorio() {
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
           {Object.entries(r.baseDeCalculo).map(([chave, formula]) => (
             <div key={chave} className="flex justify-between gap-4">
-              <dt className="text-slate-500">{chave}</dt>
-              <dd className="text-slate-700">{formula}</dd>
+              <dt className="text-ink-suave">{chave}</dt>
+              <dd className="text-right text-ink">{formula}</dd>
             </div>
           ))}
         </dl>
@@ -139,10 +174,10 @@ export function Relatorio() {
 
 function Numero({ rotulo, valor, detalhe }: { rotulo: string; valor: string; detalhe?: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <p className="text-xs text-slate-500">{rotulo}</p>
-      <p className="mt-1 text-2xl font-semibold text-slate-900">{valor}</p>
-      {detalhe !== undefined && <p className="text-xs text-slate-500">{detalhe}</p>}
+    <div className="rounded-md border border-line bg-paper-light p-4">
+      <p className="text-xs text-ink-suave">{rotulo}</p>
+      <p className="mt-1 text-2xl font-semibold text-ink">{valor}</p>
+      {detalhe !== undefined && <p className="text-xs text-ink-suave">{detalhe}</p>}
     </div>
   );
 }
@@ -158,9 +193,9 @@ function Indicador({
 }) {
   return (
     <div>
-      <p className="text-xs text-slate-500">{rotulo}</p>
-      <div className="mt-1 flex items-center gap-2">
-        <span className="text-xl font-semibold text-slate-900">{valor}</span>
+      <p className="text-xs text-ink-suave">{rotulo}</p>
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <span className="text-xl font-semibold text-ink">{valor}</span>
         <Selo tom={NIVEL_TOM[nivel]}>
           {nivel === 'OK' ? 'normal' : nivel === 'ATENCAO' ? 'atenção' : 'crítico'}
         </Selo>

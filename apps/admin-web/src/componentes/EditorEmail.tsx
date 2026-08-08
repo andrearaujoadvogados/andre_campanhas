@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Link from '@tiptap/extension-link';
-import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
 import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
+import { Botao } from './base.tsx';
 
 /**
  * Editor visual do corpo do e-mail.
@@ -26,7 +25,7 @@ const CAMPOS = [
 ] as const;
 
 function Ferramenta({
-  ativo = false,
+  ativo,
   titulo,
   onClick,
   children,
@@ -36,6 +35,11 @@ function Ferramenta({
   onClick: () => void;
   children: ReactNode;
 }) {
+  // O alvo de 44px vale também aqui: são os botões mais clicados da tela, e "N"
+  // e "I" são glifos estreitos — sem largura mínima, o alvo teria o tamanho da
+  // letra. Quem não distingue o fundo escuro do claro tem o `aria-pressed`, que
+  // fica de fora em quem não alterna estado — desfazer e refazer não são teclas
+  // que ficam apertadas, e anunciá-las assim confunde o leitor de tela.
   return (
     <button
       type="button"
@@ -48,8 +52,8 @@ function Ferramenta({
         e.preventDefault();
         onClick();
       }}
-      className={`min-w-8 rounded px-2 py-1 text-sm transition ${
-        ativo ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-200'
+      className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 text-sm transition-colors ${
+        ativo === true ? 'bg-ink text-paper-light' : 'text-ink hover:bg-accent-mist'
       }`}
     >
       {children}
@@ -81,7 +85,9 @@ function Barra({ editor }: { editor: Editor }) {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 py-1.5">
+    // `flex-wrap` é o que faz a barra virar duas ou três linhas no celular em vez
+    // de empurrar os últimos botões para fora do quadro.
+    <div className="flex flex-wrap items-center gap-1 border-b border-line bg-paper px-2 py-1.5">
       <Ferramenta
         titulo="Negrito"
         ativo={editor.isActive('bold')}
@@ -104,7 +110,7 @@ function Barra({ editor }: { editor: Editor }) {
         <span className="underline">S</span>
       </Ferramenta>
 
-      <span className="mx-1 h-5 w-px bg-slate-300" />
+      <span aria-hidden="true" className="mx-1 h-6 w-px bg-line" />
 
       <Ferramenta
         titulo="Título"
@@ -121,7 +127,7 @@ function Barra({ editor }: { editor: Editor }) {
         t
       </Ferramenta>
 
-      <span className="mx-1 h-5 w-px bg-slate-300" />
+      <span aria-hidden="true" className="mx-1 h-6 w-px bg-line" />
 
       <Ferramenta
         titulo="Lista com marcadores"
@@ -145,7 +151,7 @@ function Barra({ editor }: { editor: Editor }) {
         ❝
       </Ferramenta>
 
-      <span className="mx-1 h-5 w-px bg-slate-300" />
+      <span aria-hidden="true" className="mx-1 h-6 w-px bg-line" />
 
       <Ferramenta
         titulo="Alinhar à esquerda"
@@ -162,7 +168,7 @@ function Barra({ editor }: { editor: Editor }) {
         ⋮
       </Ferramenta>
 
-      <span className="mx-1 h-5 w-px bg-slate-300" />
+      <span aria-hidden="true" className="mx-1 h-6 w-px bg-line" />
 
       <Ferramenta titulo="Link" ativo={editor.isActive('link')} onClick={definirLink}>
         🔗
@@ -171,7 +177,7 @@ function Barra({ editor }: { editor: Editor }) {
         🖼
       </Ferramenta>
 
-      <span className="mx-1 h-5 w-px bg-slate-300" />
+      <span aria-hidden="true" className="mx-1 h-6 w-px bg-line" />
 
       {/**
        * Os campos são a diferença entre um e-mail e um e-mail personalizado.
@@ -183,7 +189,7 @@ function Barra({ editor }: { editor: Editor }) {
         onChange={(e) => {
           if (e.target.value !== '') inserir(e.target.value);
         }}
-        className="rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-700"
+        className="min-h-11 rounded-md border border-line bg-paper-light px-2 text-sm text-ink"
         aria-label="Inserir campo do contato"
       >
         <option value="">Inserir campo…</option>
@@ -194,7 +200,7 @@ function Barra({ editor }: { editor: Editor }) {
         ))}
       </select>
 
-      <span className="mx-1 h-5 w-px bg-slate-300" />
+      <span aria-hidden="true" className="mx-1 h-6 w-px bg-line" />
 
       <Ferramenta titulo="Desfazer" onClick={() => editor.chain().focus().undo().run()}>
         ↶
@@ -250,9 +256,11 @@ export function EditorEmail({
         // renderizam mal em cliente de e-mail.
         code: false,
         codeBlock: false,
+        // Link e Underline já vêm no StarterKit v3 — importá-los à parte
+        // registra a extensão duas vezes, e o TipTap avisa que o comportamento
+        // fica indefinido. Configurados aqui, no lugar certo.
+        link: { openOnClick: false, autolink: true, defaultProtocol: 'https' },
       }),
-      Underline,
-      Link.configure({ openOnClick: false, autolink: true, defaultProtocol: 'https' }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Image.configure({ inline: false }),
       Placeholder.configure({ placeholder: 'Escreva a mensagem…' }),
@@ -261,8 +269,11 @@ export function EditorEmail({
     onUpdate: ({ editor: e }) => aoMudar(normalizarListas(e.getHTML())),
     editorProps: {
       attributes: {
+        // O anel de foco é desenhado para dentro (`-outline-offset-2`) porque o
+        // quadro que envolve o editor tem `overflow-hidden` e cortaria um anel
+        // por fora — e sem anel nenhum não se vê onde o cursor está.
         class:
-          'prose-email min-h-[18rem] max-w-none bg-white px-4 py-3 text-sm leading-relaxed text-slate-900 focus:outline-none',
+          'prose-email min-h-[18rem] max-w-none bg-paper-light px-4 py-3 text-sm leading-relaxed text-ink focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gold',
       },
     },
   });
@@ -284,7 +295,7 @@ export function EditorEmail({
   if (editor === null) return null;
 
   return (
-    <div className="overflow-hidden rounded-md border border-slate-300 bg-white">
+    <div className="overflow-hidden rounded-md border border-line bg-paper-light">
       <Barra editor={editor} />
 
       {verHtml ? (
@@ -296,14 +307,14 @@ export function EditorEmail({
           }}
           rows={16}
           spellCheck={false}
-          className="w-full bg-white px-4 py-3 font-mono text-xs text-slate-800 focus:outline-none"
+          className="w-full bg-paper-light px-4 py-3 font-mono text-xs text-ink focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gold"
         />
       ) : (
         <EditorContent editor={editor} />
       )}
 
-      <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-3 py-1.5">
-        <span className="text-xs text-slate-500">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-paper px-3 py-1.5">
+        <span className="text-xs text-ink-suave">
           Campos como {'{{contato.primeiroNome}}'} são trocados pelos dados de cada destinatário no
           envio.
         </span>
@@ -312,13 +323,14 @@ export function EditorEmail({
          * conferir o que o editor gerou. Sem isso, o editor visual seria uma
          * porta que tranca por dentro.
          */}
-        <button
-          type="button"
+        <Botao
+          variante="discreto"
           onClick={() => definirVerHtml((v) => !v)}
-          className="text-xs font-medium text-slate-600 underline hover:text-slate-900"
+          aria-pressed={verHtml}
+          className="px-2"
         >
           {verHtml ? 'Voltar ao editor' : 'Editar HTML'}
-        </button>
+        </Botao>
       </div>
     </div>
   );

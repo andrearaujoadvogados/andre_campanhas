@@ -11,6 +11,8 @@ import {
   Carregando,
   ErroCaixa,
   Selo,
+  TabelaRolavel,
+  TituloPagina,
   Vazio,
   classeEntrada,
 } from '../componentes/base.tsx';
@@ -73,7 +75,7 @@ export function Usuarios({ usuario }: { usuario: Usuario }) {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Usuários</h1>
+      <TituloPagina>Usuários</TituloPagina>
 
       <Cartao titulo="Convidar alguém">
         <div className="grid gap-4 sm:grid-cols-[1fr_auto_auto] sm:items-end">
@@ -111,7 +113,7 @@ export function Usuarios({ usuario }: { usuario: Usuario }) {
          * Não há campo de senha, e é a pergunta que todo mundo faz ao ver esta
          * tela — por isso a resposta fica escrita nela.
          */}
-        <p className="mt-4 text-xs text-slate-500">
+        <p className="mt-4 text-xs text-ink-suave">
           A senha é criada pela própria pessoa. Ela recebe um e-mail com uma senha provisória, e no
           primeiro acesso define a definitiva e cadastra o aplicativo autenticador. Ninguém mais —
           nem quem convida — chega a ver essa senha.
@@ -131,77 +133,89 @@ export function Usuarios({ usuario }: { usuario: Usuario }) {
           {lista.data.usuarios.length === 0 ? (
             <Vazio mensagem="Nenhum usuário." />
           ) : (
-            <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="pb-2">E-mail</th>
-                  <th className="pb-2">Papel</th>
-                  <th className="pb-2">Situação</th>
-                  <th className="pb-2">Desde</th>
-                  <th className="pb-2"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {lista.data.usuarios.map((u) => {
-                  const souEu = u.sub === usuario.id;
-                  const papelAtual = u.papeis.includes('ADMIN') ? 'ADMIN' : 'OPERADOR';
+            <TabelaRolavel>
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs uppercase tracking-wide text-ink-suave">
+                  <tr>
+                    <th className="whitespace-nowrap pb-2 pr-4">E-mail</th>
+                    <th className="whitespace-nowrap pb-2 pr-4">Papel</th>
+                    <th className="whitespace-nowrap pb-2 pr-4">Situação</th>
+                    <th className="whitespace-nowrap pb-2 pr-4">Desde</th>
+                    {/* Coluna de ações: sem rótulo visível, mas o leitor de tela precisa de um. */}
+                    <th className="pb-2">
+                      <span className="sr-only">Ações</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {lista.data.usuarios.map((u) => {
+                    const souEu = u.sub === usuario.id;
+                    const papelAtual = u.papeis.includes('ADMIN') ? 'ADMIN' : 'OPERADOR';
 
-                  return (
-                    <tr key={u.id}>
-                      <td className="py-3 text-slate-900">
-                        {u.email}
-                        {souEu && <span className="ml-2 text-xs text-slate-400">(você)</span>}
-                      </td>
-                      <td className="py-3">
-                        <select
-                          value={papelAtual}
-                          onChange={(e) => trocarPapel.mutate({ id: u.id, papel: e.target.value })}
-                          // Rebaixar a si mesmo trancaria a conta se não sobrasse
-                          // outro admin. O backend recusa; aqui só evitamos
-                          // oferecer o caminho.
-                          disabled={souEu || !u.habilitado}
-                          className="rounded border border-slate-300 px-2 py-1 text-sm disabled:bg-slate-50 disabled:text-slate-400"
-                        >
-                          <option value="OPERADOR">{ROTULO_PAPEL['OPERADOR']}</option>
-                          <option value="ADMIN">{ROTULO_PAPEL['ADMIN']}</option>
-                        </select>
-                      </td>
-                      <td className="py-3">
-                        {!u.habilitado ? (
-                          <Selo tom="critico">Sem acesso</Selo>
-                        ) : u.aguardandoPrimeiroAcesso ? (
-                          <Selo tom="atencao">Convite pendente</Selo>
-                        ) : (
-                          <Selo tom="positivo">Ativo</Selo>
-                        )}
-                      </td>
-                      <td className="py-3 text-slate-500">{dataHora(u.criadoEm)}</td>
-                      <td className="py-3 text-right">
-                        <div className="flex justify-end gap-2">
-                          {u.aguardandoPrimeiroAcesso && u.habilitado && (
-                            <Botao
-                              variante="secundario"
-                              onClick={() => reenviar.mutate(u.id)}
-                              carregando={reenviar.isPending}
-                            >
-                              Reenviar convite
-                            </Botao>
+                    return (
+                      <tr key={u.id}>
+                        <td className="py-3 pr-4 text-ink">
+                          {u.email}
+                          {souEu && <span className="ml-2 text-xs text-ink-suave">(você)</span>}
+                        </td>
+                        <td className="py-3 pr-4">
+                          <select
+                            value={papelAtual}
+                            onChange={(e) =>
+                              trocarPapel.mutate({ id: u.id, papel: e.target.value })
+                            }
+                            // Rebaixar a si mesmo trancaria a conta se não sobrasse
+                            // outro admin. O backend recusa; aqui só evitamos
+                            // oferecer o caminho.
+                            disabled={souEu || !u.habilitado}
+                            // Solto na tabela, o campo não tem rótulo visível — o
+                            // e-mail é o que diz de quem é este papel.
+                            aria-label={`Papel de ${u.email}`}
+                            className="min-h-11 rounded-md border border-line bg-paper-light px-2 py-1 text-sm text-ink disabled:bg-paper disabled:text-ink-suave/60"
+                          >
+                            <option value="OPERADOR">{ROTULO_PAPEL['OPERADOR']}</option>
+                            <option value="ADMIN">{ROTULO_PAPEL['ADMIN']}</option>
+                          </select>
+                        </td>
+                        <td className="py-3 pr-4">
+                          {!u.habilitado ? (
+                            <Selo tom="critico">Sem acesso</Selo>
+                          ) : u.aguardandoPrimeiroAcesso ? (
+                            <Selo tom="atencao">Convite pendente</Selo>
+                          ) : (
+                            <Selo tom="positivo">Ativo</Selo>
                           )}
-                          {!souEu && (
-                            <Botao
-                              variante={u.habilitado ? 'perigo' : 'secundario'}
-                              onClick={() => alternarAcesso.mutate(u)}
-                            >
-                              {u.habilitado ? 'Remover acesso' : 'Devolver acesso'}
-                            </Botao>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </td>
+                        <td className="whitespace-nowrap py-3 pr-4 text-ink-suave">
+                          {dataHora(u.criadoEm)}
+                        </td>
+                        <td className="py-3 text-right">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            {u.aguardandoPrimeiroAcesso && u.habilitado && (
+                              <Botao
+                                variante="secundario"
+                                onClick={() => reenviar.mutate(u.id)}
+                                carregando={reenviar.isPending}
+                              >
+                                Reenviar convite
+                              </Botao>
+                            )}
+                            {!souEu && (
+                              <Botao
+                                variante={u.habilitado ? 'perigo' : 'secundario'}
+                                onClick={() => alternarAcesso.mutate(u)}
+                              >
+                                {u.habilitado ? 'Remover acesso' : 'Devolver acesso'}
+                              </Botao>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </TabelaRolavel>
           )}
         </Cartao>
       )}
@@ -210,7 +224,7 @@ export function Usuarios({ usuario }: { usuario: Usuario }) {
        * Remover acesso desativa, não apaga. Quem lê a tela precisa saber disso,
        * senão procura um botão de excluir que não existe.
        */}
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-ink-suave">
         Remover o acesso desativa a conta sem apagá-la — as campanhas guardam quem as criou e quem
         as aprovou, e esse registro deixaria de fazer sentido se a conta sumisse. Dá para devolver o
         acesso depois.

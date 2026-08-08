@@ -12,6 +12,7 @@ import {
   Cartao,
   ErroCaixa,
   Selo,
+  TituloPagina,
   Vazio,
   classeEntrada,
 } from '../componentes/base.tsx';
@@ -45,32 +46,41 @@ export function Templates() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">Modelos de e-mail</h1>
-        <Link
-          to="/templates/novo"
-          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-        >
-          Novo modelo
-        </Link>
-      </div>
+      <TituloPagina
+        acao={
+          <Link
+            to="/templates/novo"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper-light transition-colors hover:bg-ink/90"
+          >
+            Novo modelo
+          </Link>
+        }
+      >
+        Modelos de e-mail
+      </TituloPagina>
 
       <Cartao>
         {lista.isLoading && <Carregando />}
         <ErroCaixa erro={lista.error} />
         {lista.data?.itens.length === 0 && <Vazio mensagem="Nenhum modelo criado ainda." />}
 
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-line">
           {lista.data?.itens.map((t) => (
-            <li key={t.templateId} className="flex items-center justify-between py-3">
-              <div>
+            <li
+              key={t.templateId}
+              className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2"
+            >
+              {/* O nome interno é digitado pelo operador: sem `min-w-0` e quebra
+                  de palavra, um nome longo empurra a página inteira para o lado
+                  no celular. */}
+              <div className="min-w-0">
                 <Link
                   to={`/templates/${t.templateId}`}
-                  className="font-medium text-slate-900 hover:underline"
+                  className="inline-flex min-h-11 items-center font-medium break-words text-ink hover:underline"
                 >
                   {t.nome}
                 </Link>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-ink-suave">
                   versão {t.versaoAtual} · {dataHora(t.atualizadoEm)}
                 </p>
               </div>
@@ -82,13 +92,14 @@ export function Templates() {
 
       {lista.data !== undefined && (
         <Cartao titulo="Variáveis disponíveis">
-          <ul className="space-y-1 text-sm">
+          <ul className="space-y-1.5 text-sm">
             {lista.data.variaveisDisponiveis.map((v) => (
-              <li key={v.chave}>
-                <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">
+              // Envolve no celular: chave e descrição param de brigar pela mesma linha.
+              <li key={v.chave} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <code className="rounded-md bg-accent-mist px-1.5 py-0.5 text-xs text-gold">
                   {`{{${v.chave}}}`}
                 </code>
-                <span className="ml-2 text-slate-600">{v.descricao}</span>
+                <span className="text-ink-suave">{v.descricao}</span>
               </li>
             ))}
           </ul>
@@ -155,7 +166,10 @@ export function TemplateEditor() {
 
   return (
     <div className="space-y-6">
-      <Link to="/templates" className="text-sm text-slate-500 hover:underline">
+      <Link
+        to="/templates"
+        className="inline-flex min-h-11 items-center text-sm text-ink-suave hover:text-ink hover:underline"
+      >
         ← Modelos
       </Link>
 
@@ -186,7 +200,11 @@ export function TemplateEditor() {
             >
               <Suspense
                 fallback={
-                  <div className="rounded-md border border-slate-300 px-4 py-12 text-center text-sm text-slate-500">
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="rounded-md border border-line bg-paper-light px-4 py-12 text-center text-sm text-ink-suave"
+                  >
                     Carregando o editor…
                   </div>
                 }
@@ -195,7 +213,7 @@ export function TemplateEditor() {
               </Suspense>
             </Campo>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Botao
                 carregando={salvar.isPending}
                 disabled={nome === '' || assunto === '' || corpoHtml === ''}
@@ -222,8 +240,8 @@ export function TemplateEditor() {
             <div className="space-y-3">
               <Aviso texto={previa.data.aviso} />
               <p className="text-sm">
-                <span className="text-slate-500">Assunto: </span>
-                <span className="font-medium">{previa.data.assunto}</span>
+                <span className="text-ink-suave">Assunto: </span>
+                <span className="font-medium text-ink">{previa.data.assunto}</span>
               </p>
               {/**
                * A prévia roda em iframe com sandbox.
@@ -233,15 +251,20 @@ export function TemplateEditor() {
                * origem da sessão do operador. O iframe isolado é a segunda
                * barreira (§10.1).
                */}
+              {/* Fundo branco de propósito: é como o e-mail vai aparecer na caixa
+                  de entrada, não como o painel se pinta. */}
               <iframe
                 title="Prévia do e-mail"
                 sandbox=""
                 srcDoc={previa.data.corpoHtml}
-                className="h-[28rem] w-full rounded border border-slate-200 bg-white"
+                className="h-[28rem] w-full rounded-md border border-line bg-white"
               />
-              <details className="text-xs text-slate-600">
-                <summary className="cursor-pointer">Versão em texto</summary>
-                <pre className="mt-2 whitespace-pre-wrap rounded bg-slate-50 p-3">
+              <details className="text-xs text-ink-suave">
+                {/* O resumo é o que se toca para abrir: precisa dos 44px. */}
+                <summary className="flex min-h-11 cursor-pointer items-center font-medium text-ink">
+                  Versão em texto
+                </summary>
+                <pre className="mt-2 whitespace-pre-wrap rounded-md border border-line bg-paper p-3">
                   {previa.data.corpoTexto}
                 </pre>
               </details>

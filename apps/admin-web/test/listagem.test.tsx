@@ -71,7 +71,10 @@ describe('listagem de campanhas', () => {
     };
     montar();
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/há mais campanhas/i);
+    // Pelo texto, e não por `role=status`: o indicador de carregamento também
+    // é anunciado, e buscar só pelo papel encontraria o primeiro dos dois.
+    const aviso = await screen.findByText(/há mais campanhas/i);
+    expect(aviso.closest('[role="status"]')).not.toBeNull();
   });
 
   it('sem truncamento, não mostra aviso', async () => {

@@ -17,6 +17,7 @@ import {
   Cartao,
   ErroCaixa,
   Selo,
+  TituloPagina,
   classeEntrada,
   tomDoStatusContato,
 } from '../componentes/base.tsx';
@@ -63,22 +64,27 @@ export function Contatos({ usuario }: { usuario: Usuario }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">Contatos</h1>
-        {/**
-         * Só para ADMIN, espelhando o `exigirPapel` da rota — quem importa
-         * declara a origem do lote e, com ela, a base legal de todo mundo que
-         * entra. Esconder o link não é o controle: o controle é o 403 da API.
-         */}
-        {temPapel(usuario, 'ADMIN') && (
-          <Link
-            to="/contatos/importar"
-            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            Importar CSV
-          </Link>
-        )}
-      </div>
+      <TituloPagina
+        acao={
+          /**
+           * Só para ADMIN, espelhando o `exigirPapel` da rota — quem importa
+           * declara a origem do lote e, com ela, a base legal de todo mundo que
+           * entra. Esconder o link não é o controle: o controle é o 403 da API.
+           */
+          temPapel(usuario, 'ADMIN') && (
+            <Link
+              to="/contatos/importar"
+              // Link com aparência de botão secundário: como não é <Botao>, o
+              // alvo de 44px precisa vir declarado aqui.
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-line bg-paper-light px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-accent-mist"
+            >
+              Importar CSV
+            </Link>
+          )
+        }
+      >
+        Contatos
+      </TituloPagina>
 
       <Cartao titulo="Novo contato">
         <div className="grid gap-4 sm:grid-cols-3">
@@ -143,9 +149,9 @@ export function Contatos({ usuario }: { usuario: Usuario }) {
       </Cartao>
 
       <Cartao>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-ink-suave">
           Para ver os contatos de uma lista, abra a lista em{' '}
-          <Link to="/listas" className="underline">
+          <Link to="/listas" className="font-medium text-ink underline">
             Listas
           </Link>
           .
@@ -188,34 +194,44 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
 
   return (
     <div className="space-y-6">
-      <Link to="/listas" className="text-sm text-slate-500 hover:underline">
+      {/* Alvo de 44px: link solto de navegação, sem o <Botao> para garantir isso. */}
+      <Link
+        to="/listas"
+        className="inline-flex min-h-11 items-center text-sm text-ink-suave hover:text-ink hover:underline"
+      >
         ← Voltar
       </Link>
 
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">{c.nome ?? c.email}</h1>
-        <Selo tom={tomDoStatusContato(c.status)}>
-          {ROTULO_STATUS_CONTATO[c.status] ?? c.status}
-        </Selo>
-      </div>
+      <TituloPagina
+        acao={
+          <Selo tom={tomDoStatusContato(c.status)}>
+            {ROTULO_STATUS_CONTATO[c.status] ?? c.status}
+          </Selo>
+        }
+      >
+        {c.nome ?? c.email}
+      </TituloPagina>
 
       <Cartao titulo="Dados">
-        <dl className="grid grid-cols-2 gap-4 text-sm">
+        {/* Empilha no celular: duas colunas de 160px cortam e-mail no meio. */}
+        <dl className="grid gap-4 text-sm sm:grid-cols-2">
           <div>
-            <dt className="text-slate-500">E-mail</dt>
-            <dd>{c.email}</dd>
+            <dt className="text-ink-suave">E-mail</dt>
+            <dd className="break-words text-ink">{c.email}</dd>
           </div>
           <div>
-            <dt className="text-slate-500">Vínculo</dt>
-            <dd>{ROTULO_RELACIONAMENTO[c.relacionamento] ?? c.relacionamento}</dd>
+            <dt className="text-ink-suave">Vínculo</dt>
+            <dd className="text-ink">
+              {ROTULO_RELACIONAMENTO[c.relacionamento] ?? c.relacionamento}
+            </dd>
           </div>
           <div>
-            <dt className="text-slate-500">Vínculo desde</dt>
-            <dd>{dataHora(c.relacionamentoDesde)}</dd>
+            <dt className="text-ink-suave">Vínculo desde</dt>
+            <dd className="text-ink">{dataHora(c.relacionamentoDesde)}</dd>
           </div>
           <div>
-            <dt className="text-slate-500">Origem do cadastro</dt>
-            <dd>{c.origem}</dd>
+            <dt className="text-ink-suave">Origem do cadastro</dt>
+            <dd className="text-ink">{c.origem}</dd>
           </div>
         </dl>
       </Cartao>
@@ -229,7 +245,7 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
        */}
       {!c.elegivelParaCampanha && (
         <Cartao titulo="Este contato não recebe campanhas">
-          <ul className="space-y-1 text-sm text-slate-700">
+          <ul className="space-y-1 text-sm text-ink">
             {c.motivosInelegibilidade.map((m, i) => (
               <li key={i}>
                 •{' '}
@@ -244,7 +260,7 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
 
       {temPapel(usuario, 'ADMIN') && (
         <Cartao titulo="Direitos do titular (LGPD)">
-          <p className="mb-4 text-sm text-slate-600">
+          <p className="mb-4 text-sm text-ink-suave">
             Gere o dossiê com tudo que o sistema mantém sobre esta pessoa. Confirme a identidade do
             titular antes de entregar.
           </p>
@@ -255,17 +271,21 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
           >
             Gerar exportação
           </Botao>
-          <ErroCaixa erro={exportar.error} />
+          <div className="mt-3 empty:mt-0">
+            <ErroCaixa erro={exportar.error} />
+          </div>
 
           {exportacao !== null && (
             <div className="mt-4 space-y-3">
               <Aviso tom="alerta" texto={exportacao.aviso} />
-              <ul className="space-y-2">
+              <ul className="space-y-1">
                 {exportacao.arquivos.map((a) => (
-                  <li key={a.formato}>
+                  <li key={a.formato} className="flex flex-wrap items-center gap-x-2">
                     <a
                       href={a.url}
-                      className="text-sm font-medium text-slate-900 underline"
+                      // min-h-11: link de download é alvo de toque, e no celular
+                      // ele fica encostado no da linha seguinte sem essa altura.
+                      className="inline-flex min-h-11 items-center text-sm font-medium text-ink underline"
                       // O link é presignado e de vida curta; noreferrer evita
                       // que ele vaze no cabeçalho Referer.
                       rel="noreferrer noopener"
@@ -273,7 +293,7 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
                     >
                       Baixar {a.formato.toUpperCase()}
                     </a>
-                    <span className="ml-2 text-xs text-slate-500">{a.descricao}</span>
+                    <span className="text-xs text-ink-suave">{a.descricao}</span>
                   </li>
                 ))}
               </ul>

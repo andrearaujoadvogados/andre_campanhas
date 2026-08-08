@@ -1,7 +1,15 @@
 import { useState, type FormEvent } from 'react';
 import QRCode from 'qrcode';
 import { confirmarDesafio, entrar } from '../lib/auth.js';
-import { Aviso, Botao, Campo, ErroCaixa, classeEntrada } from '../componentes/base.tsx';
+import {
+  Aviso,
+  Botao,
+  Campo,
+  Cartao,
+  ErroCaixa,
+  TituloPagina,
+  classeEntrada,
+} from '../componentes/base.tsx';
 
 /**
  * Etapas do login.
@@ -109,121 +117,131 @@ export function Login({ aoEntrar }: { aoEntrar: () => void }) {
         : 'Confirmar código';
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-      <form
-        onSubmit={(e) => void submeter(e)}
-        className="w-full max-w-sm space-y-4 rounded-lg border border-slate-200 bg-white p-8 shadow-sm"
-      >
-        <div>
-          <h1 className="text-lg font-semibold text-slate-900">Campanhas</h1>
-          <p className="text-sm text-slate-500">André Araújo Advogados</p>
-        </div>
+    <div className="flex min-h-screen items-center justify-center bg-paper px-4 py-10">
+      <div className="w-full max-w-sm">
+        <Cartao>
+          <form onSubmit={(e) => void submeter(e)} className="space-y-4">
+            <div>
+              <TituloPagina>Campanhas</TituloPagina>
+              <p className="mt-1 text-sm text-ink-suave">André Araújo Advogados</p>
+            </div>
 
-        <ErroCaixa erro={erro} />
+            <ErroCaixa erro={erro} />
 
-        {etapa.nome === 'credenciais' && (
-          <>
-            <Campo rotulo="E-mail" obrigatorio>
-              <input
-                type="email"
-                autoComplete="username"
-                required
-                value={email}
-                onChange={(ev) => definirEmail(ev.target.value)}
-                className={classeEntrada}
-              />
-            </Campo>
-            <Campo rotulo="Senha" obrigatorio>
-              <input
-                type="password"
-                autoComplete="current-password"
-                required
-                value={senha}
-                onChange={(ev) => definirSenha(ev.target.value)}
-                className={classeEntrada}
-              />
-            </Campo>
-          </>
-        )}
+            {etapa.nome === 'credenciais' && (
+              <>
+                <Campo rotulo="E-mail" obrigatorio>
+                  <input
+                    type="email"
+                    autoComplete="username"
+                    required
+                    value={email}
+                    onChange={(ev) => definirEmail(ev.target.value)}
+                    className={classeEntrada}
+                  />
+                </Campo>
+                <Campo rotulo="Senha" obrigatorio>
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    value={senha}
+                    onChange={(ev) => definirSenha(ev.target.value)}
+                    className={classeEntrada}
+                  />
+                </Campo>
+              </>
+            )}
 
-        {etapa.nome === 'nova-senha' && (
-          <Campo
-            rotulo="Defina uma nova senha"
-            ajuda="Mínimo de 12 caracteres, com maiúscula, minúscula, número e símbolo."
-            obrigatorio
-          >
-            <input
-              type="password"
-              autoComplete="new-password"
-              required
-              value={resposta}
-              onChange={(ev) => definirResposta(ev.target.value)}
-              className={classeEntrada}
-            />
-          </Campo>
-        )}
+            {etapa.nome === 'nova-senha' && (
+              <Campo
+                rotulo="Defina uma nova senha"
+                ajuda="Mínimo de 12 caracteres, com maiúscula, minúscula, número e símbolo."
+                obrigatorio
+              >
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  value={resposta}
+                  onChange={(ev) => definirResposta(ev.target.value)}
+                  className={classeEntrada}
+                />
+              </Campo>
+            )}
 
-        {etapa.nome === 'cadastrar-totp' && (
-          <div className="space-y-3">
-            <Aviso texto="A verificação em duas etapas é obrigatória. Cadastre o acesso no seu aplicativo autenticador." />
+            {etapa.nome === 'cadastrar-totp' && (
+              <div className="space-y-3">
+                <Aviso texto="A verificação em duas etapas é obrigatória. Cadastre o acesso no seu aplicativo autenticador." />
 
-            <img
-              src={etapa.qr}
-              alt="Código QR para cadastrar no aplicativo autenticador"
-              className="mx-auto rounded border border-slate-200"
-            />
+                {/* O QR sai com 220px fixos. Sobra folga num celular de 320px, mas
+                    não num dobrável fechado de 280px, onde as bordas do cartão já
+                    comem 64px — daí o `max-w-full`. */}
+                <img
+                  src={etapa.qr}
+                  alt="Código QR para cadastrar no aplicativo autenticador"
+                  className="mx-auto h-auto max-w-full rounded-md border border-line"
+                />
 
-            {/**
-             * A chave em texto fica disponível junto do QR.
-             *
-             * Quem acessa pelo celular não consegue fotografar a própria tela —
-             * e é justamente essa pessoa que ficaria travada se o QR fosse a
-             * única opção.
-             */}
-            <details className="text-xs text-slate-600">
-              <summary className="cursor-pointer">Não consigo ler o código</summary>
-              <p className="mt-2">Cadastre manualmente com esta chave:</p>
-              <code className="mt-1 block break-all rounded bg-slate-50 p-2 font-mono">
-                {etapa.segredo}
-              </code>
-            </details>
+                {/**
+                 * A chave em texto fica disponível junto do QR.
+                 *
+                 * Quem acessa pelo celular não consegue fotografar a própria tela —
+                 * e é justamente essa pessoa que ficaria travada se o QR fosse a
+                 * única opção.
+                 */}
+                <details className="text-sm text-ink-suave">
+                  {/* O resumo é o que se toca para abrir: precisa dos 44px, e eles
+                      vêm do respiro vertical. `flex` aqui tiraria o `display:
+                      list-item` do navegador e, com ele, a setinha — a única pista
+                      de que a linha abre, já que no toque não existe `hover`. */}
+                  <summary className="min-h-11 cursor-pointer py-3">
+                    Não consigo ler o código
+                  </summary>
+                  <p className="mt-1">Cadastre manualmente com esta chave:</p>
+                  <code className="mt-1 block break-all rounded-md border border-line bg-paper p-2 font-mono text-xs text-ink">
+                    {etapa.segredo}
+                  </code>
+                </details>
 
-            <Campo rotulo="Código de 6 dígitos do aplicativo" obrigatorio>
-              <input
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                required
-                value={resposta}
-                onChange={(ev) => definirResposta(ev.target.value.replace(/\D/g, ''))}
-                className={`${classeEntrada} text-center text-lg tracking-widest`}
-              />
-            </Campo>
-          </div>
-        )}
+                <Campo rotulo="Código de 6 dígitos do aplicativo" obrigatorio>
+                  <input
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    required
+                    value={resposta}
+                    onChange={(ev) => definirResposta(ev.target.value.replace(/\D/g, ''))}
+                    className={`${classeEntrada} text-center text-lg tracking-widest`}
+                  />
+                </Campo>
+              </div>
+            )}
 
-        {etapa.nome === 'codigo-totp' && (
-          <Campo
-            rotulo="Código de 6 dígitos"
-            ajuda="Abra seu aplicativo autenticador e informe o código atual."
-            obrigatorio
-          >
-            <input
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              required
-              value={resposta}
-              onChange={(ev) => definirResposta(ev.target.value.replace(/\D/g, ''))}
-              className={`${classeEntrada} text-center text-lg tracking-widest`}
-            />
-          </Campo>
-        )}
+            {etapa.nome === 'codigo-totp' && (
+              <Campo
+                rotulo="Código de 6 dígitos"
+                ajuda="Abra seu aplicativo autenticador e informe o código atual."
+                obrigatorio
+              >
+                <input
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  required
+                  value={resposta}
+                  onChange={(ev) => definirResposta(ev.target.value.replace(/\D/g, ''))}
+                  className={`${classeEntrada} text-center text-lg tracking-widest`}
+                />
+              </Campo>
+            )}
 
-        <Botao type="submit" carregando={enviando} className="w-full">
-          {rotuloBotao}
-        </Botao>
-      </form>
+            <Botao type="submit" carregando={enviando} className="w-full">
+              {rotuloBotao}
+            </Botao>
+          </form>
+        </Cartao>
+      </div>
     </div>
   );
 }
