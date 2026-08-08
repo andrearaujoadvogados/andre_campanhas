@@ -40,13 +40,11 @@ A HostGator leva ~2-3 minutos para um registro novo aparecer no autoritativo. Su
 ### Fechadas em 2026-08-08
 
 - [x] **Conta raiz da AWS.** Existe o usuário IAM `fernando` com `AdministratorAccess` e MFA, login no console verificado. A raiz tem MFA e **nenhuma chave de acesso** (`AccountAccessKeysPresent: 0`) — era a exposição mais grave e não existia. A raiz fica reservada ao que só ela faz: encerrar conta, mudar plano de suporte, alterar dados de cobrança.
-- [x] **Segundo usuário no Cognito.** Criado `contato@andrearaujoadvogados.com.br` no grupo `admin`.
+- [x] **Segundo usuário no Cognito.** `contato@andrearaujoadvogados.com.br`, no grupo `admin`, com primeiro acesso concluído — senha própria e MFA cadastrado. A aprovação por duas contas distintas está funcional.
+
+  Vale saber o que o controle passou a valer: `contato@` é caixa compartilhada, então quem tem acesso a ela consegue recuperar a senha e assumir o login; e o MFA ficou vinculado ao celular de quem fez o primeiro acesso — é essa pessoa, especificamente, que aprova. A regra que a aprovação por dois protege não é "duas credenciais", é que duas pessoas leiam o texto antes de ele sair em nome do escritório para milhares de destinatários. Se o mesmo celular guarda os dois MFAs, o sistema está satisfeito e o controle não existe.
 
 ### Abertas
-
-- [ ] **Primeiro acesso do segundo admin.** Enquanto ele não trocar a senha provisória e cadastrar o MFA, o usuário existe e não consegue entrar — nenhuma campanha é aprovada. **A senha provisória expira em 7 dias**; depois disso, reenviar com `admin-create-user --message-action RESEND`.
-
-  Duas características desta escolha, para decidir com os olhos abertos: `contato@` é caixa compartilhada, então quem tiver acesso a ela consegue recuperar a senha e assumir a conta; e o MFA fica vinculado ao celular de quem fizer o primeiro acesso — é essa pessoa, especificamente, que passa a aprovar campanhas. A regra que a aprovação por dois protege não é "duas credenciais", é que duas pessoas leiam o texto antes de ele sair em nome do escritório.
 
 - [ ] **Trocar o segredo do MFA que apareceu numa captura de tela.** Segue aberta porque não se sabe **qual** MFA era: o da raiz da AWS ou o do usuário do Cognito. Quem tiver a imagem gera códigos válidos indefinidamente — um segredo TOTP não expira.
 
