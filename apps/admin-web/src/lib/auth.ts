@@ -1,6 +1,7 @@
 import { Amplify } from 'aws-amplify';
 import { fetchAuthSession, signIn, signOut, confirmSignIn } from 'aws-amplify/auth';
 import { useEffect, useState } from 'react';
+import { configuracao } from './configuracao.js';
 
 export type Papel = 'ADMIN' | 'OPERADOR';
 
@@ -10,11 +11,12 @@ export interface Usuario {
 }
 
 export function configurarAuth(): void {
+  const cfg = configuracao();
   Amplify.configure({
     Auth: {
       Cognito: {
-        userPoolId: import.meta.env['VITE_USER_POOL_ID'] ?? '',
-        userPoolClientId: import.meta.env['VITE_USER_POOL_CLIENT_ID'] ?? '',
+        userPoolId: cfg.userPoolId,
+        userPoolClientId: cfg.userPoolClientId,
       },
     },
   });

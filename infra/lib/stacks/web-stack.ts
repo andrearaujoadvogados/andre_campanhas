@@ -13,6 +13,10 @@ import {
 } from 'aws-cdk-lib/aws-cloudfront';
 import { HttpOrigin, S3BucketOrigin } from 'aws-cdk-lib/aws-cloudfront-origins';
 import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
+import { BucketDeployment, CacheControl, Source } from 'aws-cdk-lib/aws-s3-deployment';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Construct } from 'constructs';
 import { nome, type AmbienteConfig } from '../config.js';
 
@@ -45,6 +49,20 @@ export interface WebStackProps extends StackProps {
    * `link.mail.…` com certificado válido é o motivo inteiro dela.
    */
   readonly certificadoRastreamentoArn?: string | undefined;
+  /**
+   * O que o painel precisa saber para falar com o resto do sistema.
+   *
+   * Vem da stack de dados, em sa-east-1, e é escrito num `config.json` que o
+   * painel lê ao abrir. Poderia entrar no bundle em tempo de compilação, e a
+   * consequência seria pior: obrigaria a compilar depois do deploy e a ler
+   * saídas do CloudFormation no pipeline — permissão que o papel do GitHub
+   * deliberadamente não tem.
+   */
+  readonly configPainel: {
+    readonly apiUrl: string;
+    readonly userPoolId: string;
+    readonly userPoolClientId: string;
+  };
 }
 
 /**
@@ -108,6 +126,58 @@ export class WebStack extends Stack {
         ? {}
         : { certificate: certificado, domainNames: [cfg.dominioPainel] }),
     });
+
+    /**
+     * O painel em si — os arquivos, não só o lugar onde eles moram.
+     *
+     * Publicar aqui, e não por um comando no pipeline, é o que mantém o deploy
+     * numa etapa só: o `cdk deploy` já tem as permissões necessárias através
+     * dos papéis do bootstrap, enquanto um `aws s3 sync` exigiria conceder
+     * acesso ao bucket ao papel do GitHub.
+     *
+     * Duas implantações porque as políticas de cache são opostas. Os arquivos
+     * de `assets/` têm hash no nome — mudou o conteúdo, mudou o nome —, então
+     * podem ficar em cache por um ano. O `index.html` e o `config.json` não
+     * podem ficar em cache nenhum: o primeiro aponta para os assets, e uma
+     * cópia velha manda o navegador buscar arquivos que o `prune` já removeu;
+     * o segundo mudaria sem que ninguém percebesse.
+     */
+    const publicarPainel = (): void => {
+      const origem = resolve(
+        fileURLToPath(new URL('.', import.meta.url)),
+        '../../../apps/admin-web/dist',
+      );
+
+      new BucketDeployment(this, 'PainelAssets', {
+        sources: [Source.asset(origem, { exclude: ['index.html'] })],
+        destinationBucket: bucketSite,
+        distribution: distribuicao,
+        distributionPaths: ['/*'],
+        cacheControl: [CacheControl.fromString('public,max-age=31536000,immutable')],
+        prune: false,
+      });
+
+      new BucketDeployment(this, 'PainelIndice', {
+        sources: [
+          Source.asset(origem, { exclude: ['*', '!index.html'] }),
+          Source.jsonData('config.json', props.configPainel),
+        ],
+        destinationBucket: bucketSite,
+        cacheControl: [CacheControl.fromString('no-cache,no-store,must-revalidate')],
+        prune: false,
+      });
+    };
+
+    // Sem o painel compilado não há o que publicar. Acontece em `cdk synth`
+    // solto, sem build antes — e falhar aqui, com esta mensagem, é melhor que
+    // falhar dentro do CDK dizendo que um diretório não existe.
+    if (existsSync(fileURLToPath(new URL('../../../apps/admin-web/dist', import.meta.url)))) {
+      publicarPainel();
+    } else if (process.env['CI'] === 'true') {
+      throw new Error(
+        'apps/admin-web/dist não existe. O painel precisa ser compilado antes do synth — ver o passo "Build do painel" em .github/workflows/ci.yml.',
+      );
+    }
 
     /**
      * Rastreamento de aberturas e cliques — o subdomínio próprio do escritório.

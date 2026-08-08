@@ -22,7 +22,7 @@ export class FalhaApi extends Error {
   }
 }
 
-const BASE = import.meta.env['VITE_API_URL'] ?? '';
+import { configuracao } from './configuracao.js';
 
 /**
  * Obtém o token de identidade.
@@ -41,7 +41,7 @@ async function token(): Promise<string> {
 }
 
 async function requisitar<T>(caminho: string, init: RequestInit = {}): Promise<T> {
-  const resposta = await fetch(`${BASE}${caminho}`, {
+  const resposta = await fetch(`${configuracao().apiUrl}${caminho}`, {
     ...init,
     headers: {
       'content-type': 'application/json',

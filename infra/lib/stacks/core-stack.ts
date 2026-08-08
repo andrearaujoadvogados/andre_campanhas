@@ -55,6 +55,10 @@ export interface CoreStackProps extends StackProps {
 export class CoreStack extends Stack {
   readonly tabelaPrincipal: Table;
   readonly filaEventos: Queue;
+  /** Lidos pela stack do painel para montar o `config.json` — ver bin/app.ts. */
+  readonly apiUrl: string;
+  readonly userPoolId: string;
+  readonly userPoolClientId: string;
 
   constructor(escopo: Construct, id: string, props: CoreStackProps) {
     super(escopo, id, props);
@@ -623,6 +627,10 @@ export class CoreStack extends Stack {
 
     new CfnOutput(this, 'FilaEventosUrl', { value: filaEventos.queueUrl });
     new CfnOutput(this, 'FilaEventosArn', { value: filaEventos.queueArn });
+    this.apiUrl = api.apiEndpoint;
+    this.userPoolId = userPool.userPoolId;
+    this.userPoolClientId = clienteUserPool.userPoolClientId;
+
     new CfnOutput(this, 'ApiUrl', { value: api.apiEndpoint });
     new CfnOutput(this, 'UrlDescadastro', { value: urlPublica.url });
     new CfnOutput(this, 'UserPoolId', { value: userPool.userPoolId });

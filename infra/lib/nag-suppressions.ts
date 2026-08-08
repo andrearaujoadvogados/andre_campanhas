@@ -161,18 +161,24 @@ export function aplicarSupressoes(core: Stack, sending: Stack, web: Stack, oidc:
       {
         id: 'AwsSolutions-IAM4',
         reason:
-          'Papel gerenciado do custom resource de limpeza do bucket, criado pelo próprio CDK ' +
-          'e ativo apenas em ambiente de desenvolvimento.',
+          'Papéis gerenciados de custom resources criados pelo próprio CDK: a limpeza do ' +
+          'bucket, ativa só em desenvolvimento, e as duas implantações que publicam o painel. ' +
+          'Nenhum deles é escrito por nós, e nenhum sobrevive fora do deploy.',
       },
       {
         id: 'AwsSolutions-IAM5',
         reason:
-          'Custom resource de limpeza do bucket, gerado pelo CDK e restrito ao bucket do site ' +
-          'deste ambiente.',
+          'Custom resources gerados pelo CDK, restritos ao bucket do site deste ambiente: a ' +
+          'limpeza e as duas implantações do painel. A publicação precisa de curinga sobre os ' +
+          'objetos porque escreve o conteúdo inteiro da SPA, cujos nomes de arquivo mudam a ' +
+          'cada build — e o alcance continua sendo um bucket que só guarda JavaScript, CSS e ' +
+          'imagens do painel, sem dado pessoal.',
       },
       {
         id: 'AwsSolutions-L1',
-        reason: 'Runtime do custom resource de limpeza é definido pelo CDK, não por nós.',
+        reason:
+          'Runtime das funções de custom resource é definido pelo CDK, não por nós — vale ' +
+          'para a limpeza do bucket e para as implantações do painel.',
       },
     ],
     true,
@@ -186,17 +192,12 @@ export function aplicarSupressoes(core: Stack, sending: Stack, web: Stack, oidc:
       {
         id: 'AwsSolutions-IAM5',
         reason:
-          'Quatro curingas, todos presos ao número desta conta. (1) Sufixo de região dos ' +
-          'papéis do bootstrap do CDK (`cdk-hnb659fds-deploy-role-<conta>-<regiao>`): ' +
-          'enumerar as três regiões daria a mesma permissão com mais linhas, e quebraria ' +
-          'silenciosamente ao adicionar uma quarta. (2) `stack/EmailMkt*/*` em ' +
-          'cloudformation:DescribeStacks, que é leitura de saída de stack e não alcança stack ' +
-          'de outro projeto. (3) Objetos do bucket do site, restrito ao bucket do ambiente — ' +
-          'o pipeline publica a SPA e não pode tocar o bucket de uploads, que guarda CSV de ' +
-          'contatos. (4) `distribution/*` em cloudfront:CreateInvalidation, que não aceita id ' +
-          'específico numa política escrita antes da primeira implantação; a ação descarta ' +
-          'cache e não lê nem altera conteúdo. Fora isso, estes papéis continuam sem ' +
-          'permissão de administrador: o trabalho pesado é feito pelos papéis do bootstrap.',
+          'O curinga cobre apenas o sufixo de região dos papéis do bootstrap do CDK ' +
+          '(`cdk-hnb659fds-deploy-role-<conta>-<regiao>`), e o padrão está preso ao número ' +
+          'desta conta. Enumerar as três regiões daria a mesma permissão com mais linhas — e ' +
+          'quebraria silenciosamente ao adicionar uma quarta. O ponto relevante é o oposto do ' +
+          'que a regra sugere: estes papéis NÃO têm permissão de administrador, só podem ' +
+          'assumir os papéis que o bootstrap criou.',
       },
     ],
     true,

@@ -92,6 +92,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
+      - name: Build do painel
+        # Antes do deploy, e não depois: a stack Web publica `dist/` como asset,
+        # então o diretório precisa existir no momento do synth. A configuração
+        # não entra aqui — o painel lê `config.json` em tempo de execução.
+        run: pnpm --filter @emailmkt/admin-web build
+
       - name: Assumir papel na conta dev
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -115,11 +121,6 @@ jobs:
             --require-approval never -c ambiente=dev \
             -c certificadoArn="${{ vars.CERTIFICADO_ARN_DEV }}" \
             -c certificadoRastreamentoArn="${{ vars.CERTIFICADO_RASTREAMENTO_ARN_DEV }}"
-
-      - name: Publicar o painel
-        env:
-          AMBIENTE: Dev
-        run: ./scripts/publicar-painel.sh
 
       - name: Smoke test
         # Envia para uma caixa de teste verificada. Em dev o SES fica em sandbox
@@ -146,6 +147,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
+      - name: Build do painel
+        # Antes do deploy, e não depois: a stack Web publica `dist/` como asset,
+        # então o diretório precisa existir no momento do synth. A configuração
+        # não entra aqui — o painel lê `config.json` em tempo de execução.
+        run: pnpm --filter @emailmkt/admin-web build
+
       - name: Assumir papel na conta de produção
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -163,8 +170,3 @@ jobs:
             --require-approval never -c ambiente=prod \
             -c certificadoArn="${{ vars.CERTIFICADO_ARN_PROD }}" \
             -c certificadoRastreamentoArn="${{ vars.CERTIFICADO_RASTREAMENTO_ARN_PROD }}"
-
-      - name: Publicar o painel
-        env:
-          AMBIENTE: Prod
-        run: ./scripts/publicar-painel.sh

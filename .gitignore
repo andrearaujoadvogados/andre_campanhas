@@ -22,3 +22,6 @@ cdk.out/
 .vscode/
 .idea/
 *.log
+
+# Configuração local do painel de preview
+.claude/

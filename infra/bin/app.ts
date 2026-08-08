@@ -44,9 +44,26 @@ const sending = new SendingStack(app, `EmailMktSending${sufixo}`, {
 });
 sending.addStackDependency(core);
 
+/**
+ * A segunda costura entre regiões, e a razão dela.
+ *
+ * O painel precisa saber a URL da API e os identificadores do Cognito, que
+ * nascem em sa-east-1; a stack dele vive em us-east-1 porque é lá que o
+ * certificado do CloudFront tem de estar. A alternativa seria compilar o painel
+ * depois do deploy, lendo saídas do CloudFormation no pipeline — o que exigiria
+ * dar ao papel do GitHub permissão que ele não tem por decisão de segurança.
+ * Entre uma referência entre regiões e uma permissão a mais, a referência custa
+ * menos.
+ */
 const web = new WebStack(app, `EmailMktWeb${sufixo}`, {
   cfg,
   env: { account: cfg.conta, region: cfg.regiaoCertificado },
+  crossRegionReferences: true,
+  configPainel: {
+    apiUrl: core.apiUrl,
+    userPoolId: core.userPoolId,
+    userPoolClientId: core.userPoolClientId,
+  },
   ...(certificadoArn === undefined || certificadoArn === '' ? {} : { certificadoArn }),
   ...(certificadoRastreamentoArn === undefined || certificadoRastreamentoArn === ''
     ? {}

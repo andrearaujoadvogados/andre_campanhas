@@ -18,7 +18,7 @@
     "format:check": "prettier --check .",
     "synth": "pnpm --filter @emailmkt/infra synth",
     "//verificar": "NÃO renomear para 'ci': o pnpm tem um comando embutido com esse nome, que sombreia o script e roda uma instalação limpa no lugar.",
-    "verificar": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm synth"
+    "verificar": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm --filter @emailmkt/admin-web build && pnpm synth"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
