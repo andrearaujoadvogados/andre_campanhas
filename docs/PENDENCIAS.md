@@ -37,9 +37,23 @@ A HostGator leva ~2-3 minutos para um registro novo aparecer no autoritativo. Su
 
 ## Parte D — travas restantes
 
+### Fechadas em 2026-08-08
+
+- [x] **Conta raiz da AWS.** Existe o usuário IAM `fernando` com `AdministratorAccess` e MFA, login no console verificado. A raiz tem MFA e **nenhuma chave de acesso** (`AccountAccessKeysPresent: 0`) — era a exposição mais grave e não existia. A raiz fica reservada ao que só ela faz: encerrar conta, mudar plano de suporte, alterar dados de cobrança.
+- [x] **Segundo usuário no Cognito.** Criado `contato@andrearaujoadvogados.com.br` no grupo `admin`.
+
+### Abertas
+
+- [ ] **Primeiro acesso do segundo admin.** Enquanto ele não trocar a senha provisória e cadastrar o MFA, o usuário existe e não consegue entrar — nenhuma campanha é aprovada. **A senha provisória expira em 7 dias**; depois disso, reenviar com `admin-create-user --message-action RESEND`.
+
+  Duas características desta escolha, para decidir com os olhos abertos: `contato@` é caixa compartilhada, então quem tiver acesso a ela consegue recuperar a senha e assumir a conta; e o MFA fica vinculado ao celular de quem fizer o primeiro acesso — é essa pessoa, especificamente, que passa a aprovar campanhas. A regra que a aprovação por dois protege não é "duas credenciais", é que duas pessoas leiam o texto antes de ele sair em nome do escritório.
+
+- [ ] **Trocar o segredo do MFA que apareceu numa captura de tela.** Segue aberta porque não se sabe **qual** MFA era: o da raiz da AWS ou o do usuário do Cognito. Quem tiver a imagem gera códigos válidos indefinidamente — um segredo TOTP não expira.
+
+  Na dúvida, troque os dois; nenhum procedimento é destrutivo. Com o usuário IAM administrador funcionando, trocar o da raiz deixou de ter risco de trancar alguém para fora.
+
 - [ ] **Confirmar as inscrições do SNS.** Quatro e-mails, dois endereços em duas regiões. Até alguém clicar, os alarmes de bounce disparam para o vazio — parece protegido e não está.
-- [ ] **Criar um segundo usuário admin no Cognito.** Quem cria a campanha não pode aprová-la; com um único usuário, nenhuma campanha sai.
-- [ ] **Trocar o segredo do MFA.** A chave apareceu numa captura de tela durante a configuração.
-- [ ] **Parar de usar a conta raiz da AWS.** Criar um usuário IAM administrador e ativar MFA na raiz. É a exposição mais séria que resta, e piora agora que o acesso acontece de mais de um lugar.
-- [ ] **Importar os contatos com vínculo classificado.** Quem ficar como `DESCONHECIDO` não recebe campanha — é a trava de legítimo interesse (§6.2).
+
+- [ ] **Importar os contatos com vínculo classificado.** Quem ficar como `DESCONHECIDO` não recebe campanha — é a trava de legítimo interesse (§6.2). A tela de importação está no ar em **Contatos → Importar CSV**, e lê o cabeçalho do arquivo para o mapeamento das colunas.
+
 - [ ] **Aguardar a liberação de produção do SES.** Depende da AWS.
