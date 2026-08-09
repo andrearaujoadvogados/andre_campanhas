@@ -39,9 +39,13 @@ A HostGator leva ~2-3 minutos para um registro novo aparecer no autoritativo. Su
 
 - [x] **Conta raiz da AWS.** Existe o usuário IAM `fernando` com `AdministratorAccess` e MFA, login no console verificado. A raiz tem MFA e **nenhuma chave de acesso** (`AccountAccessKeysPresent: 0`) — era a exposição mais grave, e o diagnóstico mostrou que não existia. A raiz fica reservada ao que só ela faz: encerrar conta, mudar plano de suporte, alterar dados de cobrança.
 
-- [x] **Contas de acesso ao painel.** Existem duas, ambas em `admin`. Criar mais deixou de passar pelo CloudShell: **Usuários** no painel convida por e-mail, troca papel, reenvia convite e remove acesso.
+- [x] **Contas de acesso ao painel.** Criar conta deixou de passar pelo CloudShell: **Usuários** no painel convida por e-mail, troca papel, reenvia convite e remove acesso.
 
-  Senha nenhuma trafega — não há campo no formulário, no contrato ou na permissão da Lambda, que exclui `AdminSetUserPassword` de propósito. Quem é convidado recebe a senha provisória por e-mail, define a definitiva e cadastra o MFA. Remover acesso **desativa**, não apaga: as campanhas guardam quem as criou e quem as aprovou, e esse registro perderia sentido se a conta sumisse.
+  Senha nenhuma trafega — não há campo no formulário, no contrato ou na permissão da Lambda, que exclui `AdminSetUserPassword` de propósito. Quem é convidado recebe a senha provisória por e-mail, define a definitiva e cadastra o MFA. Quem esquecer a senha usa o **Esqueci minha senha** da tela de login, que envia um código por e-mail; o MFA não é redefinido junto, e continua sendo pedido depois.
+
+  Remover acesso **desativa**, não apaga: as campanhas guardam quem as criou e quem as aprovou, e esse registro perderia sentido se a conta sumisse.
+
+  **Não existe exigência de um segundo aprovador.** Quantas contas existem é decisão de operação, não trava do sistema: quem escreve a campanha aprova a própria campanha.
 
 - [x] **Aprovação destravada.** A exigência de que o aprovador fosse outra pessoa caiu, por decisão do escritório: quem escreve as campanhas é o advogado responsável por elas, e uma segunda pessoa não acrescentava revisão — acrescentava um passo que, com um usuário só, travou o sistema inteiro.
 

@@ -1,5 +1,12 @@
 import { Amplify } from 'aws-amplify';
-import { fetchAuthSession, signIn, signOut, confirmSignIn } from 'aws-amplify/auth';
+import {
+  fetchAuthSession,
+  signIn,
+  signOut,
+  confirmSignIn,
+  resetPassword,
+  confirmResetPassword,
+} from 'aws-amplify/auth';
 import { useEffect, useState } from 'react';
 import { configuracao } from './configuracao.js';
 
@@ -90,6 +97,17 @@ export function useSessao(): { estado: EstadoSessao; recarregar: () => void } {
 export const entrar = signIn;
 export const confirmarDesafio = confirmSignIn;
 export const sair = () => signOut();
+
+/**
+ * Recuperação de senha — o pool está configurado com `AccountRecovery.EMAIL_ONLY`.
+ *
+ * O Cognito envia um código para o e-mail cadastrado. O MFA **não** é
+ * redefinido junto: quem recupera a senha continua precisando do aplicativo
+ * autenticador para entrar, e é isso que faz a recuperação por e-mail não virar
+ * um caminho para contornar o segundo fator.
+ */
+export const pedirCodigoDeRecuperacao = resetPassword;
+export const confirmarNovaSenha = confirmResetPassword;
 
 export const temPapel = (usuario: Usuario, ...aceitos: Papel[]): boolean =>
   usuario.papeis.some((p) => aceitos.includes(p));
