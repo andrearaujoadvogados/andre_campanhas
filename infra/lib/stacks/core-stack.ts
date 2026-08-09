@@ -254,6 +254,11 @@ export class CoreStack extends Stack {
         BUCKET_UPLOADS: bucketUploads.bucketName,
         FILA_IMPORT: filaImport.queueUrl,
         USER_POOL_ID: userPool.userPoolId,
+        // O repositório de contatos busca por e-mail pelo hash, e o hash usa
+        // este sal. Sem a variável, o container falha ao inicializar — e como
+        // ele é montado uma vez para todas as rotas, o painel inteiro passa a
+        // devolver 500, não só a tela que precisa de contato.
+        SEGREDO_HMAC_ARN: segredoHmac.secretArn,
       },
     });
 
@@ -421,7 +426,16 @@ export class CoreStack extends Stack {
     filaEventos.grantConsumeMessages(fnEventProcessor);
 
     // Todos que calculam hash de e-mail ou emitem token precisam do segredo.
-    for (const fn of [fnSender, fnPublicApi, fnLauncher, fnEventProcessor, fnCsvImporter]) {
+    // A `admin-api` entra aqui porque busca contato por e-mail, o que passa pelo
+    // hash — a variável de ambiente sozinha não bastaria, faltaria a permissão.
+    for (const fn of [
+      fnAdminApi,
+      fnSender,
+      fnPublicApi,
+      fnLauncher,
+      fnEventProcessor,
+      fnCsvImporter,
+    ]) {
       segredoHmac.grantRead(fn);
     }
     paramTaxa.grantRead(fnSender);
