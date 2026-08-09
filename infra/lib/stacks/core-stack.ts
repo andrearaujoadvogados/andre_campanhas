@@ -496,6 +496,10 @@ export class CoreStack extends Stack {
           CorsHttpMethod.GET,
           CorsHttpMethod.POST,
           CorsHttpMethod.PUT,
+          // A rota de edição de contato é PATCH. O painel ainda não a chama, e
+          // faltando aqui ela falharia no dia em que passasse a chamar — com um
+          // erro de CORS, que não menciona método nenhum.
+          CorsHttpMethod.PATCH,
           CorsHttpMethod.DELETE,
         ],
         allowHeaders: ['authorization', 'content-type'],
@@ -503,9 +507,31 @@ export class CoreStack extends Stack {
       },
     });
 
+    /**
+     * Métodos enumerados, e **não** `HttpMethod.ANY`.
+     *
+     * `ANY` inclui `OPTIONS`, e uma rota explícita de `OPTIONS` tem precedência
+     * sobre o tratamento automático de CORS do HTTP API. O resultado é que o
+     * preflight passa a cair no authorizer do Cognito — e o preflight, por
+     * definição do CORS, é enviado **sem** o cabeçalho `authorization`.
+     *
+     * O authorizer devolve 401, o navegador considera o preflight recusado e a
+     * requisição real nunca chega a sair. Na tela isso aparece como
+     * "Failed to fetch", sem nenhuma menção a CORS, a preflight ou a 401 — o
+     * painel inteiro fica inutilizável para quem está autenticado.
+     *
+     * Enumerando os métodos, `OPTIONS` volta a ser respondido pelo próprio
+     * API Gateway, com os cabeçalhos do `corsPreflight` acima e sem autorização.
+     */
     api.addRoutes({
       path: '/{proxy+}',
-      methods: [HttpMethod.ANY],
+      methods: [
+        HttpMethod.GET,
+        HttpMethod.POST,
+        HttpMethod.PUT,
+        HttpMethod.PATCH,
+        HttpMethod.DELETE,
+      ],
       integration: new HttpLambdaIntegration('AdminIntegration', fnAdminApi),
       authorizer: autorizador,
     });
