@@ -84,12 +84,15 @@ describe('fluxo de aprovação — §5.8 e §10.3', () => {
     });
   });
 
-  it('impede o autor de aprovar a própria campanha e explica por quê', async () => {
+  it('o autor aprova a própria campanha', async () => {
+    // A exigência de um segundo aprovador caiu em 2026-08-08. O domínio e a API
+    // mudaram juntos; a tela continuou desabilitando o botão, o que travava o
+    // fluxo inteiro para quem trabalha sozinho. Este teste é o que impede a
+    // divergência de voltar.
     campanhaAtual = campanha({ status: 'EM_REVISAO', criadoPor: ADMIN.email });
     montar(ADMIN);
 
-    expect(await screen.findByText(/quem cria não pode aprovar/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /aprovar conteúdo/i })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: /aprovar conteúdo/i })).toBeEnabled();
   });
 
   it('operador vê que a campanha aguarda administrador, sem botão de aprovar', async () => {

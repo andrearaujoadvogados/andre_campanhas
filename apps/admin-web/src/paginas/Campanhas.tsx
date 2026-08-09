@@ -354,18 +354,20 @@ function Aprovar({
     );
   }
 
-  const ehAutor = campanha.criadoPor === usuario.email;
-
   return (
     <div className="w-full space-y-3">
-      {ehAutor && (
-        <Aviso
-          tom="alerta"
-          texto="Você criou esta campanha. Quem cria não pode aprovar — peça a outro administrador."
-        />
-      )}
+      {/**
+       * O autor aprova a própria campanha desde 2026-08-08. A etapa continua
+       * existindo, e o que ela protege não é "duas pessoas" — é o conteúdo:
+       * a aprovação grava o hash do que foi revisado, e editar template,
+       * assunto ou audiência depois a invalida.
+       */}
+      <p className="text-sm text-ink-suave">
+        Aprovar registra o conteúdo exato que será enviado. Se algo mudar depois, a aprovação cai e
+        a campanha volta para revisão.
+      </p>
       <div className="flex gap-2">
-        <Botao disabled={ehAutor} carregando={aprovar.isPending} onClick={() => aprovar.mutate()}>
+        <Botao carregando={aprovar.isPending} onClick={() => aprovar.mutate()}>
           Aprovar conteúdo
         </Botao>
       </div>
