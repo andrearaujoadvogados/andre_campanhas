@@ -25,6 +25,7 @@ export interface ItemCampanha extends Record<string, unknown> {
         hashConteudoAprovado: string;
       }
     | undefined;
+  totalDestinatarios?: number | undefined;
   gsi3pk: string;
   gsi3sk: string;
 }
@@ -64,6 +65,7 @@ export function campanhaParaItem(campanha: Campaign): ItemCampanha {
             aprovadoEm: campanha.aprovacao.aprovadoEm.toISOString(),
             hashConteudoAprovado: campanha.aprovacao.hashConteudoAprovado,
           },
+    totalDestinatarios: campanha.totalDestinatarios,
     gsi3pk: g3.pk,
     gsi3sk: g3.sk,
   };
@@ -88,6 +90,9 @@ export function itemParaCampanha(item: Record<string, unknown>): Campaign {
     ...(item['replyTo'] === undefined ? {} : { replyTo: String(item['replyTo']) }),
     criadoPor: userId(String(item['criadoPor'])),
     criadoEm: new Date(String(item['criadoEm'])),
+    ...(item['totalDestinatarios'] === undefined
+      ? {}
+      : { totalDestinatarios: Number(item['totalDestinatarios']) }),
     ...(aprovacaoBruta === undefined
       ? {}
       : {

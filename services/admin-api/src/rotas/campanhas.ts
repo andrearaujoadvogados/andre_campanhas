@@ -204,7 +204,27 @@ rotasCampanhas.get('/:id', async (c) => {
   const campanha = await carregar(deps, c);
   if (campanha === null) return naoEncontrada(c);
 
-  return c.json(paraResposta(campanha, deps));
+  /**
+   * Progresso ao vivo — quantos já têm registro de envio.
+   *
+   * Só conta para status que já dispararam: em rascunho não há o que contar, e
+   * a consulta seria uma leitura à toa a cada abertura da tela. É o número que
+   * transforma "ENVIANDO" de caixa-preta em "3 de 5" — e que teria mostrado o
+   * disparo travado em zero, sem CloudShell.
+   */
+  const jaDisparou =
+    campanha.status === 'ENVIANDO' ||
+    campanha.status === 'PAUSADA' ||
+    campanha.status === 'CONCLUIDA';
+
+  const processados = jaDisparou
+    ? await deps.envios.contarPorCampanha(campanha.tenantId, campanha.campaignId)
+    : undefined;
+
+  return c.json({
+    ...paraResposta(campanha, deps),
+    ...(processados === undefined ? {} : { processados }),
+  });
 });
 
 /** RASCUNHO → EM_REVISAO. Qualquer operador pode submeter. */
@@ -469,6 +489,7 @@ function paraResposta(campanha: Campaign, deps: Dependencias): Record<string, un
     replyTo: campanha.replyTo,
     criadoPor: campanha.criadoPor,
     criadoEm: campanha.criadoEm.toISOString(),
+    totalDestinatarios: campanha.totalDestinatarios,
     aprovacao:
       campanha.aprovacao === undefined
         ? null

@@ -8,7 +8,7 @@ import {
 } from '../componentes/FormularioCampanha.tsx';
 import { Link, useParams } from 'react-router-dom';
 import { api, type ComAviso } from '../lib/api.js';
-import { ROTULO_STATUS_CAMPANHA, dataHora } from '../lib/formato.js';
+import { ROTULO_STATUS_CAMPANHA, dataHora, numero } from '../lib/formato.js';
 import { temPapel, type Usuario } from '../lib/auth.js';
 import {
   Aviso,
@@ -42,6 +42,9 @@ export interface Campanha extends ComAviso {
   aprovacao: { aprovadoPor: string; aprovadoEm: string } | null;
   /** Devolvido pela API; reenviado na aprovação. Ver `Aprovar`. */
   hashConteudoAtual: string;
+  totalDestinatarios?: number;
+  /** Quantos já têm registro de envio. Só vem para status que já dispararam. */
+  processados?: number;
 }
 
 const FILTROS = [
@@ -224,6 +227,10 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
   const campanha = useQuery({
     queryKey: ['campanha', id],
     queryFn: () => api.get<Campanha>(`/campanhas/${id}`),
+    // Enquanto está enviando, o progresso muda sozinho — recarrega a cada 5s
+    // para a barra andar sem o operador precisar atualizar a página.
+    refetchInterval: (q) =>
+      (q.state.data as Campanha | undefined)?.status === 'ENVIANDO' ? 5000 : false,
   });
 
   const acao = useMutation({
@@ -284,6 +291,12 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
           />
         </Cartao>
       ) : null}
+
+      {(c.status === 'ENVIANDO' || c.status === 'PAUSADA' || c.status === 'CONCLUIDA') && (
+        <Cartao titulo="Progresso do envio">
+          <ProgressoEnvio campanha={c} />
+        </Cartao>
+      )}
 
       <Cartao titulo="Situação">
         <dl className="grid gap-4 text-sm sm:grid-cols-2">
@@ -476,6 +489,60 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
  * 2. **Só ADMIN aprova.** Esconder o botão de quem é operador evita o clique
  *    que só produziria um 403 — o controle de verdade é o `exigirPapel` da API.
  */
+/**
+ * Progresso do disparo — "processados de N".
+ *
+ * Existe por um motivo concreto: uma campanha ficou presa em "ENVIANDO" e a
+ * tela não dizia nada além do status. O operador não tinha como saber se o
+ * envio estava a meio caminho ou parado em zero, e o diagnóstico exigiu abrir o
+ * CloudShell. Com este número na tela, um disparo travado se denuncia sozinho.
+ *
+ * Enquanto está ENVIANDO, a query se atualiza sozinha a cada 5s — sem isso, o
+ * operador ficaria recarregando a página para ver a barra andar.
+ */
+function ProgressoEnvio({ campanha }: { campanha: Campanha }) {
+  const total = campanha.totalDestinatarios ?? 0;
+  const feitos = campanha.processados ?? 0;
+  const fracao = total > 0 ? Math.min(1, feitos / total) : 0;
+  const parado = campanha.status === 'ENVIANDO' && total > 0 && feitos === 0;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between">
+        <p className="text-sm text-ink">
+          <span className="text-lg font-semibold">{numero(feitos)}</span>
+          <span className="text-ink-suave"> de {numero(total)} processados</span>
+        </p>
+        {total > 0 && <p className="text-sm text-ink-suave">{Math.round(fracao * 100)}%</p>}
+      </div>
+
+      {/* Barra decorativa: o número acima é a informação; a barra é reforço
+          visual, por isso aria-hidden. */}
+      <div aria-hidden="true" className="h-2 overflow-hidden rounded-full bg-line">
+        <div
+          className="h-full rounded-full bg-ink transition-all"
+          style={{ width: `${Math.round(fracao * 100)}%` }}
+        />
+      </div>
+
+      {parado && (
+        <div role="alert" className="rounded-md border border-alerta/30 bg-alerta-fundo px-4 py-3">
+          <p className="text-sm text-alerta">
+            Nenhum destinatário foi processado ainda. Se isto persistir por alguns minutos, o
+            disparo pode estar travado — cancele a campanha para encerrá-lo e crie uma nova.
+          </p>
+        </div>
+      )}
+
+      {campanha.status === 'CONCLUIDA' && (
+        <p className="text-sm text-ink-suave">
+          Disparo concluído. As taxas de entrega, abertura e clique estão no relatório.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function Aprovar({ campanha, ehAdmin }: { campanha: Campanha; ehAdmin: boolean }) {
   const qc = useQueryClient();
   const aprovar = useMutation({

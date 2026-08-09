@@ -202,3 +202,30 @@ describe('gestão da campanha na tela', () => {
     expect(screen.queryByRole('button', { name: /excluir/i })).toBeNull();
   });
 });
+
+describe('progresso do envio', () => {
+  it('mostra processados de total quando está enviando', async () => {
+    campanhaAtual = campanha({ status: 'ENVIANDO', totalDestinatarios: 5, processados: 3 });
+    montar(ADMIN);
+
+    expect(await screen.findByText(/3/)).toBeInTheDocument();
+    expect(screen.getByText(/de 5 processados/i)).toBeInTheDocument();
+  });
+
+  it('avisa quando o disparo está parado em zero', async () => {
+    // O sintoma que ficou invisível hoje: ENVIANDO com nenhum processado. Sem
+    // este aviso, "Enviando" não distingue "começando" de "travado".
+    campanhaAtual = campanha({ status: 'ENVIANDO', totalDestinatarios: 2, processados: 0 });
+    montar(ADMIN);
+
+    expect(await screen.findByText(/pode estar travado/i)).toBeInTheDocument();
+  });
+
+  it('não mostra progresso para rascunho', async () => {
+    campanhaAtual = campanha({ status: 'RASCUNHO' });
+    montar(ADMIN);
+
+    await screen.findByText(/boletim tributário/i);
+    expect(screen.queryByText(/processados/i)).toBeNull();
+  });
+});

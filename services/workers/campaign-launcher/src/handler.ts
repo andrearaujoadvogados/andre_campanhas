@@ -113,7 +113,7 @@ export const handler = async (entrada: EntradaLauncher): Promise<SaidaLauncher> 
 
   await fila.publicarLote(mensagens);
 
-  await campanhas.salvar({ ...campanha, status: 'ENVIANDO' });
+  await campanhas.salvar({ ...campanha, status: 'ENVIANDO', totalDestinatarios: mensagens.length });
 
   log('INFO', 'campanha enfileirada', {
     campaignId: entrada.campaignId,

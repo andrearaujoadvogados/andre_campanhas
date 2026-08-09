@@ -43,6 +43,15 @@ export interface Campaign {
   readonly criadoPor: UserId;
   readonly criadoEm: Date;
   readonly aprovacao?: Aprovacao;
+  /**
+   * Quantos destinatários o launcher enfileirou no disparo.
+   *
+   * Gravado no momento em que a campanha entra em ENVIANDO. Existe para o painel
+   * poder mostrar "processados de N": sem ele, o total só vive dentro do Step
+   * Functions, e a tela não tem como dizer se um disparo está a meio caminho ou
+   * travado. Ausente enquanto a campanha não foi disparada.
+   */
+  readonly totalDestinatarios?: number;
 }
 
 /**
