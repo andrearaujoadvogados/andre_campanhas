@@ -1,5 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import {
+  CAMPANHA_VAZIA,
+  FormularioCampanha,
+  type DadosCampanha,
+} from '../componentes/FormularioCampanha.tsx';
 import { Link, useParams } from 'react-router-dom';
 import { api, type ComAviso } from '../lib/api.js';
 import { ROTULO_STATUS_CAMPANHA, dataHora } from '../lib/formato.js';
@@ -26,6 +32,11 @@ export interface Campanha extends ComAviso {
   templateVersao: number;
   listId: string;
   agendadaPara?: string;
+  // A API sempre devolveu estes três; o tipo é que não os declarava, e por isso
+  // a tela nunca conseguiu mostrar nem editar o remetente.
+  remetenteNome: string;
+  remetenteEmail: string;
+  replyTo?: string;
   criadoPor: string;
   criadoEm: string;
   aprovacao: { aprovadoPor: string; aprovadoEm: string } | null;
@@ -54,6 +65,27 @@ interface Listagem {
 
 export function Campanhas() {
   const [status, definirStatus] = useState('');
+  const [criando, definirCriando] = useState(false);
+  const [novaCampanha, definirNovaCampanha] = useState<DadosCampanha>(CAMPANHA_VAZIA);
+  const qc = useQueryClient();
+  const navegar = useNavigate();
+
+  const criar = useMutation({
+    mutationFn: () =>
+      api.post<Campanha>('/campanhas', {
+        ...novaCampanha,
+        // Campo opcional: mandar string vazia faria o schema recusar por
+        // formato de e-mail inválido.
+        ...(novaCampanha.replyTo.trim() === '' ? { replyTo: undefined } : {}),
+      }),
+    onSuccess: (k) => {
+      definirCriando(false);
+      definirNovaCampanha(CAMPANHA_VAZIA);
+      void qc.invalidateQueries({ queryKey: ['campanhas'] });
+      // Vai direto para o detalhe: é lá que se revisa, aprova e dispara.
+      navegar(`/campanhas/${k.campaignId}`);
+    },
+  });
 
   const campanhas = useQuery({
     queryKey: ['campanhas', status],
@@ -62,7 +94,28 @@ export function Campanhas() {
 
   return (
     <div className="space-y-6">
-      <TituloPagina>Campanhas</TituloPagina>
+      <TituloPagina
+        acao={!criando && <Botao onClick={() => definirCriando(true)}>Nova campanha</Botao>}
+      >
+        Campanhas
+      </TituloPagina>
+
+      {criando && (
+        <Cartao titulo="Nova campanha">
+          <FormularioCampanha
+            valor={novaCampanha}
+            aoMudar={definirNovaCampanha}
+            aoSalvar={() => criar.mutate()}
+            salvando={criar.isPending}
+            erro={criar.error}
+            rotuloSalvar="Criar campanha"
+            aoCancelar={() => {
+              definirCriando(false);
+              definirNovaCampanha(CAMPANHA_VAZIA);
+            }}
+          />
+        </Cartao>
+      )}
 
       <div role="group" aria-label="Filtrar por situação" className="flex flex-wrap gap-1.5">
         {FILTROS.map((f) => (
@@ -135,11 +188,38 @@ export function Campanhas() {
   );
 }
 
+/** Espelha o `EDITAVEIS` da API. A recusa de verdade é lá; aqui é ergonomia. */
+const EDITAVEIS = new Set(['RASCUNHO', 'EM_REVISAO', 'APROVADA', 'AGENDADA']);
+
 export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
   const { id = '' } = useParams();
   const qc = useQueryClient();
   const [avisoAtual, definirAviso] = useState<string | undefined>(undefined);
   const [quando, definirQuando] = useState('');
+  const [editando, definirEditando] = useState(false);
+  const [rascunho, definirRascunho] = useState<DadosCampanha>(CAMPANHA_VAZIA);
+  const navegar = useNavigate();
+
+  const editar = useMutation({
+    mutationFn: () =>
+      api.patch<Campanha & ComAviso>(`/campanhas/${id}`, {
+        ...rascunho,
+        ...(rascunho.replyTo.trim() === '' ? { replyTo: undefined } : {}),
+      }),
+    onSuccess: (k) => {
+      definirEditando(false);
+      definirAviso(k.aviso);
+      void qc.invalidateQueries({ queryKey: ['campanha', id] });
+    },
+  });
+
+  const excluir = useMutation({
+    mutationFn: () => api.delete(`/campanhas/${id}`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['campanhas'] });
+      navegar('/campanhas');
+    },
+  });
 
   const campanha = useQuery({
     queryKey: ['campanha', id],
@@ -189,6 +269,21 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
 
       <Aviso texto={avisoAtual} tom="alerta" />
       <ErroCaixa erro={acao.error} />
+      <ErroCaixa erro={excluir.error} />
+
+      {editando ? (
+        <Cartao titulo="Editar campanha">
+          <FormularioCampanha
+            valor={rascunho}
+            aoMudar={definirRascunho}
+            aoSalvar={() => editar.mutate()}
+            salvando={editar.isPending}
+            erro={editar.error}
+            rotuloSalvar="Salvar alterações"
+            aoCancelar={() => definirEditando(false)}
+          />
+        </Cartao>
+      ) : null}
 
       <Cartao titulo="Situação">
         <dl className="grid gap-4 text-sm sm:grid-cols-2">
@@ -223,6 +318,59 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
           </div>
         </dl>
       </Cartao>
+
+      {/**
+       * Editar e excluir ficam separados das transições de estado.
+       *
+       * Misturá-los com "aprovar" e "disparar" convidaria ao clique errado numa
+       * fileira de botões — e um deles não tem volta.
+       */}
+      {EDITAVEIS.has(c.status) && !editando && (
+        <Cartao titulo="Editar">
+          <div className="flex flex-wrap gap-2">
+            <Botao
+              variante="secundario"
+              onClick={() => {
+                definirRascunho({
+                  nome: c.nome,
+                  templateId: c.templateId,
+                  listId: c.listId,
+                  remetenteNome: c.remetenteNome,
+                  remetenteEmail: c.remetenteEmail,
+                  replyTo: c.replyTo ?? '',
+                });
+                definirEditando(true);
+              }}
+            >
+              Editar campanha
+            </Botao>
+
+            {/**
+             * Excluir só rascunho, e só ADMIN. A partir da revisão existe rastro
+             * de quem leu; a partir do disparo, registros de envio apontando
+             * para a campanha. O backend recusa; aqui nem oferecemos.
+             */}
+            {c.status === 'RASCUNHO' && ehAdmin && (
+              <Botao
+                variante="perigo"
+                carregando={excluir.isPending}
+                onClick={() => {
+                  if (window.confirm(`Excluir a campanha "${c.nome}"? Isso não pode ser desfeito.`))
+                    excluir.mutate();
+                }}
+              >
+                Excluir rascunho
+              </Botao>
+            )}
+          </div>
+          {c.status !== 'RASCUNHO' && (
+            <p className="mt-3 text-sm text-ink-suave">
+              Editar uma campanha aprovada devolve ela para rascunho: a aprovação valia para o
+              conteúdo anterior.
+            </p>
+          )}
+        </Cartao>
+      )}
 
       <Cartao titulo="Ações">
         <div className="flex flex-wrap gap-2">

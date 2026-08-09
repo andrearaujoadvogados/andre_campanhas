@@ -118,6 +118,7 @@ function montarDeps(): Dependencias {
       buscarPorId: async () => estado.campanha,
       salvar: async () => undefined,
       lerStatus: async () => estado.campanha?.status ?? null,
+      excluir: async () => undefined,
       listar: async () => ({ itens: [], truncado: false }),
     },
     agendador: {

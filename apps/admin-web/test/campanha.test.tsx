@@ -17,6 +17,14 @@ vi.mock('../src/lib/api.js', () => ({
       chamadas.push({ caminho, corpo });
       return { ...campanhaAtual, ...respostaAcao };
     },
+    patch: async (caminho: string, corpo: unknown) => {
+      chamadas.push({ caminho, corpo });
+      return { ...campanhaAtual, ...respostaAcao };
+    },
+    delete: async (caminho: string) => {
+      chamadas.push({ caminho, corpo: undefined });
+      return undefined;
+    },
   },
   FalhaApi: class extends Error {},
 }));
@@ -28,6 +36,8 @@ function campanha(over: Partial<Campanha> = {}): Campanha {
     status: 'RASCUNHO',
     templateId: 't-1',
     templateVersao: 2,
+    remetenteNome: 'André Araújo Advogados',
+    remetenteEmail: 'campanhas@mail.andrearaujoadvogados.com.br',
     listId: 'l-1',
     criadoPor: 'operador@escritorio.com.br',
     criadoEm: '2026-08-07T12:00:00Z',
@@ -155,5 +165,40 @@ describe('ações disponíveis por estado', () => {
     await screen.findByText(/concluída/i);
     expect(screen.queryByRole('button', { name: /cancelar campanha/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /pausar/i })).toBeNull();
+  });
+});
+
+describe('gestão da campanha na tela', () => {
+  it('oferece editar enquanto a campanha não saiu', async () => {
+    campanhaAtual = campanha({ status: 'RASCUNHO' });
+    montar(ADMIN);
+
+    expect(await screen.findByRole('button', { name: /editar campanha/i })).toBeInTheDocument();
+  });
+
+  it('não oferece editar depois do disparo', async () => {
+    // A partir do envio, cada mensagem entregue é um fato registrado — mudar a
+    // campanha faria o relatório descrever algo que não foi o que saiu.
+    campanhaAtual = campanha({ status: 'ENVIANDO' });
+    montar(ADMIN);
+
+    await screen.findByText(/boletim tributário/i);
+    expect(screen.queryByRole('button', { name: /editar campanha/i })).toBeNull();
+  });
+
+  it('só oferece excluir para rascunho', async () => {
+    campanhaAtual = campanha({ status: 'EM_REVISAO' });
+    montar(ADMIN);
+
+    await screen.findByRole('button', { name: /editar campanha/i });
+    expect(screen.queryByRole('button', { name: /excluir/i })).toBeNull();
+  });
+
+  it('operador não vê o botão de excluir', async () => {
+    campanhaAtual = campanha({ status: 'RASCUNHO' });
+    montar(OPERADOR);
+
+    await screen.findByText(/boletim tributário/i);
+    expect(screen.queryByRole('button', { name: /excluir/i })).toBeNull();
   });
 });

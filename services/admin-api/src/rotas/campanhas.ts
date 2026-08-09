@@ -4,6 +4,7 @@ import {
   agendarCampanhaSchema,
   aprovarCampanhaSchema,
   criarCampanhaSchema,
+  editarCampanhaSchema,
 } from '@emailmkt/contracts';
 import {
   agendar,
@@ -14,6 +15,7 @@ import {
   listId as novoListId,
   pausar,
   retomar,
+  revogarAprovacaoPorEdicao,
   templateId as novoTemplateId,
   type Campaign,
   type ConteudoAprovavel,
@@ -67,6 +69,94 @@ rotasCampanhas.post('/', validarCorpo(criarCampanhaSchema), async (c) => {
   await registrar(deps, c, 'CRIOU', campanha, undefined, { nome: campanha.nome });
 
   return c.json(paraResposta(campanha, deps), 201);
+});
+
+/**
+ * Edição — só enquanto a campanha não começou a sair.
+ *
+ * `ENVIANDO`, `PAUSADA`, `CONCLUIDA` e `CANCELADA` ficam de fora: a partir do
+ * disparo, cada mensagem entregue é um fato registrado, e mudar a campanha
+ * depois faria o relatório descrever algo que não foi o que saiu.
+ *
+ * Editar campanha já aprovada revoga a aprovação e devolve para rascunho. Quem
+ * revisou aprovou *aquele* conteúdo — é a mesma razão do hash em
+ * `verificarAprovacaoVigente`, aplicada à edição em vez do disparo.
+ */
+const EDITAVEIS = new Set(['RASCUNHO', 'EM_REVISAO', 'APROVADA', 'AGENDADA']);
+
+rotasCampanhas.patch('/:id', validarCorpo(editarCampanhaSchema), async (c) => {
+  const dados = c.req.valid('json');
+  const deps = await obterDependencias();
+  const usuario = c.get('usuario');
+  const campanha = await carregar(deps, c);
+  if (campanha === null) return naoEncontrada(c);
+
+  if (!EDITAVEIS.has(campanha.status)) {
+    return c.json(
+      {
+        code: 'CAMPANHA_NAO_EDITAVEL',
+        message: `Campanha em ${campanha.status} não pode ser editada. Depois do disparo, o que saiu não muda.`,
+      },
+      409,
+    );
+  }
+
+  const editada: Campaign = {
+    ...campanha,
+    ...(dados.nome === undefined ? {} : { nome: dados.nome }),
+    ...(dados.templateId === undefined ? {} : { templateId: novoTemplateId(dados.templateId) }),
+    ...(dados.listId === undefined ? {} : { listId: novoListId(dados.listId) }),
+    ...(dados.remetenteNome === undefined ? {} : { remetenteNome: dados.remetenteNome }),
+    ...(dados.remetenteEmail === undefined ? {} : { remetenteEmail: dados.remetenteEmail }),
+    ...(dados.replyTo === undefined ? {} : { replyTo: dados.replyTo }),
+  };
+
+  const aprovacaoRevogada = campanha.status === 'APROVADA' || campanha.status === 'AGENDADA';
+  const final = revogarAprovacaoPorEdicao(editada);
+
+  await deps.campanhas.salvar(final);
+  await registrar(deps, c, 'EDITOU', final, { nome: campanha.nome }, { nome: final.nome });
+  void usuario;
+
+  return c.json({
+    ...paraResposta(final, deps),
+    ...(aprovacaoRevogada
+      ? {
+          aviso:
+            'A campanha estava aprovada e voltou para rascunho: a aprovação valia para o conteúdo anterior. Revise e aprove de novo antes de disparar.',
+        }
+      : {}),
+  });
+});
+
+/**
+ * Exclusão — só rascunho.
+ *
+ * Campanha que passou por revisão já tem rastro de quem a leu, e campanha
+ * disparada tem registros de envio apontando para ela. Apagar qualquer uma das
+ * duas deixaria auditoria e relatório sem referente. Para as demais existe o
+ * cancelamento, que preserva o histórico.
+ */
+rotasCampanhas.delete('/:id', exigirPapel('ADMIN'), async (c) => {
+  const deps = await obterDependencias();
+  const campanha = await carregar(deps, c);
+  if (campanha === null) return naoEncontrada(c);
+
+  if (campanha.status !== 'RASCUNHO') {
+    return c.json(
+      {
+        code: 'CAMPANHA_NAO_EXCLUIVEL',
+        message:
+          'Só rascunho pode ser excluído. Campanha que já foi revisada ou disparada deixa rastro de auditoria e de envio — use o cancelamento.',
+      },
+      409,
+    );
+  }
+
+  await deps.campanhas.excluir(campanha.tenantId, campanha.campaignId);
+  await registrar(deps, c, 'EXCLUIU', campanha, { nome: campanha.nome }, undefined);
+
+  return c.body(null, 204);
 });
 
 /**
@@ -326,7 +416,7 @@ async function aplicar(
 async function registrar(
   deps: Dependencias,
   c: Ctx,
-  acao: 'CRIOU' | 'EDITOU' | 'APROVOU' | 'PAUSOU' | 'CANCELOU' | 'ENVIOU',
+  acao: 'CRIOU' | 'EDITOU' | 'APROVOU' | 'PAUSOU' | 'CANCELOU' | 'ENVIOU' | 'EXCLUIU',
   campanha: Campaign,
   antes: unknown,
   depois: unknown,

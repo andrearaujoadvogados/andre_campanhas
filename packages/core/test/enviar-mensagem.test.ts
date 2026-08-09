@@ -85,6 +85,7 @@ function deps(): DepsEnvio {
       buscarPorId: async () => (estado.statusCampanha === null ? null : campanha()),
       salvar: async () => undefined,
       lerStatus: async () => estado.statusCampanha,
+      excluir: async () => undefined,
       listar: async () => ({ itens: [], truncado: false }),
     },
     contatos: {

@@ -1,4 +1,5 @@
 import {
+  DeleteCommand,
   GetCommand,
   PutCommand,
   QueryCommand,
@@ -39,6 +40,12 @@ export class DynamoCampaignRepository implements CampaignRepository {
       new GetCommand({ TableName: this.tabela, Key: chaveCampanha(tenantId, id) }),
     );
     return r.Item === undefined ? null : itemParaCampanha(r.Item);
+  }
+
+  async excluir(tenantId: TenantId, id: CampaignId): Promise<void> {
+    await this.doc.send(
+      new DeleteCommand({ TableName: this.tabela, Key: chaveCampanha(tenantId, id) }),
+    );
   }
 
   async salvar(campanha: Campaign): Promise<void> {

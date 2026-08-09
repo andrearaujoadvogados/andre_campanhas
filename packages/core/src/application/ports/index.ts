@@ -72,6 +72,14 @@ export interface CampaignRepository {
   /** Leitura barata do status — o `sender` consulta uma vez por lote (ADR-05). */
   lerStatus(tenantId: TenantId, id: CampaignId): Promise<Campaign['status'] | null>;
   listar(tenantId: TenantId, filtro: FiltroCampanhas): Promise<ListagemCampanhas>;
+  /**
+   * Só rascunho chega aqui.
+   *
+   * A regra vive na rota, e não neste port, porque depende do status — e um
+   * repositório que decidисse isso viraria um segundo lugar onde a política de
+   * exclusão mora.
+   */
+  excluir(tenantId: TenantId, id: CampaignId): Promise<void>;
 }
 
 export interface FiltroCampanhas {

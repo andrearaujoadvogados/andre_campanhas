@@ -106,6 +106,7 @@ function montarDeps(): Dependencias {
         estado.salvos.push(k);
       },
       lerStatus: async () => estado.campanha?.status ?? null,
+      excluir: async () => undefined,
       listar: async (_t, filtro) => {
         estado.filtrosUsados.push(filtro);
         return {
@@ -401,6 +402,7 @@ describe('correlação e vazamento de erro', () => {
         },
         salvar: async () => undefined,
         lerStatus: async () => null,
+        excluir: async () => undefined,
       },
     });
 
@@ -527,5 +529,69 @@ describe('listagem de campanhas — §6.3, padrão 7', () => {
   it('exige autenticação', async () => {
     const r = await req('/campanhas', {}, evento({ semAuthorizer: true }));
     expect(r.status).toBe(401);
+  });
+});
+
+// ── Gestão de campanhas ──────────────────────────────────────────────────────
+
+describe('editar e excluir campanha', () => {
+  const patch = (corpo: unknown, grupos: unknown = ['admin']) =>
+    req(
+      '/campanhas/k-1',
+      {
+        method: 'PATCH',
+        body: JSON.stringify(corpo),
+        headers: { 'content-type': 'application/json' },
+      },
+      evento({ grupos }),
+    );
+
+  const excluir = (grupos: unknown = ['admin']) =>
+    req('/campanhas/k-1', { method: 'DELETE' }, evento({ grupos }));
+
+  it('edita rascunho', async () => {
+    estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
+    const r = await patch({ nome: 'Nome novo' });
+
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ nome: 'Nome novo' });
+  });
+
+  it('editar campanha aprovada revoga a aprovação e avisa', async () => {
+    // Quem revisou aprovou aquele conteúdo. Manter a aprovação de pé depois de
+    // uma edição transformaria o registro num carimbo sem valor.
+    estado.campanha = campanhaFalsa({ status: 'APROVADA' });
+    const r = await patch({ nome: 'Outro nome' });
+    const corpo = (await r.json()) as { status: string; aviso?: string };
+
+    expect(r.status).toBe(200);
+    expect(corpo.status).toBe('RASCUNHO');
+    expect(corpo.aviso).toMatch(/voltou para rascunho/i);
+  });
+
+  it('não edita campanha que já saiu', async () => {
+    estado.campanha = campanhaFalsa({ status: 'ENVIANDO' });
+    const r = await patch({ nome: 'Tarde demais' });
+
+    expect(r.status).toBe(409);
+    expect(await r.json()).toMatchObject({ code: 'CAMPANHA_NAO_EDITAVEL' });
+  });
+
+  it('exclui rascunho', async () => {
+    estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
+    expect((await excluir()).status).toBe(204);
+  });
+
+  it('não exclui campanha já revisada — o cancelamento preserva o histórico', async () => {
+    estado.campanha = campanhaFalsa({ status: 'EM_REVISAO' });
+    const r = await excluir();
+
+    expect(r.status).toBe(409);
+    expect(await r.json()).toMatchObject({ code: 'CAMPANHA_NAO_EXCLUIVEL' });
+  });
+
+  it('só ADMIN exclui', async () => {
+    estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
+    expect((await excluir(['operador'])).status).toBe(403);
   });
 });

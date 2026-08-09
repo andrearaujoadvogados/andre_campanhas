@@ -180,6 +180,16 @@ export const criarCampanhaSchema = z.object({
 });
 export type CriarCampanhaInput = z.infer<typeof criarCampanhaSchema>;
 
+/**
+ * Edição de campanha.
+ *
+ * Todos os campos opcionais: a tela manda só o que mudou. Editar uma campanha
+ * já aprovada revoga a aprovação e devolve para rascunho — quem revisou
+ * aprovou *aquele* conteúdo.
+ */
+export const editarCampanhaSchema = criarCampanhaSchema.partial();
+export type EditarCampanhaInput = z.infer<typeof editarCampanhaSchema>;
+
 export const agendarCampanhaSchema = z.object({
   agendadaPara: z.coerce.date(),
 });
