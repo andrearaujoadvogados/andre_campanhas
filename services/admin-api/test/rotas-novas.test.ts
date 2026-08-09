@@ -62,6 +62,9 @@ interface Estado {
   campanha: Campaign | null;
   contatosDaLista: Contact[];
   contatoParaExportar: Contact | null;
+  contatoPorEmail: Contact | null;
+  contatosSalvos: Contact[];
+  idsAdicionados: string[];
   contadores: Record<string, number>;
   auditados: { acao: string; recursoTipo: string }[];
   gravados: string[];
@@ -105,8 +108,8 @@ function montarDeps(): Dependencias {
   return {
     contatos: {
       buscarPorId: async () => estado.contatoParaExportar,
-      buscarPorEmail: async () => null,
-      salvar: async () => undefined,
+      buscarPorEmail: async () => estado.contatoPorEmail,
+      salvar: async (contato) => void estado.contatosSalvos.push(contato),
       salvarEmLote: async () => undefined,
       listarPorLista: async () => ({ itens: estado.contatosDaLista }),
       excluir: async () => undefined,
@@ -141,6 +144,7 @@ function montarDeps(): Dependencias {
       salvar: async () => undefined,
       adicionarContatos: async (_t, _l, ids) => {
         estado.adicionados = ids.length;
+        estado.idsAdicionados.push(...ids);
         return ids.length;
       },
       removerContato: async () => undefined,
@@ -217,6 +221,9 @@ beforeEach(() => {
     campanha: null,
     contatosDaLista: [],
     contatoParaExportar: null,
+    contatoPorEmail: null,
+    contatosSalvos: [],
+    idsAdicionados: [],
     contadores: {},
     auditados: [],
     gravados: [],
@@ -378,6 +385,87 @@ describe('listas', () => {
     expect(corpo.itens[0]?.motivosInelegibilidade).toContainEqual({
       motivo: 'RELACIONAMENTO_DESCONHECIDO',
     });
+  });
+});
+
+describe('criar contato direto da tela da lista', () => {
+  const novo = (over: Record<string, unknown> = {}) => ({
+    email: 'maria@exemplo.com',
+    nome: 'Maria',
+    relacionamento: 'CLIENTE_ATIVO',
+    ...over,
+  });
+
+  it('cria o contato e já o coloca na lista', async () => {
+    const r = await req('/listas/l-1/contatos/novo', json(novo()));
+    const corpo = (await r.json()) as { contactId: string; criado: boolean; aviso?: string };
+
+    expect(r.status).toBe(201);
+    expect(corpo).toMatchObject({ contactId: 'id-novo', criado: true });
+    expect(corpo.aviso).toBeUndefined();
+    expect(estado.contatosSalvos).toHaveLength(1);
+    expect(estado.contatosSalvos[0]?.origem).toBe('manual');
+    expect(estado.idsAdicionados).toEqual(['id-novo']);
+    expect(estado.auditados).toContainEqual({ acao: 'CRIOU', recursoTipo: 'Contact' });
+    expect(estado.auditados).toContainEqual({ acao: 'EDITOU', recursoTipo: 'List' });
+  });
+
+  it('e-mail já cadastrado é reaproveitado e entra na lista, sem 409', async () => {
+    // Um 409 aqui obrigaria a pessoa a sair da tela, procurar o contato e
+    // voltar — trabalho manual para um pedido que já estava claro.
+    estado.contatoPorEmail = contatoFalso({ contactId: contactId('c-77') });
+
+    const r = await req('/listas/l-1/contatos/novo', json(novo({ email: 'titular@exemplo.com' })));
+    const corpo = (await r.json()) as { contactId: string; criado: boolean; aviso: string };
+
+    expect(r.status).toBe(201);
+    expect(corpo.contactId).toBe('c-77');
+    expect(corpo.criado).toBe(false);
+    expect(corpo.aviso).toMatch(/reaproveitado/i);
+    expect(corpo.aviso).toMatch(/base legal/i);
+    expect(estado.idsAdicionados).toEqual(['c-77']);
+  });
+
+  it('o vínculo digitado NÃO sobrescreve o do contato existente', async () => {
+    // Trocar o vínculo em silêncio, a partir da tela de uma lista, mudaria a
+    // base legal daquela pessoa sem que ninguém percebesse (§6.2).
+    estado.contatoPorEmail = contatoFalso({ relacionamento: 'CLIENTE_ATIVO' });
+
+    const r = await req(
+      '/listas/l-1/contatos/novo',
+      json(novo({ email: 'titular@exemplo.com', relacionamento: 'DESCONHECIDO', nome: 'Outro' })),
+    );
+    const corpo = (await r.json()) as { aviso: string; relacionamento: string };
+
+    expect(r.status).toBe(201);
+    // O que prevaleceu é o vínculo do contato, não o do formulário. Sem esta
+    // asserção, uma implementação que sobrescrevesse o vínculo em memória e
+    // devolvesse o valor digitado passaria — bastaria não gravar.
+    expect(corpo.relacionamento).toBe('CLIENTE_ATIVO');
+    // E nada gravado: o contato existente saiu daqui exatamente como entrou.
+    expect(estado.contatosSalvos).toHaveLength(0);
+    expect(corpo.aviso).toMatch(/vínculo/i);
+    expect(estado.auditados).not.toContainEqual({ acao: 'CRIOU', recursoTipo: 'Contact' });
+  });
+
+  it('404 para lista inexistente — e nada é criado', async () => {
+    estado.lista = null;
+
+    const r = await req('/listas/l-999/contatos/novo', json(novo()));
+
+    expect(r.status).toBe(404);
+    // O código distingue "lista inexistente" de "rota inexistente": sem ele o
+    // teste passaria igual se a rota tivesse sumido, porque o 404 viria do
+    // `notFound` do app e nada teria sido gravado de qualquer forma.
+    expect(await r.json()).toMatchObject({ code: 'NAO_ENCONTRADO' });
+    expect(estado.contatosSalvos).toHaveLength(0);
+    expect(estado.idsAdicionados).toHaveLength(0);
+  });
+
+  it('valida a entrada com o mesmo schema da criação de contato', async () => {
+    // Sem `relacionamento` não há como demonstrar a base legal (§6.2).
+    const r = await req('/listas/l-1/contatos/novo', json({ email: 'maria@exemplo.com' }));
+    expect(r.status).toBe(400);
   });
 });
 

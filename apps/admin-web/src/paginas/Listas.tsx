@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
-import { api } from '../lib/api.js';
+import { FalhaApi, api, type ComAviso } from '../lib/api.js';
 import { ROTULO_RELACIONAMENTO, ROTULO_STATUS_CONTATO, dataHora, numero } from '../lib/formato.js';
 import {
   Aviso,
@@ -41,6 +41,21 @@ interface ContatoDaLista {
   elegivelParaCampanha: boolean;
   motivosInelegibilidade: { motivo: string; status?: string }[];
 }
+
+/**
+ * Resposta de POST /listas/:id/contatos/novo.
+ *
+ * `criado` distingue o contato recém-cadastrado do que já existia e foi apenas
+ * acrescentado à lista. Quando o contato já existia, o vínculo digitado no
+ * formulário é ignorado — e é o `aviso` que conta isso ao operador.
+ */
+interface ContatoAdicionado extends ComAviso {
+  contactId: string;
+  email: string;
+  criado: boolean;
+}
+
+const RELACIONAMENTOS = Object.keys(ROTULO_RELACIONAMENTO);
 
 export function Listas() {
   const qc = useQueryClient();
@@ -127,6 +142,10 @@ export function Listas() {
 
 export function ListaDetalhe() {
   const { id = '' } = useParams();
+  const qc = useQueryClient();
+  const [email, definirEmail] = useState('');
+  const [nome, definirNome] = useState('');
+  const [relacionamento, definirRelacionamento] = useState('CLIENTE_ATIVO');
 
   const previa = useQuery({
     queryKey: ['lista', id, 'previa'],
@@ -137,6 +156,39 @@ export function ListaDetalhe() {
     queryKey: ['lista', id, 'contatos'],
     queryFn: () => api.get<{ itens: ContatoDaLista[] }>(`/listas/${id}/contatos`),
   });
+
+  const adicionar = useMutation({
+    mutationFn: () =>
+      api.post<ContatoAdicionado>(`/listas/${id}/contatos/novo`, {
+        email,
+        ...(nome === '' ? {} : { nome }),
+        relacionamento,
+      }),
+    onSuccess: () => {
+      definirEmail('');
+      definirNome('');
+      // A prévia também é invalidada: um contato a mais muda quem vai receber,
+      // e deixar o número velho na tela é pior do que não mostrar número nenhum.
+      void qc.invalidateQueries({ queryKey: ['lista', id] });
+    },
+  });
+
+  /**
+   * O aviso sai da resposta da mutação, e não de um `useState` próprio.
+   *
+   * Guardado em estado, ele sobreviveria à tentativa seguinte: quem adiciona um
+   * e-mail já cadastrado e depois erra o próximo endereço veria a caixa de erro
+   * *e*, logo acima, o aviso da adição anterior — dizendo que o vínculo
+   * preenchido foi ignorado numa operação que nem chegou a acontecer. Em campo
+   * que sustenta base legal, essa leitura errada é cara. O `data` da mutação já
+   * volta a `undefined` assim que uma nova tentativa começa, então o aviso
+   * desaparece sozinho no momento certo.
+   */
+  const aviso = adicionar.data?.aviso;
+
+  // Erros por campo vêm do backend com o caminho do campo — é o que permite
+  // destacar a linha errada em vez de mostrar "dados inválidos".
+  const erros = adicionar.error instanceof FalhaApi ? adicionar.error.porCampo : {};
 
   return (
     <div className="space-y-6">
@@ -200,6 +252,81 @@ export function ListaDetalhe() {
         )}
       </Cartao>
 
+      {/**
+       * O formulário repete o de Contatos — mesmos campos, mesmos rótulos, mesma
+       * ajuda — porque é o mesmo ato: cadastrar alguém. A diferença é o destino,
+       * e quem chega aqui pela tela "Lista sem contatos" não deveria ter de sair
+       * para outra página só para dar o primeiro contato à lista.
+       */}
+      <Cartao titulo="Adicionar contato">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Campo rotulo="E-mail" obrigatorio erro={erros['email']}>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => definirEmail(e.target.value)}
+              className={classeEntrada}
+            />
+          </Campo>
+          <Campo rotulo="Nome" erro={erros['nome']}>
+            <input
+              value={nome}
+              onChange={(e) => definirNome(e.target.value)}
+              className={classeEntrada}
+            />
+          </Campo>
+          {/**
+           * Mesma ajuda de Contatos: o vínculo sustenta a base legal (§6.2), e
+           * sem essa frase alguém escolhe "Não classificado" só para passar do
+           * formulário e deixa o contato inelegível sem entender por quê.
+           *
+           * Aqui há uma ressalva a mais: se o e-mail já for de um contato
+           * existente, o vínculo dele é preservado e o que se digita neste campo
+           * é ignorado. Quem confirma isso é o `aviso` da resposta, logo abaixo
+           * — antes de salvar não há como saber se o e-mail já existe.
+           */}
+          <Campo
+            rotulo="Vínculo com o escritório"
+            ajuda="Sustenta a base legal. Quem fica sem classificação não recebe campanhas."
+            obrigatorio
+            erro={erros['relacionamento']}
+          >
+            <select
+              value={relacionamento}
+              onChange={(e) => definirRelacionamento(e.target.value)}
+              className={classeEntrada}
+            >
+              {RELACIONAMENTOS.map((r) => (
+                <option key={r} value={r}>
+                  {ROTULO_RELACIONAMENTO[r]}
+                </option>
+              ))}
+            </select>
+          </Campo>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {relacionamento === 'DESCONHECIDO' && (
+            <Aviso
+              tom="alerta"
+              texto="Contatos sem vínculo classificado ficam cadastrados, mas não recebem campanhas."
+            />
+          )}
+          {/* Tom de alerta: quando o contato já existia, este aviso é a única
+              indicação de que o vínculo digitado não valeu — e vínculo é base
+              legal, não preferência de cadastro. */}
+          <Aviso tom="alerta" texto={aviso} />
+          <ErroCaixa erro={adicionar.error} />
+          <Botao
+            onClick={() => adicionar.mutate()}
+            disabled={email.trim() === ''}
+            carregando={adicionar.isPending}
+          >
+            Adicionar à lista
+          </Botao>
+        </div>
+      </Cartao>
+
       <Cartao titulo="Contatos da lista">
         {contatos.isLoading && <Carregando />}
         <ErroCaixa erro={contatos.error} />
@@ -209,7 +336,8 @@ export function ListaDetalhe() {
             tabela de zero linhas. */}
         {contatos.data !== undefined &&
           (contatos.data.itens.length === 0 ? (
-            <Vazio mensagem="Lista sem contatos." />
+            // O vazio aponta para a saída: antes, ele só constatava o problema.
+            <Vazio mensagem="Lista sem contatos. Use o formulário acima para adicionar o primeiro." />
           ) : (
             <TabelaRolavel>
               <table className="w-full min-w-[34rem] text-sm">

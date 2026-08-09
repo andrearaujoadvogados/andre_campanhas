@@ -1,7 +1,9 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
+import { criarContatoSchema } from '@emailmkt/contracts';
 import {
+  EmailAddress,
   contactId as novoContactId,
   listId as novoListId,
   resolverAudiencia,
@@ -89,6 +91,107 @@ rotasListas.get('/:id/contatos', async (c) => {
     })),
     cursor: pagina.cursor,
   });
+});
+
+/**
+ * Cria um contato já dentro da lista — §11, item 1.
+ *
+ * Registrada **antes** de qualquer rota que trate o segmento seguinte a
+ * `/contatos` como parâmetro (hoje `DELETE /:id/contatos/:contactId`). Sem essa
+ * ordem, o dia em que existir um `POST /:id/contatos/:contactId` o `novo` seria
+ * capturado como id de contato e esta rota nunca rodaria.
+ *
+ * E-mail já cadastrado **não** é erro aqui, ao contrário do `POST /contatos`.
+ * Quem digita um endereço conhecido na tela de uma lista quer aquela pessoa na
+ * lista; devolver 409 obrigaria a sair, procurar o contato e voltar — trabalho
+ * manual para um pedido que já está claro.
+ *
+ * O contato existente é reaproveitado **como está**: vínculo e base legal
+ * continuam os que já eram. O que veio no formulário é ignorado, e a resposta
+ * diz isso em voz alta. Sobrescrever em silêncio o vínculo a partir da tela de
+ * uma lista mudaria a base legal de uma pessoa sem que ninguém percebesse — e é
+ * o vínculo que sustenta o legítimo interesse (§6.2).
+ */
+rotasListas.post('/:id/contatos/novo', validarCorpo(criarContatoSchema), async (c) => {
+  const dados = c.req.valid('json');
+  const deps = await obterDependencias();
+  const usuario = c.get('usuario');
+  const listId = novoListId(c.req.param('id'));
+  const agora = deps.clock.agora();
+
+  const lista = await deps.listas.buscarPorId(usuario.tenantId, listId);
+  if (lista === null) return naoEncontrada(c);
+
+  const email = EmailAddress.create(dados.email);
+  if (!email.ok) return c.json({ code: email.error.code, message: email.error.message }, 400);
+
+  const existente = await deps.contatos.buscarPorEmail(usuario.tenantId, email.value);
+  const criado = existente === null;
+
+  let contato: Contact;
+  if (existente === null) {
+    contato = {
+      tenantId: usuario.tenantId,
+      contactId: novoContactId(deps.ids.gerar()),
+      email: email.value,
+      ...(dados.nome === undefined ? {} : { nome: dados.nome }),
+      camposCustomizados: dados.camposCustomizados,
+      status: 'ATIVO',
+      relacionamento: dados.relacionamento,
+      ...(dados.relacionamentoDesde === undefined
+        ? {}
+        : { relacionamentoDesde: dados.relacionamentoDesde }),
+      criadoEm: agora,
+      atualizadoEm: agora,
+      origem: 'manual',
+    };
+    await deps.contatos.salvar(contato);
+    await auditar(
+      deps,
+      c,
+      'CRIOU',
+      contato.contactId,
+      undefined,
+      { email: contato.email.mascarado, relacionamento: contato.relacionamento },
+      'Contact',
+    );
+  } else {
+    contato = existente;
+  }
+
+  await deps.listas.adicionarContatos(usuario.tenantId, listId, [contato.contactId]);
+  await auditar(deps, c, 'EDITOU', listId, undefined, {
+    adicionados: 1,
+    contactId: contato.contactId,
+    contatoCriado: criado,
+    // Fica registrado que o vínculo pedido foi descartado, e qual prevaleceu.
+    ...(criado
+      ? {}
+      : {
+          relacionamentoPedido: dados.relacionamento,
+          relacionamentoMantido: contato.relacionamento,
+        }),
+  });
+
+  return c.json(
+    {
+      contactId: contato.contactId,
+      email: contato.email.value,
+      criado,
+      // O vínculo que de fato prevaleceu, não o que foi digitado. No
+      // reaproveitamento os dois divergem, e sem este campo a única prova de
+      // qual venceu é uma frase em português dentro do `aviso` — nem a
+      // interface nem um teste conseguem verificar a regra a partir dela.
+      relacionamento: contato.relacionamento,
+      ...(criado
+        ? {}
+        : {
+            aviso:
+              'Já existia um contato com este e-mail. Ele foi reaproveitado e apenas acrescentado à lista: o vínculo e a base legal continuam os que ele já tinha, e o que você preencheu no formulário foi ignorado. Para mudar o vínculo, edite o contato — alterar a base legal de alguém é decisão consciente, não efeito colateral de adicionar à lista.',
+          }),
+    },
+    201,
+  );
 });
 
 rotasListas.post('/:id/contatos', validarCorpo(adicionarContatosSchema), async (c) => {
@@ -235,13 +338,16 @@ async function auditar(
   recursoId: string,
   antes: unknown,
   depois: unknown,
+  // Quase tudo aqui é sobre listas; criar contato pela tela da lista é a
+  // exceção, e o registro precisa dizer o tipo certo do recurso.
+  recursoTipo: 'List' | 'Contact' = 'List',
 ): Promise<void> {
   const usuario = c.get('usuario');
   await deps.auditoria.registrar({
     tenantId: usuario.tenantId,
     userId: usuario.userId,
     acao,
-    recursoTipo: 'List',
+    recursoTipo,
     recursoId,
     antes,
     depois,
