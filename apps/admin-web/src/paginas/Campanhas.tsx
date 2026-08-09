@@ -232,9 +232,7 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
             </Botao>
           )}
 
-          {c.status === 'EM_REVISAO' && (
-            <Aprovar campanha={c} ehAdmin={ehAdmin} usuario={usuario} />
-          )}
+          {c.status === 'EM_REVISAO' && <Aprovar campanha={c} ehAdmin={ehAdmin} />}
 
           {(c.status === 'APROVADA' || c.status === 'AGENDADA') && (
             <Botao carregando={executando} onClick={() => acao.mutate({ caminho: '/disparo' })}>
@@ -327,18 +325,10 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
  *    momento do clique; se alguém editou o modelo entre abrir esta tela e
  *    aprovar, a aprovação é recusada com `CONTEUDO_ALTERADO_APOS_APROVACAO`. Sem
  *    mandar o hash, *toda* aprovação falharia.
- * 2. **O autor não aprova a própria campanha.** O domínio recusa, mas avisar
- *    aqui evita o clique que só produziria um 409.
+ * 2. **Só ADMIN aprova.** Esconder o botão de quem é operador evita o clique
+ *    que só produziria um 403 — o controle de verdade é o `exigirPapel` da API.
  */
-function Aprovar({
-  campanha,
-  ehAdmin,
-  usuario,
-}: {
-  campanha: Campanha;
-  ehAdmin: boolean;
-  usuario: Usuario;
-}) {
+function Aprovar({ campanha, ehAdmin }: { campanha: Campanha; ehAdmin: boolean }) {
   const qc = useQueryClient();
   const aprovar = useMutation({
     mutationFn: () =>
