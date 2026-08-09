@@ -130,6 +130,83 @@ rotasContatos.patch('/:id', validarCorpo(atualizarContatoSchema), async (c) => {
  *
  * Restrito a ADMIN: é irreversível.
  */
+/**
+ * Marcar e desmarcar "não receber" — o controle do operador.
+ *
+ * Usa o status `SUPRIMIDO`, que já bloqueia o envio, em vez de um campo novo:
+ * um segundo mecanismo de bloqueio seria um segundo lugar para esquecer de
+ * consultar.
+ *
+ * **Só desfaz o que o operador fez.** Quem chegou a `DESCADASTRADO`, `OPOSICAO`,
+ * `BOUNCE` ou `RECLAMACAO` não volta por aqui: descadastro é direito do titular,
+ * e reativar quem marcou como spam derruba a reputação de envio da conta inteira
+ * no SES. Reverter esses casos é decisão que não cabe num botão de tela.
+ */
+rotasContatos.post('/:id/nao-enviar', async (c) => {
+  const { contatos, auditoria, clock } = await obterDependencias();
+  const usuario = c.get('usuario');
+  const agora = clock.agora();
+
+  const contato = await contatos.buscarPorId(usuario.tenantId, novoContactId(c.req.param('id')));
+  if (contato === null) {
+    return c.json({ code: 'NAO_ENCONTRADO', message: 'Contato inexistente.' }, 404);
+  }
+
+  const atualizado: Contact = { ...contato, status: 'SUPRIMIDO', atualizadoEm: agora };
+  await contatos.salvar(atualizado);
+  await auditoria.registrar({
+    tenantId: usuario.tenantId,
+    userId: usuario.userId,
+    acao: 'EDITOU',
+    recursoTipo: 'Contact',
+    recursoId: contato.contactId,
+    antes: { status: contato.status },
+    depois: { status: 'SUPRIMIDO' },
+    ocorridoEm: agora,
+  });
+
+  return c.json(paraResposta(atualizado, agora));
+});
+
+rotasContatos.post('/:id/enviar', async (c) => {
+  const { contatos, auditoria, clock } = await obterDependencias();
+  const usuario = c.get('usuario');
+  const agora = clock.agora();
+
+  const contato = await contatos.buscarPorId(usuario.tenantId, novoContactId(c.req.param('id')));
+  if (contato === null) {
+    return c.json({ code: 'NAO_ENCONTRADO', message: 'Contato inexistente.' }, 404);
+  }
+
+  if (contato.status !== 'SUPRIMIDO' && contato.status !== 'ATIVO') {
+    return c.json(
+      {
+        code: 'REATIVACAO_NAO_PERMITIDA',
+        message:
+          'Este contato não pode voltar a receber pelo painel: ele se descadastrou, se opôs, ' +
+          'marcou um e-mail como spam ou teve bounce permanente. Reverter isso é decisão do ' +
+          'titular, não do escritório.',
+      },
+      409,
+    );
+  }
+
+  const atualizado: Contact = { ...contato, status: 'ATIVO', atualizadoEm: agora };
+  await contatos.salvar(atualizado);
+  await auditoria.registrar({
+    tenantId: usuario.tenantId,
+    userId: usuario.userId,
+    acao: 'EDITOU',
+    recursoTipo: 'Contact',
+    recursoId: contato.contactId,
+    antes: { status: contato.status },
+    depois: { status: 'ATIVO' },
+    ocorridoEm: agora,
+  });
+
+  return c.json(paraResposta(atualizado, agora));
+});
+
 rotasContatos.delete('/:id', exigirPapel('ADMIN'), async (c) => {
   const { contatos, supressao, auditoria, hasher, clock } = await obterDependencias();
   const usuario = c.get('usuario');

@@ -71,25 +71,30 @@ describe('resolverAudiencia', () => {
     expect(r.excluidos.total).toBe(0);
   });
 
-  it('exclui relacionamento DESCONHECIDO — §6.2', async () => {
+  // As três condições abaixo excluíam, e deixaram de excluir por decisão do
+  // escritório em 2026-08-09. Os testes permanecem, invertidos, porque o valor
+  // deles agora é outro: garantir que ninguém as reintroduza sem perceber.
+
+  it('relacionamento DESCONHECIDO recebe', async () => {
     const r = await resolverAudiencia(
       repos([contato({ email: 'x@exemplo.com', relacionamento: 'DESCONHECIDO' })]),
       input,
     );
-    expect(r.elegiveis).toHaveLength(0);
-    expect(r.excluidos.porMotivo['RELACIONAMENTO_DESCONHECIDO']).toBe(1);
+    expect(r.elegiveis).toHaveLength(1);
   });
 
-  it('exclui contato sem base legal registrada', async () => {
+  it('contato sem base legal registrada recebe', async () => {
+    // Era o caso que mais doía: a tela de criação nunca preenchia esse registro,
+    // então todo contato cadastrado pelo painel nascia permanentemente
+    // inelegível — e a tela não dizia o que fazer a respeito.
     const semBase = contato({ email: 'y@exemplo.com' });
     const { baseLegal: _b, ...resto } = semBase;
     const r = await resolverAudiencia(repos([resto as Contact]), input);
 
-    expect(r.elegiveis).toHaveLength(0);
-    expect(r.excluidos.porMotivo['SEM_BASE_LEGAL']).toBe(1);
+    expect(r.elegiveis).toHaveLength(1);
   });
 
-  it('exclui vínculo expirado — legítimo interesse não é permanente (§10.2)', async () => {
+  it('vínculo antigo recebe', async () => {
     const antigo = contato({
       email: 'antigo@exemplo.com',
       relacionamento: 'EX_CLIENTE',
@@ -97,8 +102,7 @@ describe('resolverAudiencia', () => {
     });
     const r = await resolverAudiencia(repos([antigo]), input);
 
-    expect(r.elegiveis).toHaveLength(0);
-    expect(r.excluidos.porMotivo['VINCULO_EXPIRADO']).toBe(1);
+    expect(r.elegiveis).toHaveLength(1);
   });
 
   it.each(['DESCADASTRADO', 'OPOSICAO', 'BOUNCE', 'RECLAMACAO', 'SUPRIMIDO'] as const)(
@@ -160,23 +164,27 @@ describe('resolverAudiencia', () => {
       input,
     );
 
-    expect(r.elegiveis).toHaveLength(1);
+    // O de vínculo desconhecido agora recebe; sobram o bounce e o suprimido.
+    expect(r.elegiveis).toHaveLength(2);
     expect(r.excluidos).toEqual({
-      total: 3,
-      porMotivo: { RELACIONAMENTO_DESCONHECIDO: 1, STATUS_BOUNCE: 1, SUPRIMIDO: 1 },
+      total: 2,
+      porMotivo: { STATUS_BOUNCE: 1, SUPRIMIDO: 1 },
     });
   });
 });
 
-describe('verificarElegibilidade acumula motivos', () => {
-  it('reporta todos os problemas de uma vez, não só o primeiro', () => {
+describe('verificarElegibilidade', () => {
+  it('o status é o que bloqueia, e o motivo diz qual', () => {
+    // Sobrou uma condição só. O motivo carrega o status para que a tela consiga
+    // dizer "marcou como spam" em vez de "inelegível".
     const ruim = contato({
       email: 'ruim@exemplo.com',
       status: 'BOUNCE',
       relacionamento: 'DESCONHECIDO',
     });
-    const { motivos } = verificarElegibilidade(ruim, AGORA);
+    const { elegivel, motivos } = verificarElegibilidade(ruim, AGORA);
 
-    expect(motivos).toHaveLength(2);
+    expect(elegivel).toBe(false);
+    expect(motivos).toEqual([{ motivo: 'STATUS', status: 'BOUNCE' }]);
   });
 });

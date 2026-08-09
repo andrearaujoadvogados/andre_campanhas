@@ -376,15 +376,27 @@ describe('listas', () => {
   });
 
   it('a listagem de contatos usa a elegibilidade do domínio, não uma cópia', async () => {
-    estado.contatosDaLista = [contatoFalso({ relacionamento: 'DESCONHECIDO' })];
+    // Marcado para não receber: é o único caso que a tela precisa distinguir
+    // de "recebe", já que vínculo e base legal deixaram de bloquear.
+    estado.contatosDaLista = [contatoFalso({ status: 'SUPRIMIDO' })];
     const corpo = (await (await req('/listas/l-1/contatos')).json()) as {
       itens: { elegivelParaCampanha: boolean; motivosInelegibilidade: { motivo: string }[] }[];
     };
 
     expect(corpo.itens[0]?.elegivelParaCampanha).toBe(false);
     expect(corpo.itens[0]?.motivosInelegibilidade).toContainEqual({
-      motivo: 'RELACIONAMENTO_DESCONHECIDO',
+      motivo: 'STATUS',
+      status: 'SUPRIMIDO',
     });
+  });
+
+  it('vínculo não classificado recebe', async () => {
+    estado.contatosDaLista = [contatoFalso({ relacionamento: 'DESCONHECIDO' })];
+    const corpo = (await (await req('/listas/l-1/contatos')).json()) as {
+      itens: { elegivelParaCampanha: boolean }[];
+    };
+
+    expect(corpo.itens[0]?.elegivelParaCampanha).toBe(true);
   });
 });
 
@@ -473,7 +485,7 @@ describe('prévia de audiência — o número que importa antes de disparar', ()
   it('mostra quantos recebem e explica quem não recebe', async () => {
     estado.contatosDaLista = [
       contatoFalso({ contactId: contactId('c-1') }),
-      contatoFalso({ contactId: contactId('c-2'), relacionamento: 'DESCONHECIDO' }),
+      contatoFalso({ contactId: contactId('c-2'), status: 'SUPRIMIDO' }),
       contatoFalso({ contactId: contactId('c-3'), status: 'BOUNCE' }),
     ];
 
@@ -486,9 +498,9 @@ describe('prévia de audiência — o número que importa antes de disparar', ()
     expect(corpo.receberao).toBe(1);
     expect(corpo.naoReceberao).toBe(2);
 
-    const desconhecido = corpo.explicacoes.find((e) => e.motivo === 'RELACIONAMENTO_DESCONHECIDO');
-    expect(desconhecido?.quantidade).toBe(1);
-    expect(desconhecido?.explicacao).toMatch(/legítimo interesse/i);
+    const suprimido = corpo.explicacoes.find((e) => e.motivo === 'STATUS_SUPRIMIDO');
+    expect(suprimido?.quantidade).toBe(1);
+    expect(suprimido?.explicacao).toMatch(/marcou para não receber/i);
   });
 
   it('404 para lista inexistente', async () => {

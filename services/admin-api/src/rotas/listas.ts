@@ -294,11 +294,6 @@ const naoEncontrada = (c: Ctx) =>
   c.json({ code: 'NAO_ENCONTRADO', message: 'Lista inexistente.' }, 404);
 
 const EXPLICACOES: Readonly<Record<string, string>> = {
-  RELACIONAMENTO_DESCONHECIDO:
-    'Contatos sem vínculo classificado. Sob legítimo interesse, não podem receber até serem classificados.',
-  SEM_BASE_LEGAL: 'Contatos sem base legal registrada. Importe-os novamente declarando a origem.',
-  VINCULO_EXPIRADO:
-    'Vínculo antigo demais para sustentar o legítimo interesse. Revise ou recapte o consentimento.',
   SUPRIMIDO: 'Contatos que já pediram para sair ou tiveram bounce permanente. Não devem receber.',
   DUPLICADO_NA_LISTA: 'Mesmo e-mail repetido na lista — contado uma vez só.',
   FORA_DO_SEGMENTO: 'Contatos fora do critério do segmento.',
@@ -306,7 +301,7 @@ const EXPLICACOES: Readonly<Record<string, string>> = {
   STATUS_OPOSICAO: 'Contatos que se opuseram ao tratamento dos dados.',
   STATUS_BOUNCE: 'Contatos com bounce permanente — o endereço não existe.',
   STATUS_RECLAMACAO: 'Contatos que marcaram um e-mail como spam.',
-  STATUS_SUPRIMIDO: 'Contatos suprimidos manualmente.',
+  STATUS_SUPRIMIDO: 'Contatos que você marcou para não receber.',
 };
 
 function explicar(

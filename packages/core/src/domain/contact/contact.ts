@@ -60,11 +60,7 @@ const STATUS_BLOQUEADOS: ReadonlySet<ContactStatus> = new Set<ContactStatus>([
   'SUPRIMIDO',
 ]);
 
-export type MotivoInelegibilidade =
-  | { readonly motivo: 'STATUS'; readonly status: ContactStatus }
-  | { readonly motivo: 'RELACIONAMENTO_DESCONHECIDO' }
-  | { readonly motivo: 'SEM_BASE_LEGAL' }
-  | { readonly motivo: 'VINCULO_EXPIRADO'; readonly mesesDesdeVinculo: number };
+export type MotivoInelegibilidade = { readonly motivo: 'STATUS'; readonly status: ContactStatus };
 
 export interface ResultadoElegibilidade {
   readonly elegivel: boolean;
@@ -72,55 +68,45 @@ export interface ResultadoElegibilidade {
 }
 
 /**
- * Prazo após o qual o vínculo deixa de sustentar o legítimo interesse — §10.2.
- * Um ex-cliente de cinco anos atrás dificilmente ainda tem expectativa legítima
- * de receber comunicação. O valor definitivo sai do LIA do escritório; 24 meses
- * é um padrão conservador até lá.
- */
-export const MESES_VALIDADE_VINCULO = 24;
-
-/**
  * A porta única por onde um contato entra numa campanha.
  *
  * Concentrar isto aqui é intencional: se a verificação estivesse espalhada pelo
  * launcher, pelo importador e pela interface, bastaria uma delas ficar
- * desatualizada para um contato inelegível receber e-mail. Aqui, esquecer de
+ * desatualizada para um contato bloqueado receber e-mail. Aqui, esquecer de
  * chamar é visível; divergir é impossível.
+ *
+ * **Contato recebe por padrão.** Decisão do escritório em 2026-08-09.
+ *
+ * Antes, três condições a mais bloqueavam: vínculo não classificado, ausência de
+ * registro de base legal por contato, e vínculo com mais de 24 meses. Elas
+ * existiam para tornar o legítimo interesse verificável contato a contato — e o
+ * custo disso foi um sistema em que ninguém recebia. Pior: a tela de criação de
+ * contato **nunca preenchia** o registro de base legal, então todo contato
+ * cadastrado pelo painel nascia permanentemente inelegível, sem que a tela
+ * dissesse o que fazer a respeito.
+ *
+ * A base legal continua existindo; o que mudou é onde ela é declarada. Ela passa
+ * a ser uma afirmação do escritório sobre a própria base de contatos —
+ * registrada uma vez, no LIA —, e não um carimbo por pessoa. É como a maioria
+ * dos sistemas de e-mail marketing opera, e é defensável: o que a LGPD cobra é
+ * que exista base legal e que o titular possa se opor, não que cada linha do
+ * banco carregue um atestado.
+ *
+ * O que **não** mudou, e não deve mudar: quem se descadastrou, se opôs, deu
+ * bounce ou marcou como spam não recebe. Isso não é burocracia. Descadastro é
+ * direito do titular, e bounce e reclamação são o que derruba a reputação de
+ * envio — passar por cima deles não incomoda só o destinatário, suspende a conta
+ * no SES e tira o sistema inteiro do ar.
  */
-export function verificarElegibilidade(contato: Contact, agora: Date): ResultadoElegibilidade {
+export function verificarElegibilidade(contato: Contact, _agora: Date): ResultadoElegibilidade {
   const motivos: MotivoInelegibilidade[] = [];
 
   if (STATUS_BLOQUEADOS.has(contato.status)) {
     motivos.push({ motivo: 'STATUS', status: contato.status });
   }
 
-  // §6.2: DESCONHECIDO é cadastrável, mas não é enviável. Vira tarefa visível na
-  // interface em vez de risco silencioso — e atende LGPD e OAB com um só controle.
-  if (contato.relacionamento === 'DESCONHECIDO') {
-    motivos.push({ motivo: 'RELACIONAMENTO_DESCONHECIDO' });
-  }
-
-  if (contato.baseLegal === undefined) {
-    motivos.push({ motivo: 'SEM_BASE_LEGAL' });
-  }
-
-  if (contato.baseLegal?.base === 'LEGITIMO_INTERESSE' && contato.relacionamentoDesde) {
-    const meses = mesesEntre(contato.relacionamentoDesde, agora);
-    if (meses > MESES_VALIDADE_VINCULO) {
-      motivos.push({ motivo: 'VINCULO_EXPIRADO', mesesDesdeVinculo: meses });
-    }
-  }
-
   return { elegivel: motivos.length === 0, motivos };
 }
-
-function mesesEntre(inicio: Date, fim: Date): number {
-  const anos = fim.getUTCFullYear() - inicio.getUTCFullYear();
-  const meses = fim.getUTCMonth() - inicio.getUTCMonth();
-  const ajusteDia = fim.getUTCDate() < inicio.getUTCDate() ? -1 : 0;
-  return anos * 12 + meses + ajusteDia;
-}
-
 /** Transições de status disparadas por evento de envio ou por ação do titular. */
 export function aplicarDescadastro(contato: Contact, agora: Date): Contact {
   return { ...contato, status: 'DESCADASTRADO', atualizadoEm: agora };

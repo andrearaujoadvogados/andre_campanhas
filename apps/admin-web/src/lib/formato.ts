@@ -52,7 +52,7 @@ export const ROTULO_STATUS_CONTATO: Readonly<Record<string, string>> = {
   OPOSICAO: 'Oposição ao tratamento',
   BOUNCE: 'Endereço inválido',
   RECLAMACAO: 'Marcou como spam',
-  SUPRIMIDO: 'Suprimido',
+  SUPRIMIDO: 'Marcado para não receber',
 };
 
 export const ROTULO_RELACIONAMENTO: Readonly<Record<string, string>> = {
@@ -65,8 +65,5 @@ export const ROTULO_RELACIONAMENTO: Readonly<Record<string, string>> = {
 };
 
 export const ROTULO_MOTIVO: Readonly<Record<string, string>> = {
-  RELACIONAMENTO_DESCONHECIDO: 'Sem vínculo classificado',
-  SEM_BASE_LEGAL: 'Sem base legal registrada',
-  VINCULO_EXPIRADO: 'Vínculo antigo demais',
   STATUS: 'Situação do contato',
 };

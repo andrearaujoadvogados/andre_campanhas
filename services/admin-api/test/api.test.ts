@@ -358,15 +358,26 @@ describe('validação de entrada', () => {
   });
 
   it('expõe o motivo de inelegibilidade em vez de deixar o operador no escuro', async () => {
-    estado.contato = contatoFalso({ relacionamento: 'DESCONHECIDO' });
+    estado.contato = contatoFalso({ status: 'RECLAMACAO' });
     const r = await req('/contatos/c-1', {}, evento());
     const corpo = (await r.json()) as {
       elegivelParaCampanha: boolean;
-      motivosInelegibilidade: { motivo: string }[];
+      motivosInelegibilidade: { motivo: string; status?: string }[];
     };
 
     expect(corpo.elegivelParaCampanha).toBe(false);
-    expect(corpo.motivosInelegibilidade).toContainEqual({ motivo: 'RELACIONAMENTO_DESCONHECIDO' });
+    expect(corpo.motivosInelegibilidade).toContainEqual({
+      motivo: 'STATUS',
+      status: 'RECLAMACAO',
+    });
+  });
+
+  it('vínculo não classificado recebe — contato recebe por padrão', async () => {
+    estado.contato = contatoFalso({ relacionamento: 'DESCONHECIDO' });
+    const r = await req('/contatos/c-1', {}, evento());
+    const corpo = (await r.json()) as { elegivelParaCampanha: boolean };
+
+    expect(corpo.elegivelParaCampanha).toBe(true);
   });
 });
 

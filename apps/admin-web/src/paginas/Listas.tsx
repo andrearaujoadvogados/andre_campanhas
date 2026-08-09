@@ -287,7 +287,7 @@ export function ListaDetalhe() {
            */}
           <Campo
             rotulo="Vínculo com o escritório"
-            ajuda="Sustenta a base legal. Quem fica sem classificação não recebe campanhas."
+            ajuda="Descreve a relação com o escritório. Ajuda a segmentar as campanhas."
             obrigatorio
             erro={erros['relacionamento']}
           >
@@ -306,15 +306,8 @@ export function ListaDetalhe() {
         </div>
 
         <div className="mt-4 space-y-3">
-          {relacionamento === 'DESCONHECIDO' && (
-            <Aviso
-              tom="alerta"
-              texto="Contatos sem vínculo classificado ficam cadastrados, mas não recebem campanhas."
-            />
-          )}
           {/* Tom de alerta: quando o contato já existia, este aviso é a única
-              indicação de que o vínculo digitado não valeu — e vínculo é base
-              legal, não preferência de cadastro. */}
+              indicação de que o vínculo digitado não valeu. */}
           <Aviso tom="alerta" texto={aviso} />
           <ErroCaixa erro={adicionar.error} />
           <Botao

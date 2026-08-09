@@ -104,15 +104,7 @@ export async function resolverAudiencia(
   return { elegiveis, excluidos: { total, porMotivo: contadores } };
 }
 
+/** Agrupa os excluídos por motivo, para o relatório de audiência da campanha. */
 function rotuloMotivo(m: MotivoInelegibilidade): string {
-  switch (m.motivo) {
-    case 'STATUS':
-      return `STATUS_${m.status}`;
-    case 'RELACIONAMENTO_DESCONHECIDO':
-      return 'RELACIONAMENTO_DESCONHECIDO';
-    case 'SEM_BASE_LEGAL':
-      return 'SEM_BASE_LEGAL';
-    case 'VINCULO_EXPIRADO':
-      return 'VINCULO_EXPIRADO';
-  }
+  return `STATUS_${m.status}`;
 }

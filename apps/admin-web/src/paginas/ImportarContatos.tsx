@@ -211,7 +211,7 @@ export function ImportarContatos() {
 
           {colunaVinculo !== '' && (
             <div className="mt-4">
-              <Aviso texto="Linhas com o vínculo em branco ou com valor não reconhecido entram como Não classificado, e não recebem campanhas." />
+              <Aviso texto="Linhas com o vínculo em branco ou com valor não reconhecido entram como Não classificado. Elas recebem campanhas normalmente — o vínculo serve para segmentar depois." />
             </div>
           )}
         </Cartao>

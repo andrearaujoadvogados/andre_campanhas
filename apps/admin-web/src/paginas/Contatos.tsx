@@ -104,16 +104,14 @@ export function Contatos({ usuario }: { usuario: Usuario }) {
             />
           </Campo>
           {/**
-           * Vínculo é obrigatório, e a ajuda explica por quê.
-           *
-           * Sob legítimo interesse, é ele que prova a base legal (§6.2). Sem essa
-           * explicação, o campo pareceria burocracia e alguém escolheria
-           * "Não classificado" só para passar do formulário — deixando o contato
-           * permanentemente inelegível sem entender o motivo.
+           * O vínculo não bloqueia mais o envio — desde 2026-08-09, contato
+           * recebe por padrão. Ele continua sendo pedido porque é a informação
+           * que descreve a relação do escritório com aquela pessoa, e é dela que
+           * sairá qualquer segmentação futura. A ajuda deixou de ameaçar.
            */}
           <Campo
             rotulo="Vínculo com o escritório"
-            ajuda="Sustenta a base legal. Quem fica sem classificação não recebe campanhas."
+            ajuda="Descreve a relação com o escritório. Ajuda a segmentar as campanhas."
             obrigatorio
           >
             <select
@@ -131,12 +129,6 @@ export function Contatos({ usuario }: { usuario: Usuario }) {
         </div>
 
         <div className="mt-4 space-y-3">
-          {relacionamento === 'DESCONHECIDO' && (
-            <Aviso
-              tom="alerta"
-              texto="Contatos sem vínculo classificado ficam cadastrados, mas não recebem campanhas."
-            />
-          )}
           <ErroCaixa erro={criar.error} />
           <Botao
             onClick={() => criar.mutate()}
@@ -163,6 +155,7 @@ export function Contatos({ usuario }: { usuario: Usuario }) {
 
 export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
   const { id = '' } = useParams();
+  const qcDetalhe = useQueryClient();
   const [exportacao, definirExportacao] = useState<{
     arquivos: { formato: string; descricao: string; url: string }[];
     validadeSegundos: number;
@@ -172,6 +165,19 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
   const contato = useQuery({
     queryKey: ['contato', id],
     queryFn: () => api.get<Contato>(`/contatos/${id}`),
+  });
+
+  /**
+   * O contato recebe por padrão; este é o controle para dizer que não deve.
+   *
+   * Só alterna entre "recebe" e "marcado para não receber". Quem se descadastrou,
+   * se opôs, deu bounce ou marcou como spam não volta por aqui — o backend
+   * recusa, e a tela nem oferece o botão.
+   */
+  const alternarEnvio = useMutation({
+    mutationFn: (receber: boolean) =>
+      api.post<Contato>(`/contatos/${id}/${receber ? 'enviar' : 'nao-enviar'}`),
+    onSuccess: () => void qcDetalhe.invalidateQueries({ queryKey: ['contato', id] }),
   });
 
   const exportar = useMutation({
@@ -243,8 +249,38 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
        * conclui que há um bug. O motivo mais provável — vínculo não classificado
        * — é resolvível em dois cliques, desde que ele saiba disso.
        */}
+      <Cartao titulo="Recebimento de campanhas">
+        {c.status === 'ATIVO' || c.status === 'SUPRIMIDO' ? (
+          <div className="space-y-3">
+            <p className="text-sm text-ink-suave">
+              {c.status === 'SUPRIMIDO'
+                ? 'Este contato está marcado para não receber campanhas.'
+                : 'Este contato recebe as campanhas das listas de que participa.'}
+            </p>
+            <ErroCaixa erro={alternarEnvio.error} />
+            <Botao
+              variante={c.status === 'SUPRIMIDO' ? 'primario' : 'perigo'}
+              carregando={alternarEnvio.isPending}
+              onClick={() => alternarEnvio.mutate(c.status === 'SUPRIMIDO')}
+            >
+              {c.status === 'SUPRIMIDO' ? 'Voltar a enviar' : 'Não enviar para este contato'}
+            </Botao>
+          </div>
+        ) : (
+          /**
+           * Sem botão: descadastro, oposição, bounce e reclamação não se
+           * desfazem daqui. Os dois primeiros são direito do titular; os dois
+           * últimos derrubam a reputação de envio da conta inteira se ignorados.
+           */
+          <p className="text-sm text-ink-suave">
+            Este contato não recebe campanhas, e isso não pode ser desfeito pelo painel — a situação
+            partiu do próprio destinatário ou do provedor de e-mail dele.
+          </p>
+        )}
+      </Cartao>
+
       {!c.elegivelParaCampanha && (
-        <Cartao titulo="Este contato não recebe campanhas">
+        <Cartao titulo="Por que este contato não recebe">
           <ul className="space-y-1 text-sm text-ink">
             {c.motivosInelegibilidade.map((m, i) => (
               <li key={i}>
