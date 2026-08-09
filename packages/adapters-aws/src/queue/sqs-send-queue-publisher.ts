@@ -3,7 +3,7 @@ import {
   SendMessageBatchCommand,
   type SQSClient,
 } from '@aws-sdk/client-sqs';
-import type { CampaignId, ContactId, SendId, SendQueuePublisher } from '@emailmkt/core';
+import type { TenantId, CampaignId, ContactId, SendId, SendQueuePublisher } from '@emailmkt/core';
 
 const LIMITE_LOTE_SQS = 10;
 
@@ -22,6 +22,7 @@ export class SqsSendQueuePublisher implements SendQueuePublisher {
    */
   async publicarLote(
     mensagens: readonly {
+      readonly tenantId: TenantId;
       readonly sendId: SendId;
       readonly campaignId: CampaignId;
       readonly contactId: ContactId;
@@ -38,6 +39,11 @@ export class SqsSendQueuePublisher implements SendQueuePublisher {
             // estourar o limite de 80 caracteres com hashes longos.
             Id: `m${indice}`,
             MessageBody: JSON.stringify({
+              // tenantId vai junto porque o `mensagemEnvioSchema` do sender o
+              // exige — sem ele, cada mensagem é rejeitada na validação e
+              // descartada como IGNORADO, sem registro e sem ir para a DLQ. O
+              // sintoma é uma campanha eternamente "ENVIANDO".
+              tenantId: m.tenantId,
               sendId: m.sendId,
               campaignId: m.campaignId,
               contactId: m.contactId,

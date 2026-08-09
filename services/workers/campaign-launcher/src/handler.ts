@@ -102,6 +102,7 @@ export const handler = async (entrada: EntradaLauncher): Promise<SaidaLauncher> 
   });
 
   const mensagens = audiencia.elegiveis.map((contato) => ({
+    tenantId,
     // Determinístico: se o enfileiramento for repetido após uma falha, o mesmo
     // par campanha+contato gera o mesmo sendId e a idempotência barra o
     // duplicado no `sender` (§5.4).
