@@ -150,6 +150,20 @@ describe('SesEmailProvider — classificação de erro (§5.5)', () => {
     },
   );
 
+  it('AccessDeniedException se identifica como permissão, e não descarta a mensagem', async () => {
+    // Este caso já se escondeu uma vez: caindo no `default`, aparecia como
+    // FALHA_TRANSITORIA e passou por throttling do SES por horas. O motivo
+    // precisa dizer "permissão" para que a próxima pessoa não repita a busca.
+    //
+    // Transitório de propósito: `REJEITADO_PERMANENTE` descartaria o e-mail por
+    // um defeito de policy que se conserta em minutos. Assim ele vai para a DLQ
+    // e pode ser reprocessado.
+    const falha = await classificar('AccessDeniedException');
+
+    expect(falha?.tipo).toBe('ERRO_TRANSITORIO');
+    if (falha?.tipo === 'ERRO_TRANSITORIO') expect(falha.detalhe).toMatch(/permiss/i);
+  });
+
   it('LimitExceededException → THROTTLED com espera longa, não rejeição', async () => {
     // Cota diária estourada: a mensagem é boa, só precisa da próxima janela.
     const falha = await classificar('LimitExceededException');
