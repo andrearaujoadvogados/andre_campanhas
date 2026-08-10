@@ -64,6 +64,15 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
   const [avancado, definirAvancado] = useState(false);
   const [testeTexto, definirTesteTexto] = useState('');
   const [avisoTeste, definirAvisoTeste] = useState<string | undefined>(undefined);
+  /**
+   * Por que cada endereço de teste não recebeu.
+   *
+   * A API sempre devolveu isto, e a tela descartava: o aviso dizia "veja os
+   * motivos abaixo" e não havia nada abaixo. Quem tentava enviar um teste que
+   * falhava — endereço não verificado com o SES em sandbox é o caso comum —
+   * ficava sem nenhuma pista do que corrigir.
+   */
+  const [falhasTeste, definirFalhasTeste] = useState<{ email: string; motivo: string }[]>([]);
   const [tagsFiltroTexto, definirTagsFiltro] = useState('');
   // Ids destravados da seleção (desmarcados). Vazio = todos os elegíveis entram.
   const [desmarcados, definirDesmarcados] = useState<Set<string>>(new Set());
@@ -156,7 +165,10 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
         { destinatarios },
       );
     },
-    onSuccess: (r) => definirAvisoTeste(r.aviso),
+    onSuccess: (r) => {
+      definirAvisoTeste(r.aviso);
+      definirFalhasTeste(r.falhas);
+    },
   });
 
   const disparar = useMutation({
@@ -494,6 +506,16 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
               Enviar teste
             </Botao>
             <Aviso texto={avisoTeste} />
+            {falhasTeste.length > 0 && (
+              <ul className="space-y-1 rounded-md border border-line bg-fundo-suave p-3 text-sm">
+                {falhasTeste.map((f) => (
+                  <li key={f.email}>
+                    <span className="font-semibold">{f.email}</span>
+                    <span className="text-ink-suave"> — {f.motivo}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
             <ErroCaixa erro={teste.error} />
           </div>
 

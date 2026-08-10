@@ -15,6 +15,15 @@ vi.mock('../src/lib/api.js', () => ({
         : { itens: [{ listId: 'l-1', nome: 'Clientes', totalContatos: 42 }] },
     post: async (caminho: string, corpo: unknown) => {
       posts.push({ caminho, corpo });
+      if (caminho.endsWith('/teste')) {
+        return {
+          enviados: 0,
+          falhas: [
+            { email: 'ferarte.fernando@gmail.com', motivo: 'Email address is not verified.' },
+          ],
+          aviso: 'Nenhum e-mail de teste foi enviado. Veja os motivos abaixo.',
+        };
+      }
       if (caminho.includes('audiencia-previa')) {
         return {
           total: 2,
@@ -91,6 +100,34 @@ describe('assistente de boletim — wizard de 4 etapas', () => {
         }),
       });
     });
+  });
+});
+
+describe('e-mail de teste — o motivo da falha aparece na tela', () => {
+  it('mostra por que cada endereço não recebeu', async () => {
+    // O aviso dizia "veja os motivos abaixo" e não havia nada abaixo: a API
+    // devolvia `falhas` e a tela descartava. Quem tentava um teste que falhava
+    // — endereço não verificado com o SES em sandbox é o caso comum — ficava sem
+    // saber o que corrigir.
+    montar();
+    await userEvent.type(
+      screen.getByRole('textbox', { name: /nome do boletim/i }),
+      'Boletim de agosto',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    await userEvent.click(await screen.findByRole('radio'));
+    await userEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    await userEvent.selectOptions(await screen.findByRole('combobox'), 'l-1');
+    await userEvent.click(screen.getByRole('button', { name: /avançar/i }));
+
+    await userEvent.type(
+      screen.getByRole('textbox', { name: /enviar e-mail de teste/i }),
+      'ferarte.fernando@gmail.com',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /enviar teste/i }));
+
+    expect(await screen.findByText(/is not verified/i)).toBeInTheDocument();
+    expect(screen.getByText(/ferarte\.fernando@gmail\.com/)).toBeInTheDocument();
   });
 });
 

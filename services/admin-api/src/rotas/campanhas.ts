@@ -189,23 +189,51 @@ rotasCampanhas.patch('/:id', validarCorpo(editarCampanhaSchema), async (c) => {
 });
 
 /**
- * Exclusão — só rascunho.
+ * Exclusão — qualquer boletim que não tenha enviado nada. Só ADMIN.
  *
- * Campanha disparada tem registros de envio apontando para ela; apagá-la
- * deixaria auditoria e relatório sem referente. Para as demais existe o
- * cancelamento, que preserva o histórico.
+ * A trava é o envio, não o status: rascunho, cancelado e falho somem; o que
+ * chegou a mandar mensagem fica. Ver o porquê no corpo da rota.
  */
 rotasCampanhas.delete('/:id', exigirPapel('ADMIN'), async (c) => {
   const deps = await obterDependencias();
   const campanha = await carregar(deps, c);
   if (campanha === null) return naoEncontrada(c);
 
-  if (campanha.status !== 'RASCUNHO') {
+  // Enviando é o único estado em que apagar é incoerente por si só: há mensagens
+  // saindo agora, e o launcher continuaria trabalhando sobre uma campanha que
+  // deixou de existir. Cancele primeiro; depois, se não houve envio, some.
+  if (campanha.status === 'ENVIANDO') {
     return c.json(
       {
         code: 'CAMPANHA_NAO_EXCLUIVEL',
         message:
-          'Só rascunho pode ser excluído. Campanha que já foi disparada deixa rastro de envio — use o cancelamento.',
+          'O boletim está enviando agora. Cancele primeiro — a exclusão fica disponível depois.',
+      },
+      409,
+    );
+  }
+
+  /**
+   * O que impede a exclusão é o envio, não o status.
+   *
+   * Antes só RASCUNHO podia ser excluído, e o efeito prático era ninguém
+   * conseguir limpar a lista: um boletim cancelado ou que falhou ficava para
+   * sempre na tela, sem ter enviado nada a ninguém.
+   *
+   * O motivo real da restrição sempre foi outro — registros de envio apontam
+   * para a campanha, e apagá-la deixaria auditoria e relatório sem referente,
+   * além de tirar do titular a resposta a "o que vocês me mandaram?", que a LGPD
+   * assegura. Então é isso que se verifica: existe envio registrado? Se não,
+   * apagar não apaga prova nenhuma.
+   */
+  const envios = await deps.envios.contarPorCampanha(campanha.tenantId, campanha.campaignId);
+  if (envios > 0) {
+    return c.json(
+      {
+        code: 'CAMPANHA_NAO_EXCLUIVEL',
+        message:
+          `Este boletim já enviou ${envios} mensagem(ns) e não pode ser excluído: os registros de ` +
+          'envio e o relatório apontam para ele, e o destinatário tem direito de saber o que recebeu.',
       },
       409,
     );

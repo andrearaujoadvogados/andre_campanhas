@@ -197,10 +197,27 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
   const campanha = useQuery({
     queryKey: ['campanha', id],
     queryFn: () => api.get<Campanha>(`/boletins/${id}`),
-    // Enquanto está enviando, o progresso muda sozinho — recarrega a cada 5s
-    // para a barra andar sem o operador precisar atualizar a página.
-    refetchInterval: (q) =>
-      (q.state.data as Campanha | undefined)?.status === 'ENVIANDO' ? 5000 : false,
+    refetchInterval: (q) => {
+      const c = q.state.data as Campanha | undefined;
+      // Enquanto está enviando, o progresso muda sozinho — recarrega a cada 5s
+      // para a barra andar sem o operador precisar atualizar a página.
+      if (c?.status === 'ENVIANDO') return 5000;
+      /**
+       * Disparo acionado, status ainda não virado: recarrega até virar.
+       *
+       * O disparo é assíncrono em duas etapas. A rota carimba `enviadaPor` e
+       * aciona o orquestrador; quem transiciona para ENVIANDO é o launcher,
+       * segundos depois. Nessa janela a tela mostrava "Rascunho" com "Disparada
+       * por" preenchido e não recarregava — parecia que o clique não tinha
+       * funcionado, e o operador disparava de novo. O segundo disparo batia num
+       * 409 "Status atual: ENVIANDO", que é a única pista de que o primeiro
+       * havia dado certo.
+       */
+      if (c?.enviadaPor !== null && (c?.status === 'RASCUNHO' || c?.status === 'AGENDADA')) {
+        return 3000;
+      }
+      return false;
+    },
   });
 
   const acao = useMutation({
@@ -221,6 +238,29 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
 
   const ehAdmin = temPapel(usuario, 'ADMIN');
   const executando = acao.isPending;
+
+  /**
+   * O disparo já foi acionado e o launcher ainda não transicionou.
+   *
+   * `enviadaPor` é carimbado pela rota de disparo (e pela de agendamento); o
+   * status só vira ENVIANDO quando o launcher roda. Entre uma coisa e outra, a
+   * campanha continua RASCUNHO com o disparo a caminho — oferecer "Disparar
+   * agora" aí convida ao clique duplo, que devolve um 409 confuso e faz parecer
+   * que nada funcionou.
+   *
+   * AGENDADA fica de fora: ali `enviadaPor` significa "quem agendou", e soltar o
+   * disparo antes do horário é uma ação legítima.
+   */
+  const disparoEmCurso = c.status === 'RASCUNHO' && c.enviadaPor !== null;
+
+  /**
+   * Excluir vale para qualquer boletim que não esteja saindo agora.
+   *
+   * A trava real é ter registro de envio, e esse número mora no backend — ele
+   * recusa e explica. Aqui só ficam de fora o papel errado e o boletim em pleno
+   * envio, que são as duas coisas que a tela sabe sozinha.
+   */
+  const podeExcluir = ehAdmin && c.status !== 'ENVIANDO';
 
   return (
     <div className="space-y-6">
@@ -308,32 +348,37 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
        * Misturá-los com "aprovar" e "disparar" convidaria ao clique errado numa
        * fileira de botões — e um deles não tem volta.
        */}
-      {EDITAVEIS.has(c.status) && !editando && (
-        <Cartao titulo="Editar">
+      {(EDITAVEIS.has(c.status) || podeExcluir) && !editando && (
+        <Cartao titulo={EDITAVEIS.has(c.status) ? 'Editar' : 'Gerenciar'}>
           <div className="flex flex-wrap gap-2">
-            <Botao
-              variante="secundario"
-              onClick={() => {
-                definirRascunho({
-                  nome: c.nome,
-                  templateId: c.templateId,
-                  listId: c.listId,
-                  remetenteNome: c.remetenteNome,
-                  remetenteEmail: c.remetenteEmail,
-                  replyTo: c.replyTo ?? '',
-                });
-                definirEditando(true);
-              }}
-            >
-              Editar boletim
-            </Botao>
+            {EDITAVEIS.has(c.status) && (
+              <Botao
+                variante="secundario"
+                onClick={() => {
+                  definirRascunho({
+                    nome: c.nome,
+                    templateId: c.templateId,
+                    listId: c.listId,
+                    remetenteNome: c.remetenteNome,
+                    remetenteEmail: c.remetenteEmail,
+                    replyTo: c.replyTo ?? '',
+                  });
+                  definirEditando(true);
+                }}
+              >
+                Editar boletim
+              </Botao>
+            )}
 
             {/**
-             * Excluir só rascunho, e só ADMIN. A partir do disparo há registros
-             * de envio apontando para a campanha. O backend recusa; aqui nem
-             * oferecemos.
+             * Excluir qualquer boletim que não esteja enviando, e só ADMIN.
+             *
+             * Quem decide de verdade é o backend, que recusa se houver registro
+             * de envio — a tela não tem esse número. Oferecer o botão e deixar a
+             * recusa explicar o motivo é melhor que esconder a ação: escondida,
+             * a impressão é de que boletim antigo nunca sai da lista.
              */}
-            {c.status === 'RASCUNHO' && ehAdmin && (
+            {podeExcluir && (
               <Botao
                 variante="perigo"
                 carregando={excluir.isPending}
@@ -342,7 +387,7 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
                     excluir.mutate();
                 }}
               >
-                Excluir rascunho
+                Excluir boletim
               </Botao>
             )}
           </div>
@@ -356,8 +401,14 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
       )}
 
       <Cartao titulo="Ações">
+        {disparoEmCurso && (
+          <p className="mb-3 rounded-md border border-line bg-fundo-suave p-3 text-sm text-ink">
+            Disparo acionado — preparando os envios. A tela se atualiza sozinha quando começar a
+            sair. <span className="text-ink-suave">Não é preciso disparar de novo.</span>
+          </p>
+        )}
         <div className="flex flex-wrap gap-2">
-          {(c.status === 'RASCUNHO' || c.status === 'AGENDADA') && (
+          {(c.status === 'RASCUNHO' || c.status === 'AGENDADA') && !disparoEmCurso && (
             <Botao
               carregando={executando}
               onClick={() => {

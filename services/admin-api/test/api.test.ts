@@ -89,6 +89,8 @@ interface Estado {
   suprimidosExistentes: string[];
   /** Endereços que o provedor de e-mail efetivamente recebeu. */
   enviados: string[];
+  /** Quantos registros de envio a campanha tem — a trava da exclusão. */
+  enviosDaCampanha: number;
 }
 
 let estado: Estado;
@@ -131,6 +133,9 @@ function montarDeps(): Dependencias {
     templates: {
       buscarVersao: async () => ({ assunto: 'Assunto do modelo', corpoHtml: '<p>Olá</p>' }),
     } as unknown as Dependencias['templates'],
+    envios: {
+      contarPorCampanha: async () => estado.enviosDaCampanha,
+    } as unknown as Dependencias['envios'],
     renderer: new LiquidEmailRenderer(),
     provedorEmail: {
       enviar: async (m) => {
@@ -170,6 +175,7 @@ beforeEach(() => {
     suprimidos: [],
     suprimidosExistentes: [],
     enviados: [],
+    enviosDaCampanha: 0,
   };
   definirDependenciasParaTeste(montarDeps());
 });
@@ -637,10 +643,36 @@ describe('editar e excluir campanha', () => {
     expect((await excluir()).status).toBe(204);
   });
 
-  it('não exclui campanha agendada — o cancelamento preserva o histórico', async () => {
-    estado.campanha = campanhaFalsa({ status: 'AGENDADA' });
-    const r = await excluir();
+  // A trava da exclusão é o envio, não o status. Antes só RASCUNHO saía, e o
+  // efeito era ninguém conseguir limpar a lista: um boletim cancelado, que nunca
+  // mandou nada a ninguém, ficava na tela para sempre.
 
+  it.each(['AGENDADA', 'CANCELADA', 'FALHA', 'CONCLUIDA'] as const)(
+    'exclui boletim em %s que não enviou nada',
+    async (status) => {
+      estado.campanha = campanhaFalsa({ status });
+      estado.enviosDaCampanha = 0;
+
+      expect((await excluir()).status).toBe(204);
+    },
+  );
+
+  it('NÃO exclui boletim que já enviou — o registro tem dono', async () => {
+    // O destinatário tem direito de saber o que recebeu, e o relatório aponta
+    // para esta campanha. Apagá-la deixaria os dois sem referente.
+    estado.campanha = campanhaFalsa({ status: 'CONCLUIDA' });
+    estado.enviosDaCampanha = 3;
+
+    const r = await excluir();
+    expect(r.status).toBe(409);
+    expect(await r.json()).toMatchObject({ code: 'CAMPANHA_NAO_EXCLUIVEL' });
+  });
+
+  it('não exclui enquanto está enviando, mesmo sem registro ainda', async () => {
+    estado.campanha = campanhaFalsa({ status: 'ENVIANDO' });
+    estado.enviosDaCampanha = 0;
+
+    const r = await excluir();
     expect(r.status).toBe(409);
     expect(await r.json()).toMatchObject({ code: 'CAMPANHA_NAO_EXCLUIVEL' });
   });
