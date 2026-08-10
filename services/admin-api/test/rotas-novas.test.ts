@@ -355,6 +355,21 @@ describe('listas', () => {
     expect(estado.auditados).toContainEqual({ acao: 'CRIOU', recursoTipo: 'List' });
   });
 
+  it('renomeia a lista (CRUD completo, sem exigir ADMIN)', async () => {
+    const r = await req(
+      '/listas/l-1',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ nome: 'Renomeada' }),
+        headers: { 'content-type': 'application/json' },
+      },
+      ['operador'],
+    );
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ nome: 'Renomeada' });
+    expect(estado.auditados).toContainEqual({ acao: 'EDITOU', recursoTipo: 'List' });
+  });
+
   it('adiciona contatos em lote', async () => {
     const r = await req('/listas/l-1/contatos', json({ contactIds: ['c-1', 'c-2', 'c-3'] }));
 

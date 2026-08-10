@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { FalhaApi, api, type ComAviso } from '../lib/api.js';
 import { ROTULO_RELACIONAMENTO, ROTULO_STATUS_CONTATO, dataHora, numero } from '../lib/formato.js';
 import {
@@ -143,9 +143,39 @@ export function Listas() {
 export function ListaDetalhe() {
   const { id = '' } = useParams();
   const qc = useQueryClient();
+  const navegar = useNavigate();
   const [email, definirEmail] = useState('');
   const [nome, definirNome] = useState('');
   const [relacionamento, definirRelacionamento] = useState('CLIENTE_ATIVO');
+  const [editandoLista, definirEditandoLista] = useState(false);
+  const [nomeLista, definirNomeLista] = useState('');
+  const [descricaoLista, definirDescricaoLista] = useState('');
+
+  const lista = useQuery({
+    queryKey: ['lista', id, 'meta'],
+    queryFn: () => api.get<Lista>(`/listas/${id}`),
+  });
+
+  const renomear = useMutation({
+    mutationFn: () =>
+      api.patch<Lista>(`/listas/${id}`, {
+        nome: nomeLista.trim(),
+        descricao: descricaoLista.trim(),
+      }),
+    onSuccess: () => {
+      definirEditandoLista(false);
+      void qc.invalidateQueries({ queryKey: ['lista', id, 'meta'] });
+      void qc.invalidateQueries({ queryKey: ['listas'] });
+    },
+  });
+
+  const excluirLista = useMutation({
+    mutationFn: () => api.delete(`/listas/${id}`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['listas'] });
+      navegar('/listas');
+    },
+  });
 
   const previa = useQuery({
     queryKey: ['lista', id, 'previa'],
@@ -198,6 +228,73 @@ export function ListaDetalhe() {
       >
         ← Listas
       </Link>
+
+      <Cartao titulo={lista.data?.nome ?? 'Lista'}>
+        {editandoLista ? (
+          <div className="space-y-4">
+            <Campo rotulo="Nome da lista" obrigatorio>
+              <input
+                value={nomeLista}
+                onChange={(e) => definirNomeLista(e.target.value)}
+                className={classeEntrada}
+              />
+            </Campo>
+            <Campo rotulo="Descrição" ajuda="Opcional.">
+              <input
+                value={descricaoLista}
+                onChange={(e) => definirDescricaoLista(e.target.value)}
+                className={classeEntrada}
+              />
+            </Campo>
+            <ErroCaixa erro={renomear.error} />
+            <div className="flex flex-wrap gap-2">
+              <Botao
+                carregando={renomear.isPending}
+                disabled={nomeLista.trim() === ''}
+                onClick={() => renomear.mutate()}
+              >
+                Salvar
+              </Botao>
+              <Botao variante="secundario" onClick={() => definirEditandoLista(false)}>
+                Cancelar
+              </Botao>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {lista.data?.descricao !== undefined && lista.data.descricao !== '' && (
+              <p className="text-sm text-ink-suave">{lista.data.descricao}</p>
+            )}
+            <ErroCaixa erro={excluirLista.error} />
+            <div className="flex flex-wrap gap-2">
+              <Botao
+                variante="secundario"
+                onClick={() => {
+                  definirNomeLista(lista.data?.nome ?? '');
+                  definirDescricaoLista(lista.data?.descricao ?? '');
+                  definirEditandoLista(true);
+                }}
+              >
+                Renomear / editar
+              </Botao>
+              <Botao
+                variante="perigo"
+                carregando={excluirLista.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Excluir a lista "${lista.data?.nome ?? ''}"? Os contatos continuam cadastrados — excluir uma lista nunca apaga contatos.`,
+                    )
+                  )
+                    excluirLista.mutate();
+                }}
+              >
+                Excluir lista
+              </Botao>
+            </div>
+          </div>
+        )}
+      </Cartao>
 
       {/**
        * A prévia de audiência vem primeiro, antes da lista de contatos.

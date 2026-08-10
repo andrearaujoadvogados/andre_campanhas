@@ -84,6 +84,48 @@ rotasCampanhas.post('/', validarCorpo(criarCampanhaSchema), async (c) => {
 });
 
 /**
+ * Duplicar — §7 do briefing.
+ *
+ * Cria um RASCUNHO novo a partir de um boletim existente, copiando o conteúdo e
+ * a segmentação (modelo, lista, remetente, assunto, filtro de tag). **Não** copia
+ * o que é próprio de um disparo: agendamento, seleção individual e a auditoria do
+ * envio nascem em branco — a cópia é um novo boletim, não um clone do que saiu.
+ */
+rotasCampanhas.post('/:id/duplicacao', async (c) => {
+  const deps = await obterDependencias();
+  const usuario = c.get('usuario');
+  const original = await carregar(deps, c);
+  if (original === null) return naoEncontrada(c);
+
+  const agora = deps.clock.agora();
+  const copia: Campaign = {
+    tenantId: usuario.tenantId,
+    campaignId: novoCampaignId(deps.ids.gerar()),
+    nome: `${original.nome} (cópia)`,
+    templateId: original.templateId,
+    templateVersao: original.templateVersao,
+    listId: original.listId,
+    status: 'RASCUNHO',
+    remetenteNome: original.remetenteNome,
+    remetenteEmail: original.remetenteEmail,
+    ...(original.replyTo === undefined ? {} : { replyTo: original.replyTo }),
+    ...(original.assunto === undefined ? {} : { assunto: original.assunto }),
+    ...(original.tagsFiltro === undefined ? {} : { tagsFiltro: original.tagsFiltro }),
+    ...(original.incluirLeads ? { incluirLeads: true } : {}),
+    criadoPor: usuario.userId,
+    criadoEm: agora,
+  };
+
+  await deps.campanhas.salvar(copia);
+  await registrar(deps, c, 'CRIOU', copia, undefined, {
+    nome: copia.nome,
+    duplicadoDe: String(original.campaignId),
+  });
+
+  return c.json(paraResposta(copia), 201);
+});
+
+/**
  * Prévia de audiência — Etapa 3 do wizard (§8).
  *
  * Resolve a audiência da lista com os mesmos filtros do disparo (tag, leads),
@@ -194,7 +236,7 @@ rotasCampanhas.patch('/:id', validarCorpo(editarCampanhaSchema), async (c) => {
  * A trava é o envio, não o status: rascunho, cancelado e falho somem; o que
  * chegou a mandar mensagem fica. Ver o porquê no corpo da rota.
  */
-rotasCampanhas.delete('/:id', exigirPapel('ADMIN'), async (c) => {
+rotasCampanhas.delete('/:id', async (c) => {
   const deps = await obterDependencias();
   const campanha = await carregar(deps, c);
   if (campanha === null) return naoEncontrada(c);

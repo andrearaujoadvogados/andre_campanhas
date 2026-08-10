@@ -193,12 +193,13 @@ describe('gestão da campanha na tela', () => {
     expect(screen.queryByRole('button', { name: /excluir/i })).toBeNull();
   });
 
-  it('operador não vê o botão de excluir', async () => {
+  it('operador também vê o botão de excluir — a trava de ADMIN caiu', async () => {
+    // Excluir um boletim que não enviou nada não apaga prova; quem monta
+    // gerencia o próprio boletim. O backend ainda recusa os que já enviaram.
     campanhaAtual = campanha({ status: 'RASCUNHO' });
     montar(OPERADOR);
 
-    await screen.findByText(/boletim tributário/i);
-    expect(screen.queryByRole('button', { name: /excluir/i })).toBeNull();
+    expect(await screen.findByRole('button', { name: /excluir boletim/i })).toBeInTheDocument();
   });
 });
 

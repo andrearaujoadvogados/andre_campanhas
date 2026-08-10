@@ -68,6 +68,30 @@ rotasListas.post('/', validarCorpo(criarListaSchema), async (c) => {
   return c.json(paraResposta(lista), 201);
 });
 
+/** Renomear/editar a lista — CRUD completo. Não mexe nos contatos. */
+const editarListaSchema = criarListaSchema.partial();
+
+rotasListas.patch('/:id', validarCorpo(editarListaSchema), async (c) => {
+  const dados = c.req.valid('json');
+  const deps = await obterDependencias();
+  const usuario = c.get('usuario');
+
+  const lista = await deps.listas.buscarPorId(usuario.tenantId, novoListId(c.req.param('id')));
+  if (lista === null) return c.json({ code: 'NAO_ENCONTRADO', message: 'Lista inexistente.' }, 404);
+
+  const atualizada: Lista = {
+    ...lista,
+    ...(dados.nome === undefined ? {} : { nome: dados.nome }),
+    ...(dados.descricao === undefined ? {} : { descricao: dados.descricao }),
+    atualizadoEm: deps.clock.agora(),
+  };
+
+  await deps.listas.salvar(atualizada);
+  await auditar(deps, c, 'EDITOU', lista.listId, { nome: lista.nome }, { nome: atualizada.nome });
+
+  return c.json(paraResposta(atualizada));
+});
+
 rotasListas.get('/:id/contatos', async (c) => {
   const { contatos, clock } = await obterDependencias();
   const usuario = c.get('usuario');

@@ -194,6 +194,15 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
     },
   });
 
+  const duplicar = useMutation({
+    mutationFn: () => api.post<Campanha>(`/boletins/${id}/duplicacao`),
+    onSuccess: (k) => {
+      void qc.invalidateQueries({ queryKey: ['campanhas'] });
+      // Vai direto para o rascunho novo: é lá que se ajusta e dispara.
+      navegar(`/boletins/${k.campaignId}`);
+    },
+  });
+
   const campanha = useQuery({
     queryKey: ['campanha', id],
     queryFn: () => api.get<Campanha>(`/boletins/${id}`),
@@ -256,11 +265,12 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
   /**
    * Excluir vale para qualquer boletim que não esteja saindo agora.
    *
-   * A trava real é ter registro de envio, e esse número mora no backend — ele
-   * recusa e explica. Aqui só ficam de fora o papel errado e o boletim em pleno
-   * envio, que são as duas coisas que a tela sabe sozinha.
+   * Não exige mais ADMIN: quem monta gerencia o próprio boletim. A trava real é
+   * ter registro de envio, e esse número mora no backend — ele recusa e explica
+   * (um boletim já enviado tem auditoria e relatório apontando para ele). Aqui só
+   * fica de fora o boletim em pleno envio, que é o que a tela sabe sozinha.
    */
-  const podeExcluir = ehAdmin && c.status !== 'ENVIANDO';
+  const podeExcluir = c.status !== 'ENVIANDO';
 
   return (
     <div className="space-y-6">
@@ -348,7 +358,7 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
        * Misturá-los com "aprovar" e "disparar" convidaria ao clique errado numa
        * fileira de botões — e um deles não tem volta.
        */}
-      {(EDITAVEIS.has(c.status) || podeExcluir) && !editando && (
+      {!editando && (
         <Cartao titulo={EDITAVEIS.has(c.status) ? 'Editar' : 'Gerenciar'}>
           <div className="flex flex-wrap gap-2">
             {EDITAVEIS.has(c.status) && (
@@ -371,7 +381,20 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
             )}
 
             {/**
-             * Excluir qualquer boletim que não esteja enviando, e só ADMIN.
+             * Duplicar está sempre disponível, inclusive para boletim já enviado:
+             * o caso mais comum é partir do último para montar o próximo. Cria um
+             * rascunho novo e leva para ele.
+             */}
+            <Botao
+              variante="secundario"
+              carregando={duplicar.isPending}
+              onClick={() => duplicar.mutate()}
+            >
+              Duplicar
+            </Botao>
+
+            {/**
+             * Excluir qualquer boletim que não esteja enviando.
              *
              * Quem decide de verdade é o backend, que recusa se houver registro
              * de envio — a tela não tem esse número. Oferecer o botão e deixar a
