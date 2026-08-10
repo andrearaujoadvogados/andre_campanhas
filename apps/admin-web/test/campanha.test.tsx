@@ -175,13 +175,21 @@ describe('gestão da campanha na tela', () => {
     expect(screen.queryByRole('button', { name: /editar boletim/i })).toBeNull();
   });
 
-  it('só oferece excluir para rascunho', async () => {
-    // AGENDADA ainda é editável (o launcher lê o conteúdo mais recente), mas não
-    // é excluível — há um agendamento armado apontando para ela.
-    campanhaAtual = campanha({ status: 'AGENDADA' });
+  it('oferece excluir para boletim antigo que não está enviando', async () => {
+    // A regra deixou de ser "só rascunho": o que trava a exclusão é haver
+    // registro de envio, e isso só o backend sabe. Esconder o botão fazia parecer
+    // que boletim cancelado nunca sai da lista.
+    campanhaAtual = campanha({ status: 'CANCELADA' });
     montar(ADMIN);
 
-    await screen.findByRole('button', { name: /editar boletim/i });
+    expect(await screen.findByRole('button', { name: /excluir boletim/i })).toBeEnabled();
+  });
+
+  it('não oferece excluir enquanto está enviando', async () => {
+    campanhaAtual = campanha({ status: 'ENVIANDO' });
+    montar(ADMIN);
+
+    await screen.findByText(/boletim tributário/i);
     expect(screen.queryByRole('button', { name: /excluir/i })).toBeNull();
   });
 
