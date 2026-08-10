@@ -67,17 +67,22 @@ jobs:
         run: pnpm synth
 
   # ── Deploy ─────────────────────────────────────────────────────────────────
-  # Desabilitado até que os papéis OIDC existam nas contas do escritório
-  # (§9.1.1). Ativar removendo o `if: false` e preenchendo os secrets.
+  # Só a partir de um push na `main`. O gatilho `pull_request` lá em cima existe
+  # para o job `verificar`; enquanto os jobs de deploy não filtravam o evento,
+  # abrir um PR bastava para implantar — foi o que o PR #1 fez em 2026-08-10,
+  # dez minutos depois de aberto, sem revisão e sem merge.
+  #
+  # Este filtro é só metade da trava. A outra metade é a aprovação obrigatória
+  # no GitHub Environment `producao`, que não se declara aqui e por isso não
+  # aparece em revisão de diff nenhuma: é preciso olhar as configurações do
+  # repositório para saber se ainda existe.
 
   deploy-dev:
     name: Deploy — dev
     needs: verificar
-    # Ligado por variável do repositório, não por edição de código: depois de
-    # criar os papéis OIDC, basta definir DEPLOY_HABILITADO=true em
-    # Settings → Variables. Enquanto não existir, o pipeline segue verde sem
-    # tentar implantar.
-    if: vars.DEPLOY_HABILITADO == 'true'
+    # Ligado por variável do repositório, não por edição de código:
+    # DEPLOY_HABILITADO em Settings → Variables.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_HABILITADO == 'true'
     runs-on: ubuntu-latest
     environment: dev
     steps:
@@ -130,10 +135,13 @@ jobs:
   deploy-prod:
     name: Deploy — produção
     needs: deploy-dev
-    if: vars.DEPLOY_HABILITADO == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_HABILITADO == 'true'
     runs-on: ubuntu-latest
-    # Aprovação manual configurada no GitHub Environment. Inegociável: um deploy
-    # ruim não é revertível depois que a mensagem saiu (§9.2).
+    # Aprovação manual no GitHub Environment, com a implantação restrita à
+    # `main`. Inegociável: um deploy ruim não é revertível depois que a mensagem
+    # saiu (§9.2). O environment existia desde o começo, mas ficou até
+    # 2026-08-10 sem nenhuma regra dentro — criado e vazio, que é a forma mais
+    # convincente de um controle não existir.
     environment: producao
     steps:
       - uses: actions/checkout@v4
