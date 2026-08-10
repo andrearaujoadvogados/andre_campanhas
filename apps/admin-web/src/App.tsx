@@ -10,6 +10,7 @@ import { Usuarios } from './paginas/Usuarios.tsx';
 import { Listas, ListaDetalhe } from './paginas/Listas.tsx';
 import { Templates, TemplateEditor } from './paginas/Templates.tsx';
 import { Campanhas, CampanhaDetalhe } from './paginas/Campanhas.tsx';
+import { Dashboard } from './paginas/Dashboard.tsx';
 import { Relatorio } from './paginas/Relatorio.tsx';
 
 const cliente = new QueryClient({
@@ -37,7 +38,8 @@ export function App() {
       <BrowserRouter>
         <Routes>
           <Route element={<Layout usuario={usuario} />}>
-            <Route index element={<Navigate to="/boletins" replace />} />
+            {/* A raiz passa a ser a visão geral — é para onde o logo leva. */}
+            <Route index element={<Dashboard />} />
             <Route path="/boletins" element={<Campanhas />} />
             <Route path="/boletins/:id" element={<CampanhaDetalhe usuario={usuario} />} />
             <Route path="/listas" element={<Listas />} />
