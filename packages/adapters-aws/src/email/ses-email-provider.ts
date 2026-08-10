@@ -126,6 +126,23 @@ function classificar(erro: unknown): FalhaEnvio {
       // atraso maior é o certo, e o `sender` já sabe esperar a próxima janela.
       return { tipo: 'THROTTLED', tentarNovamenteEmMs: 60_000 };
 
+    case 'AccessDeniedException':
+      /**
+       * Falta de permissão, não erro passageiro — mas transitório de propósito.
+       *
+       * `REJEITADO_PERMANENTE` descartaria a mensagem, e o e-mail se perderia
+       * por um defeito de policy que alguém vai corrigir em minutos. Como
+       * transitório, ela retenta, cai na DLQ e pode ser reprocessada depois do
+       * conserto.
+       *
+       * O prefixo existe porque este caso já se escondeu uma vez: caindo no
+       * `default`, aparecia como `FALHA_TRANSITORIA` e passou por throttling do
+       * SES durante horas. O `detalhe` do SES nomeia o recurso negado, que é
+       * exatamente o que aponta o conserto — e o recurso costuma ser a
+       * identidade do **destinatário**, não a do remetente.
+       */
+      return { tipo: 'ERRO_TRANSITORIO', detalhe: `Permissão negada — ${detalhe}` };
+
     default:
       return { tipo: 'ERRO_TRANSITORIO', detalhe: `${nome}: ${detalhe}` };
   }

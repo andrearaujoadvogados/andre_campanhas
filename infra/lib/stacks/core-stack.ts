@@ -443,9 +443,29 @@ export class CoreStack extends Stack {
     paramTaxa.grantWrite(fnQuotaSync);
     paramCota.grantWrite(fnQuotaSync);
 
-    // SES vive em us-east-2 (ADR-01): a permissão atravessa a região, o recurso não.
+    /**
+     * SES vive em us-east-2 (ADR-01): a permissão atravessa a região, o recurso não.
+     *
+     * `identity/*` cobre remetente **e destinatário**, e o segundo é o que não
+     * era óbvio: enquanto a conta está em sandbox, cada destinatário precisa ser
+     * uma identidade verificada, e o SES avalia `ses:SendEmail` sobre ela
+     * também. Com apenas a identidade do domínio na lista, todo envio morria com
+     *
+     *   AccessDeniedException: ... not authorized to perform `ses:SendEmail'
+     *   on resource `.../identity/ferarte.fernando@gmail.com'
+     *
+     * apontando para quem recebe, não para quem envia. Custou caro: o mesmo erro
+     * derrubava o e-mail de teste e o disparo do boletim, e no `sender` ele se
+     * disfarçava de `FALHA_TRANSITORIA` — `AccessDeniedException` não está no
+     * `switch` do classificador e cai no `default`.
+     *
+     * O curinga fica restrito à conta e à região de envio, e vale só para
+     * `ses:SendEmail`. Sair do sandbox tornaria a permissão sobre o destinatário
+     * desnecessária, mas não é o que se pode assumir hoje — e uma policy que só
+     * funciona depois da liberação da AWS é uma armadilha silenciosa.
+     */
     const recursosSes = [
-      `arn:aws:ses:${cfg.regiaoEnvio}:${this.account}:identity/${cfg.dominioEnvio}`,
+      `arn:aws:ses:${cfg.regiaoEnvio}:${this.account}:identity/*`,
       `arn:aws:ses:${cfg.regiaoEnvio}:${this.account}:configuration-set/${nome(cfg, 'config-set')}`,
     ];
 
