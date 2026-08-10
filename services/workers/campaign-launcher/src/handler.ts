@@ -13,6 +13,7 @@ import {
 } from '@emailmkt/adapters-aws';
 import {
   campaignId as novoCampaignId,
+  iniciarEnvio,
   resolverAudiencia,
   sendId as novoSendId,
   tenantId as novoTenantId,
@@ -72,23 +73,37 @@ export const handler = async (entrada: EntradaLauncher): Promise<SaidaLauncher> 
   if (campanha === null) throw new Error(`Campanha inexistente: ${entrada.campaignId}`);
 
   /**
-   * Recusa disparar campanha não aprovada.
+   * Só dispara campanha pronta para sair.
    *
-   * A admin-api já impede a transição, mas esta função é invocável pelo Step
-   * Functions e por um agendamento criado antes de a campanha voltar para
-   * revisão. Confiar só na barreira da API deixaria o caminho aberto para
-   * disparar conteúdo sem o aval do advogado responsável (§10.3).
+   * RASCUNHO (disparo imediato) e AGENDADA (disparo no horário) são os pontos de
+   * partida válidos. A admin-api já valida a transição, mas esta função é
+   * invocável pelo Step Functions e por um agendamento que pode ter sido
+   * cancelado; recusar aqui evita disparar uma campanha já cancelada.
    */
-  if (campanha.status !== 'APROVADA' && campanha.status !== 'AGENDADA') {
+  if (campanha.status !== 'RASCUNHO' && campanha.status !== 'AGENDADA') {
     throw new Error(
-      `Campanha ${entrada.campaignId} está em ${campanha.status}; só APROVADA ou AGENDADA pode disparar.`,
+      `Campanha ${entrada.campaignId} está em ${campanha.status}; só RASCUNHO ou AGENDADA pode disparar.`,
     );
   }
 
   const audiencia = await resolverAudiencia(
     { contatos, supressao, hasher, clock },
-    { tenantId, listId: campanha.listId, segmento: todos<Contact>() },
+    {
+      tenantId,
+      listId: campanha.listId,
+      segmento: todos<Contact>(),
+      incluirLeads: campanha.incluirLeads ?? false,
+      tagsFiltro: campanha.tagsFiltro ?? [],
+    },
   );
+
+  // Seleção individual: se o operador desmarcou contatos na Etapa 3, o disparo
+  // vai só para os escolhidos. Vazio/ausente = todos os elegíveis.
+  const selecionados = campanha.destinatariosSelecionados;
+  const elegiveis =
+    selecionados !== undefined && selecionados.length > 0
+      ? audiencia.elegiveis.filter((c) => selecionados.includes(String(c.contactId)))
+      : audiencia.elegiveis;
 
   // O resumo de exclusões não é enfeite: numa primeira importação, é provável
   // que a maior parte esteja travada por falta de classificação de
@@ -96,12 +111,13 @@ export const handler = async (entrada: EntradaLauncher): Promise<SaidaLauncher> 
   // não sabe se a lista está saudável.
   log('INFO', 'audiência resolvida', {
     campaignId: entrada.campaignId,
-    elegiveis: audiencia.elegiveis.length,
+    elegiveis: elegiveis.length,
+    resolvidosAntesDaSelecao: audiencia.elegiveis.length,
     excluidos: audiencia.excluidos.total,
     porMotivo: audiencia.excluidos.porMotivo,
   });
 
-  const mensagens = audiencia.elegiveis.map((contato) => ({
+  const mensagens = elegiveis.map((contato) => ({
     tenantId,
     // Determinístico: se o enfileiramento for repetido após uma falha, o mesmo
     // par campanha+contato gera o mesmo sendId e a idempotência barra o
@@ -113,7 +129,16 @@ export const handler = async (entrada: EntradaLauncher): Promise<SaidaLauncher> 
 
   await fila.publicarLote(mensagens);
 
-  await campanhas.salvar({ ...campanha, status: 'ENVIANDO', totalDestinatarios: mensagens.length });
+  // Transição validada pelo domínio, que também carimba `disparadaEm` (auditoria
+  // do disparo). O total enfileirado é somado por cima, para o painel mostrar
+  // "processados de N".
+  const emEnvio = iniciarEnvio(campanha, clock.agora());
+  if (!emEnvio.ok) {
+    throw new Error(
+      `Não foi possível iniciar o envio da campanha ${entrada.campaignId}: ${emEnvio.error.message}`,
+    );
+  }
+  await campanhas.salvar({ ...emEnvio.value, totalDestinatarios: mensagens.length });
 
   log('INFO', 'campanha enfileirada', {
     campaignId: entrada.campaignId,

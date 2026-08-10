@@ -37,13 +37,12 @@ export const percentual = (fracao: number): string =>
 
 export const ROTULO_STATUS_CAMPANHA: Readonly<Record<string, string>> = {
   RASCUNHO: 'Rascunho',
-  EM_REVISAO: 'Em revisão',
-  APROVADA: 'Aprovada',
   AGENDADA: 'Agendada',
   ENVIANDO: 'Enviando',
   PAUSADA: 'Pausada',
   CONCLUIDA: 'Concluída',
   CANCELADA: 'Cancelada',
+  FALHA: 'Falha no envio',
 };
 
 export const ROTULO_STATUS_CONTATO: Readonly<Record<string, string>> = {

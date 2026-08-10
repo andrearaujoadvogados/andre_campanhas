@@ -144,14 +144,19 @@ export async function enviarMensagem(
   });
   const urlDescadastro = `${entrada.baseUrlDescadastro}?t=${encodeURIComponent(token)}`;
 
-  const renderizado = await deps.renderer.renderizar(template, {
-    contato: {
-      ...(contato.nome === undefined ? {} : { nome: contato.nome }),
-      email: contato.email.value,
-      camposCustomizados: contato.camposCustomizados,
+  // Assunto próprio do boletim sobrepõe o do modelo (§8). Ausente = usa o do
+  // modelo. O corpo continua vindo do modelo (o Criador de e-mails vive lá).
+  const renderizado = await deps.renderer.renderizar(
+    { assunto: campanha.assunto ?? template.assunto, corpoHtml: template.corpoHtml },
+    {
+      contato: {
+        ...(contato.nome === undefined ? {} : { nome: contato.nome }),
+        email: contato.email.value,
+        camposCustomizados: contato.camposCustomizados,
+      },
+      urlDescadastro,
     },
-    urlDescadastro,
-  });
+  );
 
   const resultado = await deps.provedor.enviar({
     para: contato.email,

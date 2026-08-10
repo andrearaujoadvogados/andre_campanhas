@@ -79,7 +79,7 @@ export function criarApp() {
   app.route('/contatos/importacoes', rotasImportacoes);
   app.route('/contatos', rotasExportacao);
   app.route('/contatos', rotasContatos);
-  app.route('/campanhas', rotasCampanhas);
+  app.route('/boletins', rotasCampanhas);
   app.route('/templates', rotasTemplates);
   app.route('/listas', rotasListas);
   app.route('/relatorios', rotasRelatorios);

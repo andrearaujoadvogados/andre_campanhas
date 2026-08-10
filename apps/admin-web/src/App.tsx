@@ -37,9 +37,9 @@ export function App() {
       <BrowserRouter>
         <Routes>
           <Route element={<Layout usuario={usuario} />}>
-            <Route index element={<Navigate to="/campanhas" replace />} />
-            <Route path="/campanhas" element={<Campanhas />} />
-            <Route path="/campanhas/:id" element={<CampanhaDetalhe usuario={usuario} />} />
+            <Route index element={<Navigate to="/boletins" replace />} />
+            <Route path="/boletins" element={<Campanhas />} />
+            <Route path="/boletins/:id" element={<CampanhaDetalhe usuario={usuario} />} />
             <Route path="/listas" element={<Listas />} />
             <Route path="/listas/:id" element={<ListaDetalhe />} />
             <Route path="/contatos" element={<Contatos usuario={usuario} />} />
@@ -50,7 +50,7 @@ export function App() {
             <Route path="/templates/:id" element={<TemplateEditor />} />
             <Route path="/relatorios/:id" element={<Relatorio />} />
             <Route path="/usuarios" element={<Usuarios usuario={usuario} />} />
-            <Route path="*" element={<Navigate to="/campanhas" replace />} />
+            <Route path="*" element={<Navigate to="/boletins" replace />} />
           </Route>
         </Routes>
       </BrowserRouter>

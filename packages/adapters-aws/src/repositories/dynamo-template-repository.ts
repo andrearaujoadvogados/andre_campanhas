@@ -38,7 +38,13 @@ export class DynamoTemplateRepository implements TemplateRepository {
     );
     if (r.Item === undefined) return null;
 
-    return { assunto: String(r.Item['assunto']), corpoHtml: String(r.Item['corpoHtml']) };
+    return {
+      assunto: String(r.Item['assunto']),
+      corpoHtml: String(r.Item['corpoHtml']),
+      ...(r.Item['estruturaVisual'] === undefined
+        ? {}
+        : { estruturaVisual: String(r.Item['estruturaVisual']) }),
+    };
   }
 
   async buscarMeta(tenantId: TenantId, templateId: TemplateId): Promise<Template | null> {
@@ -123,6 +129,10 @@ function itemMeta(t: Template): Record<string, unknown> {
     tenantId: String(t.tenantId),
     templateId: String(t.templateId),
     nome: t.nome,
+    // `tipo` já é o discriminador do item; o formato do template vai em `tipoTemplate`.
+    tipoTemplate: t.tipo ?? 'CODIGO',
+    categoria: t.categoria,
+    thumbnail: t.thumbnail,
     versaoAtual: t.versaoAtual,
     arquivado: t.arquivado,
     criadoPor: String(t.criadoPor),
@@ -141,6 +151,7 @@ function itemVersao(t: Template, v: VersaoTemplate): Record<string, unknown> {
     versao: v.versao,
     assunto: v.assunto,
     corpoHtml: v.corpoHtml,
+    estruturaVisual: v.estruturaVisual,
     preheader: v.preheader,
     criadoPor: String(v.criadoPor),
     criadoEm: v.criadoEm.toISOString(),
@@ -152,6 +163,9 @@ function paraTemplate(item: Record<string, unknown>): Template {
     tenantId: novoTenantId(String(item['tenantId'])),
     templateId: novoTemplateId(String(item['templateId'])),
     nome: String(item['nome']),
+    tipo: item['tipoTemplate'] === 'VISUAL' ? 'VISUAL' : 'CODIGO',
+    ...(item['categoria'] === undefined ? {} : { categoria: String(item['categoria']) }),
+    ...(item['thumbnail'] === undefined ? {} : { thumbnail: String(item['thumbnail']) }),
     versaoAtual: Number(item['versaoAtual']),
     arquivado: item['arquivado'] === true,
     criadoPor: novoUserId(String(item['criadoPor'])),

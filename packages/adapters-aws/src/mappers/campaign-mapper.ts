@@ -16,15 +16,15 @@ export interface ItemCampanha extends Record<string, unknown> {
   remetenteNome: string;
   remetenteEmail: string;
   replyTo?: string | undefined;
+  assunto?: string | undefined;
+  tagsFiltro?: string[] | undefined;
+  incluirLeads?: boolean | undefined;
+  destinatariosSelecionados?: string[] | undefined;
   criadoPor: string;
   criadoEm: string;
-  aprovacao?:
-    | {
-        aprovadoPor: string;
-        aprovadoEm: string;
-        hashConteudoAprovado: string;
-      }
-    | undefined;
+  enviadaPor?: string | undefined;
+  disparadaEm?: string | undefined;
+  hashConteudoEnviado?: string | undefined;
   totalDestinatarios?: number | undefined;
   gsi3pk: string;
   gsi3sk: string;
@@ -55,16 +55,21 @@ export function campanhaParaItem(campanha: Campaign): ItemCampanha {
     remetenteNome: campanha.remetenteNome,
     remetenteEmail: campanha.remetenteEmail,
     replyTo: campanha.replyTo,
+    assunto: campanha.assunto,
+    tagsFiltro:
+      campanha.tagsFiltro !== undefined && campanha.tagsFiltro.length > 0
+        ? [...campanha.tagsFiltro]
+        : undefined,
+    incluirLeads: campanha.incluirLeads === true ? true : undefined,
+    destinatariosSelecionados:
+      campanha.destinatariosSelecionados !== undefined
+        ? [...campanha.destinatariosSelecionados]
+        : undefined,
     criadoPor: String(campanha.criadoPor),
     criadoEm: campanha.criadoEm.toISOString(),
-    aprovacao:
-      campanha.aprovacao === undefined
-        ? undefined
-        : {
-            aprovadoPor: String(campanha.aprovacao.aprovadoPor),
-            aprovadoEm: campanha.aprovacao.aprovadoEm.toISOString(),
-            hashConteudoAprovado: campanha.aprovacao.hashConteudoAprovado,
-          },
+    enviadaPor: campanha.enviadaPor === undefined ? undefined : String(campanha.enviadaPor),
+    disparadaEm: campanha.disparadaEm?.toISOString(),
+    hashConteudoEnviado: campanha.hashConteudoEnviado,
     totalDestinatarios: campanha.totalDestinatarios,
     gsi3pk: g3.pk,
     gsi3sk: g3.sk,
@@ -72,8 +77,6 @@ export function campanhaParaItem(campanha: Campaign): ItemCampanha {
 }
 
 export function itemParaCampanha(item: Record<string, unknown>): Campaign {
-  const aprovacaoBruta = item['aprovacao'] as ItemCampanha['aprovacao'];
-
   return {
     tenantId: tenantId(String(item['tenantId'])),
     campaignId: campaignId(String(item['campaignId'])),
@@ -93,14 +96,20 @@ export function itemParaCampanha(item: Record<string, unknown>): Campaign {
     ...(item['totalDestinatarios'] === undefined
       ? {}
       : { totalDestinatarios: Number(item['totalDestinatarios']) }),
-    ...(aprovacaoBruta === undefined
+    ...(item['assunto'] === undefined ? {} : { assunto: String(item['assunto']) }),
+    ...(Array.isArray(item['tagsFiltro'])
+      ? { tagsFiltro: (item['tagsFiltro'] as unknown[]).map(String) }
+      : {}),
+    ...(item['incluirLeads'] === true ? { incluirLeads: true } : {}),
+    ...(Array.isArray(item['destinatariosSelecionados'])
+      ? { destinatariosSelecionados: (item['destinatariosSelecionados'] as unknown[]).map(String) }
+      : {}),
+    ...(item['enviadaPor'] === undefined ? {} : { enviadaPor: userId(String(item['enviadaPor'])) }),
+    ...(item['disparadaEm'] === undefined
       ? {}
-      : {
-          aprovacao: {
-            aprovadoPor: userId(aprovacaoBruta.aprovadoPor),
-            aprovadoEm: new Date(aprovacaoBruta.aprovadoEm),
-            hashConteudoAprovado: aprovacaoBruta.hashConteudoAprovado,
-          },
-        }),
+      : { disparadaEm: new Date(String(item['disparadaEm'])) }),
+    ...(item['hashConteudoEnviado'] === undefined
+      ? {}
+      : { hashConteudoEnviado: String(item['hashConteudoEnviado']) }),
   };
 }

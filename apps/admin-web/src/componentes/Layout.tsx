@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { sair, type Usuario } from '../lib/auth.js';
 
 const SECOES = [
-  { para: '/campanhas', rotulo: 'Campanhas' },
+  { para: '/boletins', rotulo: 'Boletins' },
   { para: '/listas', rotulo: 'Listas' },
   { para: '/contatos', rotulo: 'Contatos' },
   { para: '/templates', rotulo: 'Modelos' },

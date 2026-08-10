@@ -50,6 +50,10 @@ rotasContatos.post('/', validarCorpo(criarContatoSchema), async (c) => {
     contactId: novoContactId(ids.gerar()),
     email: email.value,
     ...(dados.nome === undefined ? {} : { nome: dados.nome }),
+    ...(dados.telefone === undefined ? {} : { telefone: dados.telefone }),
+    ...(dados.empresa === undefined ? {} : { empresa: dados.empresa }),
+    ...(dados.tags.length === 0 ? {} : { tags: dados.tags }),
+    ...(dados.isLead ? { isLead: true } : {}),
     camposCustomizados: dados.camposCustomizados,
     status: 'ATIVO',
     relacionamento: dados.relacionamento,
@@ -96,6 +100,10 @@ rotasContatos.patch('/:id', validarCorpo(atualizarContatoSchema), async (c) => {
   const atualizado: Contact = {
     ...atual,
     ...(dados.nome === undefined ? {} : { nome: dados.nome }),
+    ...(dados.telefone === undefined ? {} : { telefone: dados.telefone }),
+    ...(dados.empresa === undefined ? {} : { empresa: dados.empresa }),
+    ...(dados.tags === undefined ? {} : { tags: dados.tags }),
+    ...(dados.isLead === undefined ? {} : { isLead: dados.isLead }),
     ...(dados.relacionamento === undefined ? {} : { relacionamento: dados.relacionamento }),
     ...(dados.relacionamentoDesde === undefined
       ? {}
@@ -254,6 +262,10 @@ function paraResposta(contato: Contact, agora: Date): Record<string, unknown> {
     contactId: contato.contactId,
     email: contato.email.value,
     nome: contato.nome,
+    telefone: contato.telefone ?? null,
+    empresa: contato.empresa ?? null,
+    tags: contato.tags ?? [],
+    isLead: contato.isLead === true,
     status: contato.status,
     relacionamento: contato.relacionamento,
     relacionamentoDesde: contato.relacionamentoDesde?.toISOString(),

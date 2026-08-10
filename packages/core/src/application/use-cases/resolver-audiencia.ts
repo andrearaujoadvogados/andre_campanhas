@@ -1,4 +1,6 @@
 import {
+  contatoTemAlgumaTag,
+  ehLead,
   verificarElegibilidade,
   type Contact,
   type MotivoInelegibilidade,
@@ -45,7 +47,15 @@ export async function resolverAudiencia(
     hasher: EmailHasher;
     clock: Clock;
   },
-  input: { tenantId: TenantId; listId: ListId; segmento: Specification<Contact> },
+  input: {
+    tenantId: TenantId;
+    listId: ListId;
+    segmento: Specification<Contact>;
+    /** Padrão falso: leads só entram quando a campanha marca "incluir leads". */
+    incluirLeads?: boolean;
+    /** Filtro por tag (lógica OU). Vazio ou ausente = não filtra por tag. */
+    tagsFiltro?: readonly string[];
+  },
 ): Promise<AudienciaResolvida> {
   const agora = deps.clock.agora();
   const contadores: Record<string, number> = {};
@@ -62,6 +72,16 @@ export async function resolverAudiencia(
     for (const contato of pagina.itens) {
       if (!input.segmento.isSatisfiedBy(contato)) {
         contar('FORA_DO_SEGMENTO');
+        continue;
+      }
+      // Leads não recebem campanha, salvo opt-in explícito da campanha (§5).
+      if (ehLead(contato) && input.incluirLeads !== true) {
+        contar('LEAD');
+        continue;
+      }
+      // Filtro por tag — lógica OU. Vazio não filtra.
+      if (!contatoTemAlgumaTag(contato, input.tagsFiltro ?? [])) {
+        contar('FORA_DO_FILTRO_DE_TAGS');
         continue;
       }
       const elegibilidade = verificarElegibilidade(contato, agora);

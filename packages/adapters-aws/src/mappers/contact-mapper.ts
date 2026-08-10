@@ -19,6 +19,10 @@ export interface ItemContato extends Record<string, unknown> {
   email: string;
   emailHash: string;
   nome?: string | undefined;
+  telefone?: string | undefined;
+  empresa?: string | undefined;
+  tags?: string[] | undefined;
+  isLead?: boolean | undefined;
   camposCustomizados: Record<string, string>;
   status: string;
   relacionamento: string;
@@ -55,6 +59,11 @@ export function contatoParaItem(contato: Contact, emailHash: string): ItemContat
     email: contato.email.value,
     emailHash,
     nome: contato.nome,
+    telefone: contato.telefone,
+    empresa: contato.empresa,
+    // Guarda só quando há algo: item enxuto, e ausência lida como [] / false.
+    tags: contato.tags !== undefined && contato.tags.length > 0 ? [...contato.tags] : undefined,
+    isLead: contato.isLead === true ? true : undefined,
     camposCustomizados: contato.camposCustomizados as Record<string, string>,
     status: contato.status,
     relacionamento: contato.relacionamento,
@@ -98,6 +107,10 @@ export function itemParaContato(item: Record<string, unknown>): Contact {
     contactId: contactId(String(item['contactId'])),
     email: email.value,
     ...(item['nome'] === undefined ? {} : { nome: String(item['nome']) }),
+    ...(item['telefone'] === undefined ? {} : { telefone: String(item['telefone']) }),
+    ...(item['empresa'] === undefined ? {} : { empresa: String(item['empresa']) }),
+    ...(Array.isArray(item['tags']) ? { tags: (item['tags'] as unknown[]).map(String) } : {}),
+    ...(item['isLead'] === true ? { isLead: true } : {}),
     camposCustomizados: (item['camposCustomizados'] ?? {}) as Record<string, string>,
     status: String(item['status']) as Contact['status'],
     relacionamento: String(item['relacionamento']) as Contact['relacionamento'],

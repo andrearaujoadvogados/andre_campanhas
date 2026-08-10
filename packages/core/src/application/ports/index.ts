@@ -354,6 +354,8 @@ export interface EmailRenderer {
 export interface TemplateCarregado {
   readonly assunto: string;
   readonly corpoHtml: string;
+  /** JSON dos blocos, quando o template é VISUAL — o editor recarrega a partir daqui. */
+  readonly estruturaVisual?: string;
 }
 
 export interface TemplateRepository {

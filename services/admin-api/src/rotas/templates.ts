@@ -7,6 +7,7 @@ import {
   arquivar,
   proximaVersao,
   templateId as novoTemplateId,
+  tipoEfetivo,
   type Template,
   type VersaoTemplate,
 } from '@emailmkt/core';
@@ -70,6 +71,9 @@ rotasTemplates.post('/', validarCorpo(salvarTemplateSchema), async (c) => {
     tenantId: usuario.tenantId,
     templateId: novoTemplateId(deps.ids.gerar()),
     nome: dados.nome,
+    tipo: dados.tipo,
+    ...(dados.categoria === undefined ? {} : { categoria: dados.categoria }),
+    ...(dados.thumbnail === undefined ? {} : { thumbnail: dados.thumbnail }),
     versaoAtual: 1,
     arquivado: false,
     criadoPor: usuario.userId,
@@ -110,6 +114,9 @@ rotasTemplates.put('/:id', validarCorpo(salvarTemplateSchema), async (c) => {
   const atualizado: Template = {
     ...atual,
     nome: dados.nome,
+    tipo: dados.tipo,
+    ...(dados.categoria === undefined ? {} : { categoria: dados.categoria }),
+    ...(dados.thumbnail === undefined ? {} : { thumbnail: dados.thumbnail }),
     versaoAtual: versao,
     atualizadoEm: agora,
   };
@@ -216,7 +223,12 @@ async function auditar(
 }
 
 function versaoDe(
-  dados: { assunto: string; corpoHtml: string; preheader?: string | undefined },
+  dados: {
+    assunto: string;
+    corpoHtml: string;
+    preheader?: string | undefined;
+    estruturaVisual?: string | undefined;
+  },
   versao: number,
   criadoPor: Template['criadoPor'],
   agora: Date,
@@ -225,6 +237,7 @@ function versaoDe(
     versao,
     assunto: dados.assunto,
     corpoHtml: dados.corpoHtml,
+    ...(dados.estruturaVisual === undefined ? {} : { estruturaVisual: dados.estruturaVisual }),
     ...(dados.preheader === undefined ? {} : { preheader: dados.preheader }),
     criadoPor,
     criadoEm: agora,
@@ -235,6 +248,9 @@ function paraResumo(t: Template): Record<string, unknown> {
   return {
     templateId: t.templateId,
     nome: t.nome,
+    tipo: tipoEfetivo(t),
+    categoria: t.categoria ?? null,
+    thumbnail: t.thumbnail ?? null,
     versaoAtual: t.versaoAtual,
     arquivado: t.arquivado,
     criadoEm: t.criadoEm.toISOString(),

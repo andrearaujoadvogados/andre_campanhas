@@ -227,79 +227,39 @@ describe('exclusão de contato — art. 18', () => {
   });
 });
 
-describe('aprovação de campanha — §5.8 e §10.3', () => {
-  const hash = (k: Campaign) =>
-    new CanonicalContentHasher().hash({
-      templateId: k.templateId,
-      templateVersao: k.templateVersao,
-      listId: k.listId,
-      remetenteNome: k.remetenteNome,
-      remetenteEmail: k.remetenteEmail,
-      replyTo: k.replyTo,
-    });
-
-  const aprovar = (corpo: unknown, sub: string, grupos: unknown = ['admin']) =>
-    req(
-      '/campanhas/k-1/aprovacao',
-      {
-        method: 'POST',
-        body: JSON.stringify(corpo),
-        headers: { 'content-type': 'application/json' },
-      },
-      evento({ sub, grupos }),
-    );
-
-  it('operador não aprova — é papel de ADMIN', async () => {
-    estado.campanha = campanhaFalsa({ status: 'EM_REVISAO' });
-    const r = await aprovar({ hashConteudoRevisado: hash(estado.campanha) }, REVISOR, ['operador']);
-    expect(r.status).toBe(403);
-  });
-
-  it('o autor aprova a própria campanha', async () => {
-    // O papel continua sendo barreira — só ADMIN aprova. O que caiu foi a
-    // exigência de que fosse outra pessoa.
-    estado.campanha = campanhaFalsa({ status: 'EM_REVISAO', criadoPor: userId(REVISOR) });
-    const r = await aprovar({ hashConteudoRevisado: hash(estado.campanha) }, REVISOR);
-
-    expect(r.status).toBe(200);
-  });
-
-  it('recusa aprovação se o conteúdo mudou desde a tela de revisão', async () => {
-    estado.campanha = campanhaFalsa({ status: 'EM_REVISAO' });
-    const r = await aprovar({ hashConteudoRevisado: 'hash-de-outra-coisa' }, REVISOR);
-
-    expect(r.status).toBe(409);
-    expect(await r.json()).toMatchObject({ code: 'CONTEUDO_ALTERADO_APOS_APROVACAO' });
-  });
-
-  it('aprova quando papel, autor e hash estão corretos', async () => {
-    estado.campanha = campanhaFalsa({ status: 'EM_REVISAO' });
-    const r = await aprovar({ hashConteudoRevisado: hash(estado.campanha) }, REVISOR);
-
-    expect(r.status).toBe(200);
-    expect(await r.json()).toMatchObject({ status: 'APROVADA' });
-    expect(estado.auditados).toContainEqual({ acao: 'APROVOU', recursoTipo: 'Campaign' });
-  });
-
-  it('devolve o hash atual para a interface reenviar na aprovação', async () => {
-    estado.campanha = campanhaFalsa({ status: 'EM_REVISAO' });
-    const r = await req('/campanhas/k-1', {}, evento());
-    const corpo = (await r.json()) as { hashConteudoAtual: string };
-
-    expect(corpo.hashConteudoAtual).toBe(hash(estado.campanha));
-  });
-
-  it('não aprova campanha que não está em revisão', async () => {
+describe('sem etapa de aprovação — o portão foi removido', () => {
+  it('a rota de aprovação não existe mais', async () => {
     estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
-    const r = await aprovar({ hashConteudoRevisado: hash(estado.campanha) }, REVISOR);
-    expect(r.status).toBe(409);
+    const r = await req(
+      '/boletins/k-1/aprovacao',
+      { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } },
+      evento({ grupos: ['admin'] }),
+    );
+    expect(r.status).toBe(404);
+  });
+
+  it('a rota de envio para revisão não existe mais', async () => {
+    estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
+    const r = await req('/boletins/k-1/revisao', { method: 'POST' }, evento());
+    expect(r.status).toBe(404);
+  });
+
+  it('o detalhe da campanha expõe a auditoria do disparo, não a aprovação', async () => {
+    estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
+    const r = await req('/boletins/k-1', {}, evento());
+    const corpo = (await r.json()) as Record<string, unknown>;
+
+    expect(corpo).toHaveProperty('enviadaPor');
+    expect(corpo).toHaveProperty('disparadaEm');
+    expect(corpo).toHaveProperty('hashConteudoEnviado');
+    expect(corpo).not.toHaveProperty('aprovacao');
   });
 });
 
 describe('transições de campanha', () => {
   it('pausa avisa que mensagens em voo ainda saem', async () => {
     estado.campanha = campanhaFalsa({ status: 'ENVIANDO' });
-    const r = await req('/campanhas/k-1/pausa', { method: 'POST' }, evento());
+    const r = await req('/boletins/k-1/pausa', { method: 'POST' }, evento());
     const corpo = (await r.json()) as { aviso?: string };
 
     expect(r.status).toBe(200);
@@ -308,7 +268,7 @@ describe('transições de campanha', () => {
 
   it('recusa transição inválida com 409, não 500', async () => {
     estado.campanha = campanhaFalsa({ status: 'CONCLUIDA' });
-    const r = await req('/campanhas/k-1/pausa', { method: 'POST' }, evento());
+    const r = await req('/boletins/k-1/pausa', { method: 'POST' }, evento());
 
     expect(r.status).toBe(409);
     expect(await r.json()).toMatchObject({ code: 'TRANSICAO_INVALIDA' });
@@ -316,12 +276,12 @@ describe('transições de campanha', () => {
 
   it('cancelamento é restrito a ADMIN', async () => {
     estado.campanha = campanhaFalsa({ status: 'ENVIANDO' });
-    const r = await req('/campanhas/k-1/cancelamento', { method: 'POST' }, evento());
+    const r = await req('/boletins/k-1/cancelamento', { method: 'POST' }, evento());
     expect(r.status).toBe(403);
   });
 
   it('404 para campanha inexistente', async () => {
-    const r = await req('/campanhas/k-999', {}, evento());
+    const r = await req('/boletins/k-999', {}, evento());
     expect(r.status).toBe(404);
   });
 });
@@ -406,7 +366,7 @@ describe('correlação e vazamento de erro', () => {
       },
     });
 
-    const r = await req('/campanhas/k-1', {}, evento());
+    const r = await req('/boletins/k-1', {}, evento());
     const corpo = (await r.json()) as { code: string; message: string; correlationId?: string };
 
     expect(r.status).toBe(500);
@@ -417,15 +377,13 @@ describe('correlação e vazamento de erro', () => {
   });
 });
 
-describe('agendamento e disparo — ADR-05', () => {
-  const campanhaAprovada = () => campanhaFalsa({ status: 'APROVADA' });
-
+describe('agendamento e disparo — ADR-05 (sem aprovação)', () => {
   it('agendar valida a transição ANTES de criar o gatilho na AWS', async () => {
     // Invertido, uma campanha em estado inválido deixaria um agendamento órfão
-    // que dispararia sozinho depois.
-    estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
+    // que dispararia sozinho depois. CONCLUIDA não pode ser reagendada.
+    estado.campanha = campanhaFalsa({ status: 'CONCLUIDA' });
     const r = await req(
-      '/campanhas/k-1/agendamento',
+      '/boletins/k-1/agendamento',
       {
         method: 'POST',
         body: JSON.stringify({ agendadaPara: '2099-01-01T09:00:00Z' }),
@@ -438,46 +396,52 @@ describe('agendamento e disparo — ADR-05', () => {
     expect(estado.agendamentos).toHaveLength(0);
   });
 
-  it('agenda quando a campanha está aprovada', async () => {
-    estado.campanha = campanhaAprovada();
+  it('agenda a partir do rascunho e registra quem agendou', async () => {
+    estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
     const r = await req(
-      '/campanhas/k-1/agendamento',
+      '/boletins/k-1/agendamento',
       {
         method: 'POST',
         body: JSON.stringify({ agendadaPara: '2099-01-01T09:00:00Z' }),
         headers: { 'content-type': 'application/json' },
       },
-      evento(),
+      evento({ sub: REVISOR }),
     );
 
     expect(r.status).toBe(200);
     expect(estado.agendamentos).toHaveLength(1);
+    // Auditoria do disparo agendado.
+    expect(estado.campanha?.enviadaPor).toBe(REVISOR);
+    expect(estado.campanha?.hashConteudoEnviado).toBeTruthy();
   });
 
-  it('disparo imediato exige campanha aprovada', async () => {
-    estado.campanha = campanhaFalsa({ status: 'EM_REVISAO' });
-    const r = await req('/campanhas/k-1/disparo', { method: 'POST' }, evento());
+  it('disparo recusa status que não pode sair (CONCLUIDA)', async () => {
+    estado.campanha = campanhaFalsa({ status: 'CONCLUIDA' });
+    const r = await req('/boletins/k-1/disparo', { method: 'POST' }, evento());
 
     expect(r.status).toBe(409);
     expect(estado.disparos).toBe(0);
   });
 
-  it('dispara campanha aprovada e avisa sobre a duração', async () => {
-    estado.campanha = campanhaAprovada();
-    const r = await req('/campanhas/k-1/disparo', { method: 'POST' }, evento());
+  it('dispara rascunho direto — quem monta dispara — e grava auditoria', async () => {
+    estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
+    const r = await req('/boletins/k-1/disparo', { method: 'POST' }, evento({ sub: REVISOR }));
     const corpo = (await r.json()) as { execucao: string; aviso: string };
 
     expect(estado.disparos).toBe(1);
     expect(corpo.execucao).toBe('arn:exec:1');
     expect(corpo.aviso).toMatch(/cota do SES/i);
     expect(estado.auditados).toContainEqual({ acao: 'ENVIOU', recursoTipo: 'Campaign' });
+    // Gravou enviadaPor + fingerprint antes de acionar o orquestrador.
+    expect(estado.campanha?.enviadaPor).toBe(REVISOR);
+    expect(estado.campanha?.hashConteudoEnviado).toBeTruthy();
   });
 
   it('cancelar remove o agendamento junto', async () => {
     // Sem isto, a campanha cancelada seguiria com o gatilho armado e uma
     // execução falsa apareceria no histórico.
     estado.campanha = campanhaFalsa({ status: 'AGENDADA' });
-    await req('/campanhas/k-1/cancelamento', { method: 'POST' }, evento({ grupos: ['admin'] }));
+    await req('/boletins/k-1/cancelamento', { method: 'POST' }, evento({ grupos: ['admin'] }));
 
     expect(estado.agendamentoCancelado).toBe(true);
   });
@@ -486,7 +450,7 @@ describe('agendamento e disparo — ADR-05', () => {
 describe('listagem de campanhas — §6.3, padrão 7', () => {
   it('sem filtro, varre todos os status', async () => {
     estado.campanha = campanhaFalsa();
-    const r = await req('/campanhas', {}, evento());
+    const r = await req('/boletins', {}, evento());
 
     expect(r.status).toBe(200);
     // A chave é omitida, não passada como undefined — é o que o port espera
@@ -497,7 +461,7 @@ describe('listagem de campanhas — §6.3, padrão 7', () => {
 
   it('com filtro, passa o status adiante para consultar uma partição só', async () => {
     estado.campanha = campanhaFalsa({ status: 'ENVIANDO' });
-    await req('/campanhas?status=ENVIANDO', {}, evento());
+    await req('/boletins?status=ENVIANDO', {}, evento());
 
     expect(estado.filtrosUsados[0]).toMatchObject({ status: 'ENVIANDO' });
   });
@@ -505,14 +469,14 @@ describe('listagem de campanhas — §6.3, padrão 7', () => {
   it('recusa status inválido em vez de ignorar o filtro em silêncio', async () => {
     // Ignorar devolveria todas as campanhas para quem pediu um subconjunto —
     // e o operador confiaria no resultado errado.
-    const r = await req('/campanhas?status=INVENTADO', {}, evento());
+    const r = await req('/boletins?status=INVENTADO', {}, evento());
     expect(r.status).toBe(400);
   });
 
   it('avisa quando a listagem foi cortada', async () => {
     estado.campanha = campanhaFalsa();
     estado.truncado = true;
-    const r = await req('/campanhas', {}, evento());
+    const r = await req('/boletins', {}, evento());
     const corpo = (await r.json()) as { truncado: boolean; aviso?: string };
 
     expect(corpo.truncado).toBe(true);
@@ -521,13 +485,13 @@ describe('listagem de campanhas — §6.3, padrão 7', () => {
 
   it('limita o tamanho da página pedida', async () => {
     estado.campanha = campanhaFalsa();
-    await req('/campanhas?limite=9999', {}, evento());
+    await req('/boletins?limite=9999', {}, evento());
 
     expect(estado.filtrosUsados[0]).toMatchObject({ limite: 100 });
   });
 
   it('exige autenticação', async () => {
-    const r = await req('/campanhas', {}, evento({ semAuthorizer: true }));
+    const r = await req('/boletins', {}, evento({ semAuthorizer: true }));
     expect(r.status).toBe(401);
   });
 });
@@ -537,7 +501,7 @@ describe('listagem de campanhas — §6.3, padrão 7', () => {
 describe('editar e excluir campanha', () => {
   const patch = (corpo: unknown, grupos: unknown = ['admin']) =>
     req(
-      '/campanhas/k-1',
+      '/boletins/k-1',
       {
         method: 'PATCH',
         body: JSON.stringify(corpo),
@@ -547,7 +511,7 @@ describe('editar e excluir campanha', () => {
     );
 
   const excluir = (grupos: unknown = ['admin']) =>
-    req('/campanhas/k-1', { method: 'DELETE' }, evento({ grupos }));
+    req('/boletins/k-1', { method: 'DELETE' }, evento({ grupos }));
 
   it('edita rascunho', async () => {
     estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
@@ -557,16 +521,16 @@ describe('editar e excluir campanha', () => {
     expect(await r.json()).toMatchObject({ nome: 'Nome novo' });
   });
 
-  it('editar campanha aprovada revoga a aprovação e avisa', async () => {
-    // Quem revisou aprovou aquele conteúdo. Manter a aprovação de pé depois de
-    // uma edição transformaria o registro num carimbo sem valor.
-    estado.campanha = campanhaFalsa({ status: 'APROVADA' });
+  it('edita campanha agendada sem mudar o status — continua agendada', async () => {
+    // Sem portão de aprovação, editar não devolve para rascunho: a campanha
+    // segue AGENDADA e o launcher lê o conteúdo mais recente no horário marcado.
+    estado.campanha = campanhaFalsa({ status: 'AGENDADA' });
     const r = await patch({ nome: 'Outro nome' });
-    const corpo = (await r.json()) as { status: string; aviso?: string };
+    const corpo = (await r.json()) as { status: string; nome: string };
 
     expect(r.status).toBe(200);
-    expect(corpo.status).toBe('RASCUNHO');
-    expect(corpo.aviso).toMatch(/voltou para rascunho/i);
+    expect(corpo.status).toBe('AGENDADA');
+    expect(corpo.nome).toBe('Outro nome');
   });
 
   it('não edita campanha que já saiu', async () => {
@@ -582,8 +546,8 @@ describe('editar e excluir campanha', () => {
     expect((await excluir()).status).toBe(204);
   });
 
-  it('não exclui campanha já revisada — o cancelamento preserva o histórico', async () => {
-    estado.campanha = campanhaFalsa({ status: 'EM_REVISAO' });
+  it('não exclui campanha agendada — o cancelamento preserva o histórico', async () => {
+    estado.campanha = campanhaFalsa({ status: 'AGENDADA' });
     const r = await excluir();
 
     expect(r.status).toBe(409);

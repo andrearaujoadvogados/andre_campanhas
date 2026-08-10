@@ -41,6 +41,20 @@ export interface Contact {
   readonly contactId: ContactId;
   readonly email: EmailAddress;
   readonly nome?: string;
+  /** Opcional; mantido no cadastro, mas não usado no e-mail. */
+  readonly telefone?: string;
+  readonly empresa?: string;
+  /**
+   * Etiquetas livres para segmentar disparos (lógica OU no filtro da campanha).
+   * Ausente = sem tags. Normalizadas na borda (trim), guardadas como vieram.
+   */
+  readonly tags?: readonly string[];
+  /**
+   * Lead (ex.: recebido por webhook) — §5 do briefing. Leads não recebem
+   * campanha por padrão; só entram quando a campanha marca "incluir leads".
+   * Ausente ou `false` = contato normal.
+   */
+  readonly isLead?: boolean;
   readonly camposCustomizados: Readonly<Record<string, string>>;
   readonly status: ContactStatus;
   readonly relacionamento: Relacionamento;
@@ -49,6 +63,25 @@ export interface Contact {
   readonly criadoEm: Date;
   readonly atualizadoEm: Date;
   readonly origem: string;
+}
+
+/** Um contato é lead quando marcado explicitamente. */
+export function ehLead(contato: Contact): boolean {
+  return contato.isLead === true;
+}
+
+/** Normaliza a lista de tags para comparação/filtragem: trim, sem vazias, sem duplicatas. */
+export function normalizarTags(tags: readonly string[] | undefined): string[] {
+  const limpas = (tags ?? []).map((t) => t.trim()).filter((t) => t.length > 0);
+  return [...new Set(limpas)];
+}
+
+/** O contato tem ao menos uma das tags pedidas (lógica OU)? Vazio = não filtra. */
+export function contatoTemAlgumaTag(contato: Contact, tagsFiltro: readonly string[]): boolean {
+  const alvo = normalizarTags(tagsFiltro).map((t) => t.toLowerCase());
+  if (alvo.length === 0) return true;
+  const doContato = new Set(normalizarTags(contato.tags).map((t) => t.toLowerCase()));
+  return alvo.some((t) => doContato.has(t));
 }
 
 /** Estados que nunca devem receber campanha. */

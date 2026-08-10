@@ -2,23 +2,27 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import {
   agendarCampanhaSchema,
-  aprovarCampanhaSchema,
   criarCampanhaSchema,
   editarCampanhaSchema,
+  enviarTesteSchema,
+  previaAudienciaSchema,
 } from '@emailmkt/contracts';
 import {
   agendar,
-  aprovar,
   cancelar,
   campaignId as novoCampaignId,
-  enviarParaRevisao,
+  EmailAddress,
   listId as novoListId,
   pausar,
+  registrarDisparo,
+  resolverAudiencia,
   retomar,
-  revogarAprovacaoPorEdicao,
   templateId as novoTemplateId,
+  todos,
   type Campaign,
-  type ConteudoAprovavel,
+  type Contact,
+  type ConteudoCampanha,
+  type FalhaEnvio,
   domainError,
   type DomainError,
   type Result,
@@ -29,17 +33,19 @@ import { obterDependencias, type Dependencias } from '../container.js';
 import { corpoDeErro, statusDeErro } from '../erros.js';
 import { validarCorpo } from '../validacao.js';
 
+/** Destino inócuo para o rodapé do e-mail de teste — não descadastra nada. */
+const URL_DESCADASTRO_TESTE = 'https://campanhas.andrearaujoadvogados.com.br/teste-sem-efeito';
+
 export const rotasCampanhas = new Hono<{ Variables: Variaveis }>();
 
 const STATUS_VALIDOS: readonly Campaign['status'][] = [
   'RASCUNHO',
-  'EM_REVISAO',
-  'APROVADA',
   'AGENDADA',
   'ENVIANDO',
   'PAUSADA',
   'CONCLUIDA',
   'CANCELADA',
+  'FALHA',
 ];
 
 rotasCampanhas.post('/', validarCorpo(criarCampanhaSchema), async (c) => {
@@ -61,6 +67,12 @@ rotasCampanhas.post('/', validarCorpo(criarCampanhaSchema), async (c) => {
     remetenteNome: dados.remetenteNome,
     remetenteEmail: dados.remetenteEmail,
     ...(dados.replyTo === undefined ? {} : { replyTo: dados.replyTo }),
+    ...(dados.assunto === undefined ? {} : { assunto: dados.assunto }),
+    ...(dados.tagsFiltro.length === 0 ? {} : { tagsFiltro: dados.tagsFiltro }),
+    ...(dados.incluirLeads ? { incluirLeads: true } : {}),
+    ...(dados.destinatariosSelecionados === undefined
+      ? {}
+      : { destinatariosSelecionados: dados.destinatariosSelecionados }),
     criadoPor: usuario.userId,
     criadoEm: agora,
   };
@@ -68,26 +80,61 @@ rotasCampanhas.post('/', validarCorpo(criarCampanhaSchema), async (c) => {
   await deps.campanhas.salvar(campanha);
   await registrar(deps, c, 'CRIOU', campanha, undefined, { nome: campanha.nome });
 
-  return c.json(paraResposta(campanha, deps), 201);
+  return c.json(paraResposta(campanha), 201);
+});
+
+/**
+ * Prévia de audiência — Etapa 3 do wizard (§8).
+ *
+ * Resolve a audiência da lista com os mesmos filtros do disparo (tag, leads),
+ * usando o caso de uso do core, e devolve a contagem de elegíveis e a lista para
+ * a seleção individual. Não cria nada: é só leitura para a tela mostrar "para
+ * quantos vai" antes de disparar. Descadastrados e supressos já saem daqui.
+ */
+rotasCampanhas.post('/audiencia-previa', validarCorpo(previaAudienciaSchema), async (c) => {
+  const dados = c.req.valid('json');
+  const deps = await obterDependencias();
+  const usuario = c.get('usuario');
+
+  const audiencia = await resolverAudiencia(
+    { contatos: deps.contatos, supressao: deps.supressao, hasher: deps.hasher, clock: deps.clock },
+    {
+      tenantId: usuario.tenantId,
+      listId: novoListId(dados.listId),
+      segmento: todos<Contact>(),
+      incluirLeads: dados.incluirLeads,
+      tagsFiltro: dados.tagsFiltro,
+    },
+  );
+
+  return c.json({
+    total: audiencia.elegiveis.length,
+    excluidos: audiencia.excluidos,
+    destinatarios: audiencia.elegiveis.map((k) => ({
+      contactId: k.contactId,
+      nome: k.nome ?? null,
+      email: k.email.value,
+      empresa: k.empresa ?? null,
+    })),
+  });
 });
 
 /**
  * Edição — só enquanto a campanha não começou a sair.
  *
- * `ENVIANDO`, `PAUSADA`, `CONCLUIDA` e `CANCELADA` ficam de fora: a partir do
- * disparo, cada mensagem entregue é um fato registrado, e mudar a campanha
- * depois faria o relatório descrever algo que não foi o que saiu.
+ * `ENVIANDO`, `PAUSADA`, `CONCLUIDA`, `CANCELADA` e `FALHA` ficam de fora: a
+ * partir do disparo, cada mensagem entregue é um fato registrado, e mudar a
+ * campanha depois faria o relatório descrever algo que não foi o que saiu.
  *
- * Editar campanha já aprovada revoga a aprovação e devolve para rascunho. Quem
- * revisou aprovou *aquele* conteúdo — é a mesma razão do hash em
- * `verificarAprovacaoVigente`, aplicada à edição em vez do disparo.
+ * Sem revogação de aprovação: o portão foi removido. Uma campanha AGENDADA pode
+ * ser editada e continua agendada — o launcher lê o conteúdo mais recente no
+ * horário marcado.
  */
-const EDITAVEIS = new Set(['RASCUNHO', 'EM_REVISAO', 'APROVADA', 'AGENDADA']);
+const EDITAVEIS = new Set<Campaign['status']>(['RASCUNHO', 'AGENDADA']);
 
 rotasCampanhas.patch('/:id', validarCorpo(editarCampanhaSchema), async (c) => {
   const dados = c.req.valid('json');
   const deps = await obterDependencias();
-  const usuario = c.get('usuario');
   const campanha = await carregar(deps, c);
   if (campanha === null) return naoEncontrada(c);
 
@@ -109,32 +156,25 @@ rotasCampanhas.patch('/:id', validarCorpo(editarCampanhaSchema), async (c) => {
     ...(dados.remetenteNome === undefined ? {} : { remetenteNome: dados.remetenteNome }),
     ...(dados.remetenteEmail === undefined ? {} : { remetenteEmail: dados.remetenteEmail }),
     ...(dados.replyTo === undefined ? {} : { replyTo: dados.replyTo }),
+    ...(dados.assunto === undefined ? {} : { assunto: dados.assunto }),
+    ...(dados.tagsFiltro === undefined ? {} : { tagsFiltro: dados.tagsFiltro }),
+    ...(dados.incluirLeads === undefined ? {} : { incluirLeads: dados.incluirLeads }),
+    ...(dados.destinatariosSelecionados === undefined
+      ? {}
+      : { destinatariosSelecionados: dados.destinatariosSelecionados }),
   };
 
-  const aprovacaoRevogada = campanha.status === 'APROVADA' || campanha.status === 'AGENDADA';
-  const final = revogarAprovacaoPorEdicao(editada);
+  await deps.campanhas.salvar(editada);
+  await registrar(deps, c, 'EDITOU', editada, { nome: campanha.nome }, { nome: editada.nome });
 
-  await deps.campanhas.salvar(final);
-  await registrar(deps, c, 'EDITOU', final, { nome: campanha.nome }, { nome: final.nome });
-  void usuario;
-
-  return c.json({
-    ...paraResposta(final, deps),
-    ...(aprovacaoRevogada
-      ? {
-          aviso:
-            'A campanha estava aprovada e voltou para rascunho: a aprovação valia para o conteúdo anterior. Revise e aprove de novo antes de disparar.',
-        }
-      : {}),
-  });
+  return c.json(paraResposta(editada));
 });
 
 /**
  * Exclusão — só rascunho.
  *
- * Campanha que passou por revisão já tem rastro de quem a leu, e campanha
- * disparada tem registros de envio apontando para ela. Apagar qualquer uma das
- * duas deixaria auditoria e relatório sem referente. Para as demais existe o
+ * Campanha disparada tem registros de envio apontando para ela; apagá-la
+ * deixaria auditoria e relatório sem referente. Para as demais existe o
  * cancelamento, que preserva o histórico.
  */
 rotasCampanhas.delete('/:id', exigirPapel('ADMIN'), async (c) => {
@@ -147,7 +187,7 @@ rotasCampanhas.delete('/:id', exigirPapel('ADMIN'), async (c) => {
       {
         code: 'CAMPANHA_NAO_EXCLUIVEL',
         message:
-          'Só rascunho pode ser excluído. Campanha que já foi revisada ou disparada deixa rastro de auditoria e de envio — use o cancelamento.',
+          'Só rascunho pode ser excluído. Campanha que já foi disparada deixa rastro de envio — use o cancelamento.',
       },
       409,
     );
@@ -163,7 +203,7 @@ rotasCampanhas.delete('/:id', exigirPapel('ADMIN'), async (c) => {
  * Listagem — §6.3, padrão 7.
  *
  * `?status=` filtra numa partição só e pagina de verdade. Sem filtro, mescla as
- * oito partições e pode cortar; nesse caso a resposta traz `truncado: true` e um
+ * partições e pode cortar; nesse caso a resposta traz `truncado: true` e um
  * aviso, em vez de silenciosamente esconder campanhas de quem está olhando.
  */
 rotasCampanhas.get('/', async (c) => {
@@ -187,7 +227,7 @@ rotasCampanhas.get('/', async (c) => {
   });
 
   return c.json({
-    itens: r.itens.map((k) => paraResposta(k, deps)),
+    itens: r.itens.map((k) => paraResposta(k)),
     cursor: r.cursor,
     truncado: r.truncado,
     ...(r.truncado
@@ -209,8 +249,7 @@ rotasCampanhas.get('/:id', async (c) => {
    *
    * Só conta para status que já dispararam: em rascunho não há o que contar, e
    * a consulta seria uma leitura à toa a cada abertura da tela. É o número que
-   * transforma "ENVIANDO" de caixa-preta em "3 de 5" — e que teria mostrado o
-   * disparo travado em zero, sem CloudShell.
+   * transforma "ENVIANDO" de caixa-preta em "3 de 5".
    */
   const jaDisparou =
     campanha.status === 'ENVIANDO' ||
@@ -222,60 +261,10 @@ rotasCampanhas.get('/:id', async (c) => {
     : undefined;
 
   return c.json({
-    ...paraResposta(campanha, deps),
+    ...paraResposta(campanha),
     ...(processados === undefined ? {} : { processados }),
   });
 });
-
-/** RASCUNHO → EM_REVISAO. Qualquer operador pode submeter. */
-rotasCampanhas.post('/:id/revisao', async (c) => {
-  const deps = await obterDependencias();
-  const campanha = await carregar(deps, c);
-  if (campanha === null) return naoEncontrada(c);
-
-  return aplicar(deps, c, campanha, enviarParaRevisao(campanha), 'EDITOU');
-});
-
-/**
- * EM_REVISAO → APROVADA — a exigência de §10.3.
- *
- * Só ADMIN aprova, e o domínio ainda recusa se o aprovador for o autor. São duas
- * barreiras diferentes de propósito: o papel diz *quem pode revisar*; a regra de
- * segregação diz que ninguém revisa a si mesmo. Um ADMIN que cria a própria
- * campanha continua precisando de um segundo par de olhos.
- *
- * O `hashConteudoRevisado` vem do cliente e é comparado com o conteúdo atual: se
- * alguém editou o template entre a tela de revisão e o clique em aprovar, a
- * aprovação vale para outra coisa e precisa ser refeita.
- */
-rotasCampanhas.post(
-  '/:id/aprovacao',
-  exigirPapel('ADMIN'),
-  validarCorpo(aprovarCampanhaSchema),
-  async (c) => {
-    const dados = c.req.valid('json');
-    const deps = await obterDependencias();
-    const campanha = await carregar(deps, c);
-    if (campanha === null) return naoEncontrada(c);
-
-    const hashAtual = deps.hasherConteudo.hash(conteudoAprovavel(campanha));
-    if (hashAtual !== dados.hashConteudoRevisado) {
-      return c.json(
-        {
-          code: 'CONTEUDO_ALTERADO_APOS_APROVACAO',
-          message:
-            'O conteúdo mudou desde que a tela de revisão foi aberta. Revise novamente antes de aprovar.',
-          correlationId: c.get('correlationId'),
-        },
-        409,
-      );
-    }
-
-    const usuario = c.get('usuario');
-    const resultado = aprovar(campanha, usuario.userId, hashAtual, deps.clock.agora());
-    return aplicar(deps, c, campanha, resultado, 'APROVOU');
-  },
-);
 
 /**
  * Agenda o disparo — ADR-05.
@@ -283,43 +272,155 @@ rotasCampanhas.post(
  * A ordem importa: valida a transição no domínio **antes** de criar o
  * agendamento na AWS. Invertido, uma campanha em estado inválido deixaria um
  * agendamento órfão que dispararia sozinho depois.
+ *
+ * Registra `enviadaPor` e o fingerprint do conteúdo: para uma campanha agendada,
+ * quem agendou é quem responde pelo disparo (auditoria).
  */
 rotasCampanhas.post('/:id/agendamento', validarCorpo(agendarCampanhaSchema), async (c) => {
   const dados = c.req.valid('json');
   const deps = await obterDependencias();
+  const usuario = c.get('usuario');
   const campanha = await carregar(deps, c);
   if (campanha === null) return naoEncontrada(c);
 
   const resultado = agendar(campanha, dados.agendadaPara, deps.clock.agora());
   if (!resultado.ok) return erroDominio(c, resultado.error);
 
-  await deps.agendador.agendar(campanha.tenantId, campanha.campaignId, dados.agendadaPara);
+  const hash = deps.hasherConteudo.hash(conteudoParaHash(campanha));
+  const agendada = registrarDisparo(resultado.value, usuario.userId, hash);
 
-  return aplicar(deps, c, campanha, resultado, 'EDITOU');
+  await deps.agendador.agendar(campanha.tenantId, campanha.campaignId, dados.agendadaPara);
+  await deps.campanhas.salvar(agendada);
+  await registrar(
+    deps,
+    c,
+    'EDITOU',
+    agendada,
+    { status: campanha.status },
+    { status: agendada.status },
+  );
+
+  return c.json(paraResposta(agendada));
+});
+
+/**
+ * Envio de teste — pré-visualização real na caixa de entrada do operador.
+ *
+ * Renderiza o modelo da campanha e manda para os endereços informados, com o
+ * assunto marcado como teste. **Não** cria registro de envio, não passa por
+ * supressão nem por elegibilidade, e não muda o status da campanha: é uma cópia
+ * para conferência, não parte da audiência.
+ *
+ * A personalização usa um contato de exemplo, para o operador ver como
+ * `{{contato.primeiroNome}}` fica no lugar em vez de um campo cru. O link de
+ * descadastro aponta para um destino inócuo — o teste não deve permitir alguém
+ * se descadastrar de uma campanha que ainda não existe.
+ *
+ * Disponível em qualquer status: o ponto do teste é ver antes de disparar. É a
+ * Etapa 4 do assistente — resumo e teste, sem aprovação.
+ */
+rotasCampanhas.post('/:id/teste', validarCorpo(enviarTesteSchema), async (c) => {
+  const dados = c.req.valid('json');
+  const deps = await obterDependencias();
+  const campanha = await carregar(deps, c);
+  if (campanha === null) return naoEncontrada(c);
+
+  const conteudo = await deps.templates.buscarVersao(
+    campanha.tenantId,
+    campanha.templateId,
+    campanha.templateVersao,
+  );
+  if (conteudo === null) {
+    return c.json(
+      { code: 'MODELO_AUSENTE', message: 'O modelo desta campanha não foi encontrado.' },
+      409,
+    );
+  }
+
+  const falhas: { email: string; motivo: string }[] = [];
+
+  for (const email of dados.destinatarios) {
+    const endereco = EmailAddress.create(email);
+    if (!endereco.ok) {
+      falhas.push({ email, motivo: endereco.error.message });
+      continue;
+    }
+
+    const renderizado = await deps.renderer.renderizar(
+      { assunto: `[TESTE] ${campanha.assunto ?? conteudo.assunto}`, corpoHtml: conteudo.corpoHtml },
+      {
+        // Contato de exemplo: mostra a personalização preenchida, sem tocar em
+        // dado real de ninguém.
+        contato: { nome: 'Maria Exemplo', email, camposCustomizados: {} },
+        // Inócua de propósito: um teste não descadastra ninguém de verdade.
+        urlDescadastro: URL_DESCADASTRO_TESTE,
+      },
+    );
+
+    const resultado = await deps.provedorEmail.enviar({
+      para: endereco.value,
+      deNome: campanha.remetenteNome,
+      deEmail: campanha.remetenteEmail,
+      ...(campanha.replyTo === undefined ? {} : { replyTo: campanha.replyTo }),
+      assunto: renderizado.assunto,
+      corpoHtml: renderizado.corpoHtml,
+      corpoTexto: renderizado.corpoTexto,
+      listUnsubscribeUrl: URL_DESCADASTRO_TESTE,
+      // Sem Configuration Set: o teste não deve poluir as métricas da campanha
+      // com aberturas e cliques de quem só estava conferindo.
+      configurationSet: '',
+      tags: { tipo: 'teste' },
+    });
+
+    if (!resultado.ok) {
+      falhas.push({ email, motivo: motivoFalhaEnvio(resultado.error) });
+    }
+  }
+
+  await registrar(deps, c, 'ENVIOU', campanha, undefined, {
+    teste: true,
+    destinatarios: dados.destinatarios.length,
+    falhas: falhas.length,
+  });
+
+  const enviados = dados.destinatarios.length - falhas.length;
+  return c.json({
+    enviados,
+    falhas,
+    aviso:
+      enviados > 0
+        ? `${enviados} e-mail(s) de teste enviado(s). Confira a caixa de entrada — o assunto começa com [TESTE].`
+        : 'Nenhum e-mail de teste foi enviado. Veja os motivos abaixo.',
+  });
 });
 
 /**
  * Dispara agora, sem agendar.
  *
- * A campanha precisa estar APROVADA — a verificação está no domínio e é
- * repetida pelo `campaign-launcher`. Duas barreiras de propósito: esta rota não
- * é o único caminho para o orquestrador, e um disparo sem o aval do advogado
- * responsável seria descumprimento da exigência de §10.3.
+ * Aceita RASCUNHO (disparo imediato de quem acabou de montar) e AGENDADA (soltar
+ * antes do horário). Sem etapa de aprovação: quem monta é quem dispara. Grava
+ * `enviadaPor` e o fingerprint do conteúdo antes de acionar o orquestrador — é a
+ * auditoria do que saiu e por ordem de quem.
  */
 rotasCampanhas.post('/:id/disparo', async (c) => {
   const deps = await obterDependencias();
+  const usuario = c.get('usuario');
   const campanha = await carregar(deps, c);
   if (campanha === null) return naoEncontrada(c);
 
-  if (campanha.status !== 'APROVADA' && campanha.status !== 'AGENDADA') {
+  if (campanha.status !== 'RASCUNHO' && campanha.status !== 'AGENDADA') {
     return erroDominio(
       c,
       domainError(
         'TRANSICAO_INVALIDA',
-        `Só campanha APROVADA ou AGENDADA pode ser disparada. Status atual: ${campanha.status}.`,
+        `Só campanha RASCUNHO ou AGENDADA pode ser disparada. Status atual: ${campanha.status}.`,
       ),
     );
   }
+
+  const hash = deps.hasherConteudo.hash(conteudoParaHash(campanha));
+  const marcada = registrarDisparo(campanha, usuario.userId, hash);
+  await deps.campanhas.salvar(marcada);
 
   const execucao = await deps.agendador.dispararAgora(
     campanha.tenantId,
@@ -327,7 +428,7 @@ rotasCampanhas.post('/:id/disparo', async (c) => {
     deps.clock.agora(),
   );
 
-  await registrar(deps, c, 'ENVIOU', campanha, { status: campanha.status }, { execucao });
+  await registrar(deps, c, 'ENVIOU', marcada, { status: campanha.status }, { execucao });
 
   return c.json({
     campaignId: campanha.campaignId,
@@ -342,8 +443,7 @@ rotasCampanhas.post('/:id/disparo', async (c) => {
  *
  * A resposta diz explicitamente que mensagens já em voo ainda saem. O `sender`
  * consulta o status uma vez por lote; o punhado de e-mails já entregue ao SES
- * não volta atrás. Esconder isso faria o operador achar que a pausa é
- * instantânea e reportar como bug o que é limite físico.
+ * não volta atrás.
  */
 rotasCampanhas.post('/:id/pausa', async (c) => {
   const deps = await obterDependencias();
@@ -357,7 +457,7 @@ rotasCampanhas.post('/:id/pausa', async (c) => {
   await registrar(deps, c, 'PAUSOU', campanha, { status: campanha.status }, { status: 'PAUSADA' });
 
   return c.json({
-    ...paraResposta(resultado.value, deps),
+    ...paraResposta(resultado.value),
     aviso:
       'A pausa vale para os próximos envios. Mensagens já entregues ao servidor de e-mail ainda serão enviadas.',
   });
@@ -408,13 +508,22 @@ const naoEncontrada = (c: Ctx) =>
 const erroDominio = (c: Ctx, erro: DomainError) =>
   c.json(corpoDeErro(erro, c.get('correlationId')), statusDeErro(erro));
 
+/** Mensagem legível a partir da falha de envio do provedor (§5.5). */
+function motivoFalhaEnvio(falha: FalhaEnvio): string {
+  return falha.tipo === 'THROTTLED'
+    ? 'Envio limitado pela cota do provedor; tente novamente em instantes.'
+    : falha.detalhe;
+}
+
+type AcaoAuditoria = 'CRIOU' | 'EDITOU' | 'PAUSOU' | 'CANCELOU' | 'ENVIOU' | 'EXCLUIU';
+
 /** Persiste a transição e registra auditoria — o par que nunca deve se separar. */
 async function aplicar(
   deps: Dependencias,
   c: Ctx,
   antes: Campaign,
   resultado: Result<Campaign, DomainError>,
-  acao: 'CRIOU' | 'EDITOU' | 'APROVOU' | 'PAUSOU' | 'CANCELOU',
+  acao: AcaoAuditoria,
 ) {
   if (!resultado.ok) return erroDominio(c, resultado.error);
 
@@ -425,18 +534,16 @@ async function aplicar(
     acao,
     resultado.value,
     { status: antes.status },
-    {
-      status: resultado.value.status,
-    },
+    { status: resultado.value.status },
   );
 
-  return c.json(paraResposta(resultado.value, deps));
+  return c.json(paraResposta(resultado.value));
 }
 
 async function registrar(
   deps: Dependencias,
   c: Ctx,
-  acao: 'CRIOU' | 'EDITOU' | 'APROVOU' | 'PAUSOU' | 'CANCELOU' | 'ENVIOU' | 'EXCLUIU',
+  acao: AcaoAuditoria,
   campanha: Campaign,
   antes: unknown,
   depois: unknown,
@@ -455,16 +562,17 @@ async function registrar(
 }
 
 /**
- * O que, se mudar, invalida uma aprovação — §5.8.
+ * O que compõe o fingerprint de conteúdo gravado como auditoria do disparo.
  *
  * Mantido explícito em vez de hashear a campanha inteira: campos como
- * `atualizadoEm` mudam a toda gravação e invalidariam aprovações sem que nada
+ * `atualizadoEm` mudam a toda gravação e mudariam o fingerprint sem que nada
  * relevante tivesse mudado.
  *
- * O corpo do template ainda não entra aqui porque o repositório de templates
- * chega na próxima etapa; quando entrar, é só somar `assunto` e `corpoHtml`.
+ * O corpo do template ainda não entra aqui porque a junção com o repositório de
+ * templates chega numa etapa seguinte; quando entrar, é só somar `assunto` e
+ * `corpoHtml`.
  */
-function conteudoAprovavel(campanha: Campaign): Partial<ConteudoAprovavel> {
+function conteudoParaHash(campanha: Campaign): Partial<ConteudoCampanha> {
   return {
     templateId: campanha.templateId,
     templateVersao: campanha.templateVersao,
@@ -475,7 +583,7 @@ function conteudoAprovavel(campanha: Campaign): Partial<ConteudoAprovavel> {
   };
 }
 
-function paraResposta(campanha: Campaign, deps: Dependencias): Record<string, unknown> {
+function paraResposta(campanha: Campaign): Record<string, unknown> {
   return {
     campaignId: campanha.campaignId,
     nome: campanha.nome,
@@ -487,21 +595,17 @@ function paraResposta(campanha: Campaign, deps: Dependencias): Record<string, un
     remetenteNome: campanha.remetenteNome,
     remetenteEmail: campanha.remetenteEmail,
     replyTo: campanha.replyTo,
+    assunto: campanha.assunto ?? null,
+    tagsFiltro: campanha.tagsFiltro ?? [],
+    incluirLeads: campanha.incluirLeads === true,
+    destinatariosSelecionados: campanha.destinatariosSelecionados ?? null,
     criadoPor: campanha.criadoPor,
     criadoEm: campanha.criadoEm.toISOString(),
     totalDestinatarios: campanha.totalDestinatarios,
-    aprovacao:
-      campanha.aprovacao === undefined
-        ? null
-        : {
-            aprovadoPor: campanha.aprovacao.aprovadoPor,
-            aprovadoEm: campanha.aprovacao.aprovadoEm.toISOString(),
-          },
-    /**
-     * A interface devolve este valor ao aprovar. É como o backend detecta que o
-     * conteúdo mudou entre a tela de revisão e o clique — sem ele, "aprovado"
-     * seria um carimbo sem valor probatório (§5.8, §10.3).
-     */
-    hashConteudoAtual: deps.hasherConteudo.hash(conteudoAprovavel(campanha)),
+    // Auditoria do disparo: quem disparou/agendou, quando saiu e o fingerprint
+    // do conteúdo enviado. Substitui a antiga `aprovacao`.
+    enviadaPor: campanha.enviadaPor ?? null,
+    disparadaEm: campanha.disparadaEm?.toISOString() ?? null,
+    hashConteudoEnviado: campanha.hashConteudoEnviado ?? null,
   };
 }

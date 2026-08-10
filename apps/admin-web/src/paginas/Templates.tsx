@@ -20,11 +20,19 @@ import {
 interface Template extends ComAviso {
   templateId: string;
   nome: string;
+  tipo?: 'VISUAL' | 'CODIGO';
+  categoria?: string | null;
+  thumbnail?: string | null;
   versaoAtual: number;
   arquivado: boolean;
   atualizadoEm: string;
-  conteudo?: { assunto: string; corpoHtml: string } | null;
+  conteudo?: { assunto: string; corpoHtml: string; estruturaVisual?: string } | null;
 }
+
+const ROTULO_TIPO_TEMPLATE: Readonly<Record<string, string>> = {
+  VISUAL: 'Criador',
+  CODIGO: 'Código',
+};
 
 interface Variavel {
   chave: string;
@@ -64,27 +72,36 @@ export function Templates() {
         <ErroCaixa erro={lista.error} />
         {lista.data?.itens.length === 0 && <Vazio mensagem="Nenhum modelo criado ainda." />}
 
-        <ul className="divide-y divide-line">
+        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {lista.data?.itens.map((t) => (
             <li
               key={t.templateId}
-              className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2"
+              className="flex flex-col overflow-hidden rounded-lg border border-line bg-paper-light"
             >
-              {/* O nome interno é digitado pelo operador: sem `min-w-0` e quebra
-                  de palavra, um nome longo empurra a página inteira para o lado
-                  no celular. */}
-              <div className="min-w-0">
-                <Link
-                  to={`/templates/${t.templateId}`}
-                  className="inline-flex min-h-11 items-center font-medium break-words text-ink hover:underline"
-                >
-                  {t.nome}
-                </Link>
-                <p className="text-xs text-ink-suave">
-                  versão {t.versaoAtual} · {dataHora(t.atualizadoEm)}
-                </p>
-              </div>
-              {t.arquivado && <Selo tom="neutro">Arquivado</Selo>}
+              <Link to={`/templates/${t.templateId}`} className="flex flex-1 flex-col">
+                {/* Miniatura: quando existe, dá o reconhecimento visual do card;
+                    quando não, um marcador neutro em vez de um buraco. */}
+                <div className="flex h-32 items-center justify-center border-b border-line bg-paper">
+                  {t.thumbnail ? (
+                    <img src={t.thumbnail} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="text-xs text-ink-suave">sem prévia</span>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1 space-y-1 p-3">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Selo tom={t.tipo === 'VISUAL' ? 'positivo' : 'neutro'}>
+                      {ROTULO_TIPO_TEMPLATE[t.tipo ?? 'CODIGO']}
+                    </Selo>
+                    {t.categoria ? <Selo tom="neutro">{t.categoria}</Selo> : null}
+                    {t.arquivado && <Selo tom="neutro">Arquivado</Selo>}
+                  </div>
+                  <p className="font-medium break-words text-ink">{t.nome}</p>
+                  <p className="text-xs text-ink-suave">
+                    versão {t.versaoAtual} · {dataHora(t.atualizadoEm)}
+                  </p>
+                </div>
+              </Link>
             </li>
           ))}
         </ul>
@@ -120,6 +137,14 @@ const EditorEmail = lazy(() =>
   import('../componentes/EditorEmail.tsx').then((m) => ({ default: m.EditorEmail })),
 );
 
+/**
+ * O criador visual (GrapesJS + MJML) é ainda mais pesado que o editor de texto —
+ * só carrega quando o modelo é do tipo "Criador de e-mail".
+ */
+const EditorVisual = lazy(() =>
+  import('../componentes/EditorVisual.tsx').then((m) => ({ default: m.EditorVisual })),
+);
+
 export function TemplateEditor() {
   const { id } = useParams();
   const ehNovo = id === undefined || id === 'novo';
@@ -127,6 +152,9 @@ export function TemplateEditor() {
 
   const [nome, definirNome] = useState('');
   const [assunto, definirAssunto] = useState('');
+  const [tipo, definirTipo] = useState<'VISUAL' | 'CODIGO'>('CODIGO');
+  const [categoria, definirCategoria] = useState('');
+  const [estruturaVisual, definirEstrutura] = useState('');
   const [corpoHtml, definirCorpo] = useState('<p>Olá {{contato.primeiroNome}},</p>\n<p></p>');
   const [carregado, definirCarregado] = useState(ehNovo);
   const [avisoSalvo, definirAvisoSalvo] = useState<string | undefined>(undefined);
@@ -137,6 +165,9 @@ export function TemplateEditor() {
     queryFn: async () => {
       const t = await api.get<Template>(`/templates/${id ?? ''}`);
       definirNome(t.nome);
+      definirTipo(t.tipo ?? 'CODIGO');
+      definirCategoria(t.categoria ?? '');
+      definirEstrutura(t.conteudo?.estruturaVisual ?? '');
       definirAssunto(t.conteudo?.assunto ?? '');
       definirCorpo(t.conteudo?.corpoHtml ?? '');
       definirCarregado(true);
@@ -145,10 +176,19 @@ export function TemplateEditor() {
   });
 
   const salvar = useMutation({
-    mutationFn: () =>
-      ehNovo
-        ? api.post<Template>('/templates', { nome, assunto, corpoHtml })
-        : api.put<Template>(`/templates/${id ?? ''}`, { nome, assunto, corpoHtml }),
+    mutationFn: () => {
+      const corpo = {
+        nome,
+        assunto,
+        corpoHtml,
+        tipo,
+        ...(categoria.trim() === '' ? {} : { categoria: categoria.trim() }),
+        ...(tipo === 'VISUAL' && estruturaVisual !== '' ? { estruturaVisual } : {}),
+      };
+      return ehNovo
+        ? api.post<Template>('/templates', corpo)
+        : api.put<Template>(`/templates/${id ?? ''}`, corpo);
+    },
     onSuccess: (t) => {
       // O aviso "uma nova versão foi criada" precisa chegar ao operador: sem
       // ele, ninguém entende por que a campanha aprovada continua na versão
@@ -193,9 +233,35 @@ export function TemplateEditor() {
                 className={classeEntrada}
               />
             </Campo>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Campo
+                rotulo="Tipo de modelo"
+                ajuda="Criador de e-mail (arrastar e soltar) ou HTML personalizado."
+              >
+                <select
+                  value={tipo}
+                  onChange={(e) => definirTipo(e.target.value === 'VISUAL' ? 'VISUAL' : 'CODIGO')}
+                  className={classeEntrada}
+                >
+                  <option value="VISUAL">Criador de e-mail</option>
+                  <option value="CODIGO">HTML personalizado</option>
+                </select>
+              </Campo>
+              <Campo rotulo="Categoria" ajuda="Opcional. Ex.: Novidade, Comunicado.">
+                <input
+                  value={categoria}
+                  onChange={(e) => definirCategoria(e.target.value)}
+                  className={classeEntrada}
+                />
+              </Campo>
+            </div>
             <Campo
               rotulo="Corpo do e-mail"
-              ajuda="O link de descadastro é acrescentado automaticamente no rodapé."
+              ajuda={
+                tipo === 'VISUAL'
+                  ? 'Arraste estruturas e blocos para montar. O link de descadastro é acrescentado automaticamente no rodapé.'
+                  : 'O link de descadastro é acrescentado automaticamente no rodapé.'
+              }
               obrigatorio
             >
               <Suspense
@@ -209,7 +275,17 @@ export function TemplateEditor() {
                   </div>
                 }
               >
-                <EditorEmail valor={corpoHtml} aoMudar={definirCorpo} />
+                {tipo === 'VISUAL' ? (
+                  <EditorVisual
+                    estruturaInicial={estruturaVisual}
+                    aoMudar={({ estruturaVisual: ev, corpoHtml: ch }) => {
+                      definirEstrutura(ev);
+                      definirCorpo(ch);
+                    }}
+                  />
+                ) : (
+                  <EditorEmail valor={corpoHtml} aoMudar={definirCorpo} />
+                )}
               </Suspense>
             </Campo>
 

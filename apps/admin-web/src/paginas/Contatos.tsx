@@ -26,6 +26,10 @@ interface Contato {
   contactId: string;
   email: string;
   nome?: string;
+  telefone?: string | null;
+  empresa?: string | null;
+  tags?: string[];
+  isLead?: boolean;
   status: string;
   relacionamento: string;
   relacionamentoDesde?: string;
@@ -41,18 +45,37 @@ export function Contatos({ usuario }: { usuario: Usuario }) {
   const qc = useQueryClient();
   const [email, definirEmail] = useState('');
   const [nome, definirNome] = useState('');
+  const [telefone, definirTelefone] = useState('');
+  const [empresa, definirEmpresa] = useState('');
+  const [tagsTexto, definirTagsTexto] = useState('');
+  const [isLead, definirIsLead] = useState(false);
   const [relacionamento, definirRelacionamento] = useState('CLIENTE_ATIVO');
+
+  // Tags entram como texto separado por vírgula e viram lista antes de enviar —
+  // o backend guarda a lista; a UI é que fala "vírgula".
+  const tags = tagsTexto
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t !== '');
 
   const criar = useMutation({
     mutationFn: () =>
       api.post<Contato>('/contatos', {
         email,
         ...(nome === '' ? {} : { nome }),
+        ...(telefone.trim() === '' ? {} : { telefone: telefone.trim() }),
+        ...(empresa.trim() === '' ? {} : { empresa: empresa.trim() }),
+        tags,
+        isLead,
         relacionamento,
       }),
     onSuccess: () => {
       definirEmail('');
       definirNome('');
+      definirTelefone('');
+      definirEmpresa('');
+      definirTagsTexto('');
+      definirIsLead(false);
       void qc.invalidateQueries({ queryKey: ['contatos'] });
     },
   });
@@ -103,6 +126,28 @@ export function Contatos({ usuario }: { usuario: Usuario }) {
               className={classeEntrada}
             />
           </Campo>
+          <Campo rotulo="Telefone" ajuda="Opcional. Guardado no cadastro; não vai no e-mail.">
+            <input
+              value={telefone}
+              onChange={(e) => definirTelefone(e.target.value)}
+              className={classeEntrada}
+            />
+          </Campo>
+          <Campo rotulo="Empresa">
+            <input
+              value={empresa}
+              onChange={(e) => definirEmpresa(e.target.value)}
+              className={classeEntrada}
+            />
+          </Campo>
+          <Campo rotulo="Tags" ajuda="Separadas por vírgula. Servem para segmentar as campanhas.">
+            <input
+              value={tagsTexto}
+              onChange={(e) => definirTagsTexto(e.target.value)}
+              placeholder="ex.: tributário, evento-2026"
+              className={classeEntrada}
+            />
+          </Campo>
           {/**
            * O vínculo não bloqueia mais o envio — desde 2026-08-09, contato
            * recebe por padrão. Ele continua sendo pedido porque é a informação
@@ -111,7 +156,7 @@ export function Contatos({ usuario }: { usuario: Usuario }) {
            */}
           <Campo
             rotulo="Vínculo com o escritório"
-            ajuda="Descreve a relação com o escritório. Ajuda a segmentar as campanhas."
+            ajuda="Descreve a relação com o escritório. Ajuda a segmentar os boletins."
             obrigatorio
           >
             <select
@@ -127,6 +172,16 @@ export function Contatos({ usuario }: { usuario: Usuario }) {
             </select>
           </Campo>
         </div>
+
+        <label className="mt-4 flex items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            checked={isLead}
+            onChange={(e) => definirIsLead(e.target.checked)}
+            className="h-4 w-4"
+          />
+          É um lead (não recebe boletim por padrão — só quando o boletim marca “incluir leads”)
+        </label>
 
         <div className="mt-4 space-y-3">
           <ErroCaixa erro={criar.error} />
@@ -226,9 +281,28 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
             <dd className="break-words text-ink">{c.email}</dd>
           </div>
           <div>
+            <dt className="text-ink-suave">Telefone</dt>
+            <dd className="text-ink">{c.telefone ?? '—'}</dd>
+          </div>
+          <div>
+            <dt className="text-ink-suave">Empresa</dt>
+            <dd className="text-ink">{c.empresa ?? '—'}</dd>
+          </div>
+          <div>
             <dt className="text-ink-suave">Vínculo</dt>
             <dd className="text-ink">
               {ROTULO_RELACIONAMENTO[c.relacionamento] ?? c.relacionamento}
+              {c.isLead === true && (
+                <span className="ml-2 rounded bg-accent-mist px-1.5 py-0.5 text-xs text-ink-suave">
+                  Lead
+                </span>
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-ink-suave">Tags</dt>
+            <dd className="text-ink">
+              {c.tags !== undefined && c.tags.length > 0 ? c.tags.join(', ') : '—'}
             </dd>
           </div>
           <div>
@@ -249,13 +323,13 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
        * conclui que há um bug. O motivo mais provável — vínculo não classificado
        * — é resolvível em dois cliques, desde que ele saiba disso.
        */}
-      <Cartao titulo="Recebimento de campanhas">
+      <Cartao titulo="Recebimento de boletins">
         {c.status === 'ATIVO' || c.status === 'SUPRIMIDO' ? (
           <div className="space-y-3">
             <p className="text-sm text-ink-suave">
               {c.status === 'SUPRIMIDO'
-                ? 'Este contato está marcado para não receber campanhas.'
-                : 'Este contato recebe as campanhas das listas de que participa.'}
+                ? 'Este contato está marcado para não receber boletins.'
+                : 'Este contato recebe os boletins das listas de que participa.'}
             </p>
             <ErroCaixa erro={alternarEnvio.error} />
             <Botao
@@ -273,7 +347,7 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
            * últimos derrubam a reputação de envio da conta inteira se ignorados.
            */
           <p className="text-sm text-ink-suave">
-            Este contato não recebe campanhas, e isso não pode ser desfeito pelo painel — a situação
+            Este contato não recebe boletins, e isso não pode ser desfeito pelo painel — a situação
             partiu do próprio destinatário ou do provedor de e-mail dele.
           </p>
         )}

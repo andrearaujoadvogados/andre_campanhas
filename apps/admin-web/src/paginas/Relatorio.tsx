@@ -53,7 +53,7 @@ export function Relatorio() {
 
   const relatorio = useQuery({
     queryKey: ['relatorio', id],
-    queryFn: () => api.get<Relatorio>(`/relatorios/campanhas/${id}`),
+    queryFn: () => api.get<Relatorio>(`/relatorios/boletins/${id}`),
     // Campanha em andamento muda a cada minuto; sem isso o operador ficaria
     // recarregando a página para saber se avançou.
     refetchInterval: 60_000,
@@ -68,12 +68,12 @@ export function Relatorio() {
   return (
     <div className="space-y-6">
       <Link
-        to={`/campanhas/${r.campaignId}`}
+        to={`/boletins/${r.campaignId}`}
         className="inline-flex min-h-11 items-center gap-1.5 text-sm text-ink-suave hover:text-ink hover:underline"
       >
         <span aria-hidden="true">←</span>
         {/* Fora de contexto, "← Nome da campanha" não diz que é um caminho de volta. */}
-        <span className="sr-only">Voltar para a campanha </span>
+        <span className="sr-only">Voltar para o boletim </span>
         {r.nome}
       </Link>
 

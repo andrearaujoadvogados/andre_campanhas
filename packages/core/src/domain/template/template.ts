@@ -10,10 +10,22 @@ import type { TemplateId, TenantId, UserId } from '../shared/ids.js';
  * a comunicação passa por aprovação de um responsável (§10.3), isso não é
  * detalhe de modelagem: é a diferença entre ter e não ter prova do que saiu.
  */
+/**
+ * Como o conteúdo foi montado — §6 do briefing.
+ *
+ * `VISUAL`: montado no editor arrastar-e-soltar; a estrutura de blocos fica em
+ * `estruturaVisual` (JSON) e o `corpoHtml` é o resultado compilado.
+ * `CODIGO`: HTML/MJML escrito à mão; só há `corpoHtml`.
+ */
+export type TipoTemplate = 'VISUAL' | 'CODIGO';
+
 export interface VersaoTemplate {
   readonly versao: number;
   readonly assunto: string;
+  /** HTML final (compilado, quando VISUAL). É o que a campanha envia. */
   readonly corpoHtml: string;
+  /** JSON dos blocos do editor, presente quando o template é VISUAL. */
+  readonly estruturaVisual?: string;
   readonly preheader?: string;
   readonly criadoPor: UserId;
   readonly criadoEm: Date;
@@ -23,11 +35,22 @@ export interface Template {
   readonly tenantId: TenantId;
   readonly templateId: TemplateId;
   readonly nome: string;
+  /** Ausente em templates antigos — tratados como `CODIGO` (eram HTML puro). */
+  readonly tipo?: TipoTemplate;
+  /** Categoria/etiqueta livre, ex.: "Novidade", "Comunicado". */
+  readonly categoria?: string;
+  /** Miniatura para o card (data URL ou URL). Opcional. */
+  readonly thumbnail?: string;
   readonly versaoAtual: number;
   readonly arquivado: boolean;
   readonly criadoPor: UserId;
   readonly criadoEm: Date;
   readonly atualizadoEm: Date;
+}
+
+/** Tipo efetivo: template sem `tipo` (legado) é tratado como HTML/código. */
+export function tipoEfetivo(template: Pick<Template, 'tipo'>): TipoTemplate {
+  return template.tipo ?? 'CODIGO';
 }
 
 /**
