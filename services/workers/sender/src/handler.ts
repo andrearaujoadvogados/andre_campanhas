@@ -95,11 +95,20 @@ async function processarRegistro(
     configurationSet: cfg.configurationSet,
   });
 
-  // Nenhum e-mail no log — §10.4.
+  /**
+   * Nenhum e-mail no log — §10.4. Mas o **motivo**, sim.
+   *
+   * Registrar só a ação transforma o log em enigma: `FALHA_TRANSITORIA` repetida
+   * três vezes não diz se o SES recusou, se faltou permissão ou se a cota
+   * estourou — e o `detalhe` que o classificador monta (`${nome}: ${mensagem}`,
+   * com o nome da exceção do SES) era descartado exatamente quando é preciso.
+   * O motivo descreve a falha, não o destinatário: não há endereço nele.
+   */
   log.info('envio processado', {
     sendId: dados.data.sendId,
     campaignId: dados.data.campaignId,
     acao: desfecho.acao,
+    ...('motivo' in desfecho ? { motivo: desfecho.motivo } : {}),
   });
 
   return desfecho;

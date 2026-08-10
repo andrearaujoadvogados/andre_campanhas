@@ -444,14 +444,37 @@ export class CoreStack extends Stack {
     paramCota.grantWrite(fnQuotaSync);
 
     // SES vive em us-east-2 (ADR-01): a permissão atravessa a região, o recurso não.
+    const recursosSes = [
+      `arn:aws:ses:${cfg.regiaoEnvio}:${this.account}:identity/${cfg.dominioEnvio}`,
+      `arn:aws:ses:${cfg.regiaoEnvio}:${this.account}:configuration-set/${nome(cfg, 'config-set')}`,
+    ];
+
     fnSender.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: ['ses:SendEmail'],
-        resources: [
-          `arn:aws:ses:${cfg.regiaoEnvio}:${this.account}:identity/${cfg.dominioEnvio}`,
-          `arn:aws:ses:${cfg.regiaoEnvio}:${this.account}:configuration-set/${nome(cfg, 'config-set')}`,
-        ],
+        resources: recursosSes,
+      }),
+    );
+
+    /**
+     * A admin-api também envia e-mail: é ela que manda o teste do painel.
+     *
+     * Faltava, e o sintoma não apontava para cá. O painel dizia "Nenhum e-mail
+     * de teste foi enviado" sem motivo visível, o SES registrava zero envios nas
+     * últimas 24h, e as identidades estavam todas verificadas — três pistas que
+     * levam a procurar no SES, quando o `AccessDenied` acontecia antes de sair
+     * da conta.
+     *
+     * Mesmos recursos do sender: quem envia o teste é o mesmo remetente, e a
+     * rota de teste dispensa o Configuration Set de propósito (não deve
+     * contaminar as métricas da campanha).
+     */
+    fnAdminApi.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ses:SendEmail'],
+        resources: recursosSes,
       }),
     );
     fnQuotaSync.addToRolePolicy(
