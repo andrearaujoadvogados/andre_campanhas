@@ -141,7 +141,7 @@ async function montar(): Promise<Dependencias> {
     provedorEmail:
       process.env['AMBIENTE'] === 'dev' && process.env['USAR_SES_EM_DEV'] !== 'true'
         ? new FakeEmailProvider()
-        : new SesEmailProvider(ses(), { configurationSet: process.env['CONFIGURATION_SET'] ?? '' }),
+        : new SesEmailProvider(ses()),
     supressao: new DynamoSuppressionRepository(doc, tabela),
     auditoria: new DynamoAuditLogger(doc, tabela, ids),
     gestaoUsuarios: new CognitoGestaoUsuarios(cognito(), exigirEnv('USER_POOL_ID')),

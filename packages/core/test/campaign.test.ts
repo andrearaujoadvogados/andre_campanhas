@@ -57,6 +57,16 @@ describe('máquina de estados da campanha — sem aprovação', () => {
     expect(c.status).toBe('ENVIANDO');
   });
 
+  it('status desconhecido não autoriza transição — falha fechado, não quebra', () => {
+    // O banco guarda strings, e campanhas antigas trazem status que o domínio já
+    // não declara. Antes isto era `TRANSICOES[de].includes(...)`: com um valor
+    // fora do mapa, `undefined.includes` derrubava a Lambda com TypeError em vez
+    // de recusar a transição.
+    const legado = 'APROVADA' as never;
+    expect(() => podeTransicionar(legado, 'ENVIANDO')).not.toThrow();
+    expect(podeTransicionar(legado, 'ENVIANDO')).toBe(false);
+  });
+
   it('impede estados impossíveis', () => {
     expect(podeTransicionar('CONCLUIDA', 'ENVIANDO')).toBe(false);
     expect(podeTransicionar('CANCELADA', 'ENVIANDO')).toBe(false);

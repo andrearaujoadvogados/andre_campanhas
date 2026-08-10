@@ -98,6 +98,17 @@ export async function resolverAudiencia(
         contar('FORA_DO_SEGMENTO');
         continue;
       }
+      // Elegibilidade antes de lead e tag, e não depois: quem está descadastrado
+      // ou deu bounce não recebe sob nenhuma configuração de campanha, enquanto
+      // lead e tag são escolha do operador e mudam de um disparo para o outro.
+      // Contar primeiro o motivo permanente é o que faz o resumo de exclusões
+      // dizer algo útil — "300 descadastrados" é um fato sobre a lista; "300
+      // leads" some assim que alguém marca "incluir leads".
+      const elegibilidade = verificarElegibilidade(contato, agora);
+      if (!elegibilidade.elegivel) {
+        for (const m of elegibilidade.motivos) contar(rotuloMotivo(m));
+        continue;
+      }
       // Leads não recebem campanha, salvo opt-in explícito da campanha (§5).
       if (ehLead(contato) && input.incluirLeads !== true) {
         contar('LEAD');
@@ -106,11 +117,6 @@ export async function resolverAudiencia(
       // Filtro por tag — lógica OU. Vazio não filtra.
       if (!contatoTemAlgumaTag(contato, input.tagsFiltro ?? [])) {
         contar('FORA_DO_FILTRO_DE_TAGS');
-        continue;
-      }
-      const elegibilidade = verificarElegibilidade(contato, agora);
-      if (!elegibilidade.elegivel) {
-        for (const m of elegibilidade.motivos) contar(rotuloMotivo(m));
         continue;
       }
       candidatos.push(contato);

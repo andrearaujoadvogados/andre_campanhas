@@ -146,8 +146,13 @@ export async function enviarMensagem(
 
   // Assunto próprio do boletim sobrepõe o do modelo (§8). Ausente = usa o do
   // modelo. O corpo continua vindo do modelo (o Criador de e-mails vive lá).
+  //
+  // Spread em vez de objeto novo: montar `{ assunto, corpoHtml }` à mão faria
+  // qualquer campo futuro de `TemplateCarregado` — um preheader, por exemplo —
+  // sumir aqui sem erro de tipo e sem sintoma, até alguém notar que o e-mail
+  // saiu sem ele.
   const renderizado = await deps.renderer.renderizar(
-    { assunto: campanha.assunto ?? template.assunto, corpoHtml: template.corpoHtml },
+    { ...template, assunto: campanha.assunto ?? template.assunto },
     {
       contato: {
         ...(contato.nome === undefined ? {} : { nome: contato.nome }),

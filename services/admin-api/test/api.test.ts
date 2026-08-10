@@ -12,6 +12,7 @@ import {
   type Contact,
 } from '@emailmkt/core';
 import { CanonicalContentHasher } from '@emailmkt/adapters-aws';
+import { LiquidEmailRenderer } from '@emailmkt/email-render';
 import { criarApp } from '../src/app.js';
 import { definirDependenciasParaTeste, type Dependencias } from '../src/container.js';
 
@@ -84,6 +85,10 @@ interface Estado {
   salvos: unknown[];
   auditados: { acao: string; recursoTipo: string }[];
   suprimidos: string[];
+  /** Hashes tratados como suprimidos pelo repositório falso. */
+  suprimidosExistentes: string[];
+  /** Endereços que o provedor de e-mail efetivamente recebeu. */
+  enviados: string[];
 }
 
 let estado: Estado;
@@ -123,8 +128,18 @@ function montarDeps(): Dependencias {
         return 'arn:exec:1';
       },
     },
+    templates: {
+      buscarVersao: async () => ({ assunto: 'Assunto do modelo', corpoHtml: '<p>Olá</p>' }),
+    } as unknown as Dependencias['templates'],
+    renderer: new LiquidEmailRenderer(),
+    provedorEmail: {
+      enviar: async (m) => {
+        estado.enviados.push(m.para.value);
+        return { ok: true as const, value: { providerMessageId: 'ses-1' } };
+      },
+    },
     supressao: {
-      estaSuprimido: async () => false,
+      estaSuprimido: async (_t, hash) => estado.suprimidosExistentes.includes(hash),
       filtrarSuprimidos: async () => new Set(),
       suprimir: async (e) => void estado.suprimidos.push(e.emailHash),
       remover: async () => undefined,
@@ -153,6 +168,8 @@ beforeEach(() => {
     salvos: [],
     auditados: [],
     suprimidos: [],
+    suprimidosExistentes: [],
+    enviados: [],
   };
   definirDependenciasParaTeste(montarDeps());
 });
@@ -447,6 +464,54 @@ describe('agendamento e disparo — ADR-05 (sem aprovação)', () => {
   });
 });
 
+describe('e-mail de teste — a supressão vale aqui também', () => {
+  const enviarTeste = (destinatarios: string[]) =>
+    req(
+      '/boletins/k-1/teste',
+      {
+        method: 'POST',
+        body: JSON.stringify({ destinatarios }),
+        headers: { 'content-type': 'application/json' },
+      },
+      evento({ grupos: ['operador'] }),
+    );
+
+  beforeEach(() => {
+    estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
+  });
+
+  it('envia para endereço limpo', async () => {
+    const r = await enviarTeste(['operador@exemplo.com']);
+
+    expect(r.status).toBe(200);
+    expect(estado.enviados).toEqual(['operador@exemplo.com']);
+  });
+
+  it('RECUSA endereço na lista de supressão', async () => {
+    // O teste pula audiência e elegibilidade de propósito — é uma cópia para
+    // conferência. A supressão é outra coisa: quem se descadastrou pediu para
+    // não receber mais nada deste remetente, e "era só um teste" não é uma
+    // exceção que a pessoa concordou em abrir. Três endereços digitados à mão
+    // erram com facilidade — basta colar o de um cliente para ver como ficou.
+    estado.suprimidosExistentes = ['h:saiu@exemplo.com'];
+
+    const r = await enviarTeste(['saiu@exemplo.com']);
+    const corpo = (await r.json()) as { enviados: number; falhas: { motivo: string }[] };
+
+    expect(estado.enviados).toEqual([]);
+    expect(corpo.enviados).toBe(0);
+    expect(corpo.falhas[0]?.motivo).toMatch(/supressão/i);
+  });
+
+  it('um endereço suprimido não impede os outros', async () => {
+    estado.suprimidosExistentes = ['h:saiu@exemplo.com'];
+
+    await enviarTeste(['saiu@exemplo.com', 'operador@exemplo.com']);
+
+    expect(estado.enviados).toEqual(['operador@exemplo.com']);
+  });
+});
+
 describe('listagem de campanhas — §6.3, padrão 7', () => {
   it('sem filtro, varre todos os status', async () => {
     estado.campanha = campanhaFalsa();
@@ -531,6 +596,32 @@ describe('editar e excluir campanha', () => {
     expect(r.status).toBe(200);
     expect(corpo.status).toBe('AGENDADA');
     expect(corpo.nome).toBe('Outro nome');
+  });
+
+  it('editar campanha agendada recalcula o fingerprint do conteúdo', async () => {
+    // O hash é gravado no agendamento e o launcher só dispara depois, lendo o
+    // conteúdo mais recente. Se a edição não o recalculasse, `hashConteudoEnviado`
+    // descreveria o conteúdo de antes — um registro que aparenta provar o que
+    // saiu e aponta para outra coisa. Num escritório de advocacia, é esse rastro
+    // que precisa se sustentar.
+    estado.campanha = campanhaFalsa({
+      status: 'AGENDADA',
+      hashConteudoEnviado: 'hash-de-quando-agendou',
+    });
+
+    const r = await patch({ listId: 'l-outra' });
+    expect(r.status).toBe(200);
+
+    const salva = estado.salvos.at(-1);
+    expect(salva?.hashConteudoEnviado).toBeDefined();
+    expect(salva?.hashConteudoEnviado).not.toBe('hash-de-quando-agendou');
+  });
+
+  it('editar rascunho nunca disparado não inventa fingerprint', async () => {
+    estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
+    await patch({ nome: 'Nome novo' });
+
+    expect(estado.salvos.at(-1)?.hashConteudoEnviado).toBeUndefined();
   });
 
   it('não edita campanha que já saiu', async () => {

@@ -86,7 +86,7 @@ async function montar(): Promise<DependenciasSender> {
   const provedor =
     process.env['AMBIENTE'] === 'dev' && process.env['USAR_SES_EM_DEV'] !== 'true'
       ? new FakeEmailProvider()
-      : new SesEmailProvider(ses(), { configurationSet: env('CONFIGURATION_SET') });
+      : new SesEmailProvider(ses());
 
   return {
     envio: {
