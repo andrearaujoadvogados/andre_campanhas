@@ -12,6 +12,7 @@ import {
   sqs,
 } from '@emailmkt/adapters-aws';
 import {
+  aplicarSelecaoIndividual,
   campaignId as novoCampaignId,
   iniciarEnvio,
   resolverAudiencia,
@@ -98,12 +99,24 @@ export const handler = async (entrada: EntradaLauncher): Promise<SaidaLauncher> 
   );
 
   // Seleção individual: se o operador desmarcou contatos na Etapa 3, o disparo
-  // vai só para os escolhidos. Vazio/ausente = todos os elegíveis.
+  // vai só para os escolhidos. **Ausente e vazio são coisas diferentes.**
+  //
+  // Tratar os dois como "todos" era um caminho para o pior erro que este sistema
+  // pode cometer. Quem clicasse em "Desmarcar todos" gravava uma lista vazia, e
+  // o disparo saía para a lista inteira — com a tela mostrando "0 destinatários"
+  // no resumo, e sem volta depois que a mensagem sai.
+  //
+  // Ausente segue significando "todos os elegíveis". Vazio significa vazio, e
+  // interrompe antes de enfileirar: é estado inválido, não instrução.
   const selecionados = campanha.destinatariosSelecionados;
-  const elegiveis =
-    selecionados !== undefined && selecionados.length > 0
-      ? audiencia.elegiveis.filter((c) => selecionados.includes(String(c.contactId)))
-      : audiencia.elegiveis;
+  if (selecionados !== undefined && selecionados.length === 0) {
+    throw new Error(
+      `Campanha ${entrada.campaignId} tem seleção de destinatários vazia. ` +
+        'Nenhum contato foi escolhido na Etapa 3; nada foi enviado.',
+    );
+  }
+
+  const elegiveis = aplicarSelecaoIndividual(audiencia.elegiveis, selecionados);
 
   // O resumo de exclusões não é enfeite: numa primeira importação, é provável
   // que a maior parte esteja travada por falta de classificação de
