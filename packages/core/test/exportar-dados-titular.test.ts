@@ -60,6 +60,7 @@ function deps(): DepsExportacao {
       buscarPorMessageId: async () => null,
       salvar: async () => undefined,
       contarPorCampanha: async () => estado.envios.length,
+      listarPorCampanha: async () => ({ itens: [] }),
       listarPorContato: async () => estado.envios,
     },
     eventos: {

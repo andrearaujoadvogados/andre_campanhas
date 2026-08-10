@@ -254,6 +254,16 @@ export interface SendRepository {
    */
   contarPorCampanha(tenantId: TenantId, campaignId: CampaignId): Promise<number>;
   /**
+   * Página de registros de envio de uma campanha — insumo do relatório por
+   * destinatário (§10). Consulta a partição da campanha (`SEND#`), então é uma
+   * Query paginada, não um Scan.
+   */
+  listarPorCampanha(
+    tenantId: TenantId,
+    campaignId: CampaignId,
+    cursor?: string,
+  ): Promise<Pagina<Envio>>;
+  /**
    * Todos os envios feitos a um contato — o insumo do dossiê de portabilidade.
    *
    * Consulta por contato, não por campanha: a pergunta do titular é "quais

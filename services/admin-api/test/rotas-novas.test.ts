@@ -10,6 +10,7 @@ import {
   userId,
   type Campaign,
   type Contact,
+  type Envio,
   type Lista,
   type Template,
   type UsuarioDoPainel,
@@ -60,6 +61,7 @@ interface Estado {
   metaGravada: Template[];
   lista: Lista | null;
   campanha: Campaign | null;
+  enviosDaCampanha: Envio[];
   contatosDaLista: Contact[];
   contatoParaExportar: Contact | null;
   contatoPorEmail: Contact | null;
@@ -161,6 +163,7 @@ function montarDeps(): Dependencias {
       salvar: async () => undefined,
       contarPorCampanha: async () => 0,
       listarPorContato: async () => [],
+      listarPorCampanha: async () => ({ itens: estado.enviosDaCampanha }),
     },
     eventos: {
       salvar: async () => undefined,
@@ -220,6 +223,7 @@ beforeEach(() => {
     metaGravada: [],
     lista: listaFalsa(),
     campanha: null,
+    enviosDaCampanha: [],
     contatosDaLista: [],
     contatoParaExportar: null,
     contatoPorEmail: null,
@@ -594,6 +598,25 @@ describe('relatórios', () => {
 
     expect(corpo.bounce.critico).toBe(0.1);
     expect(corpo.reclamacao.atencao).toBe(0.001);
+  });
+
+  it('lista os destinatários de um boletim — contato, status de entrega e enviado em', async () => {
+    estado.contatoParaExportar = contatoFalso();
+    estado.enviosDaCampanha = [
+      {
+        status: 'ENTREGUE',
+        contactId: 'c-1',
+        enviadoEm: new Date('2026-08-08T10:00:00Z'),
+      } as unknown as Envio,
+    ];
+
+    const corpo = (await (await req('/relatorios/boletins/k-1/destinatarios')).json()) as {
+      itens: { status: string; email: string | null }[];
+    };
+
+    expect(corpo.itens).toHaveLength(1);
+    expect(corpo.itens[0]?.status).toBe('ENTREGUE');
+    expect(corpo.itens[0]?.email).not.toBeNull();
   });
 });
 

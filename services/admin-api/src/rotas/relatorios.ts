@@ -45,6 +45,44 @@ rotasRelatorios.get('/boletins/:id', async (c) => {
 });
 
 /**
+ * Tabela por destinatário — §10, "Relatório individual da campanha".
+ *
+ * Uma página de registros de envio (contato, status de entrega, enviado em),
+ * paginada pela partição da campanha. O status vem do `Envio` — reflete entrega
+ * (ENTREGUE/FALHOU/…), não abertura/clique: essas são eventos individuais, e o
+ * detalhe por destinatário de aberturas/cliques exige um modelo de leitura de
+ * eventos (adiado, junto com a série temporal — analytics V2). As taxas
+ * agregadas de abertura/clique já estão no relatório da campanha acima.
+ */
+rotasRelatorios.get('/boletins/:id/destinatarios', async (c) => {
+  const { envios, contatos } = await obterDependencias();
+  const usuario = c.get('usuario');
+  const campaignId = novoCampaignId(c.req.param('id'));
+
+  const pagina = await envios.listarPorCampanha(
+    usuario.tenantId,
+    campaignId,
+    c.req.query('cursor'),
+  );
+
+  const itens = await Promise.all(
+    pagina.itens.map(async (e) => {
+      const contato = await contatos.buscarPorId(usuario.tenantId, e.contactId);
+      return {
+        contactId: String(e.contactId),
+        nome: contato?.nome ?? null,
+        email: contato?.email.value ?? null,
+        status: e.status,
+        enviadoEm: e.enviadoEm?.toISOString() ?? null,
+        falhaMotivo: e.falhaMotivo ?? null,
+      };
+    }),
+  );
+
+  return c.json({ itens, cursor: pagina.cursor });
+});
+
+/**
  * Visão agregada.
  *
  * Recebe os ids das campanhas a somar. Não varre a base por decisão de custo: um

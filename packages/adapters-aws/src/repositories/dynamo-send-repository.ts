@@ -24,6 +24,8 @@ import {
   PREFIXO_ENVIO_DO_CONTATO,
   chaveEnvio,
   chaveMetricas,
+  codificarCursor,
+  decodificarCursor,
   gsi2EnviosDoContato,
   gsi4PorMessageId,
 } from '../keys.js';
@@ -101,6 +103,33 @@ export class DynamoSendRepository implements SendRepository {
     } while (cursor !== undefined);
 
     return total;
+  }
+
+  /**
+   * Página de envios da campanha — o relatório por destinatário.
+   *
+   * Mesma partição que o `contarPorCampanha`, mas trazendo os itens. Paginado (50
+   * por vez) porque uma campanha pode ter milhares de destinatários e a tela os
+   * mostra aos poucos, com busca e filtro no cliente.
+   */
+  async listarPorCampanha(
+    tenantId: TenantId,
+    campaignId: CampaignId,
+    cursor?: string,
+  ): Promise<{ itens: readonly Envio[]; cursor?: string }> {
+    const chave = chaveEnvio(tenantId, campaignId, '' as SendId);
+    const r = await this.doc.send(
+      new QueryCommand({
+        TableName: this.tabela,
+        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefixo)',
+        ExpressionAttributeValues: { ':pk': chave.pk, ':prefixo': PREFIXO_ENVIO },
+        Limit: 50,
+        ExclusiveStartKey: decodificarCursor(cursor),
+      }),
+    );
+    const itens = (r.Items ?? []).map(paraEnvio);
+    const proximo = codificarCursor(r.LastEvaluatedKey);
+    return proximo === undefined ? { itens } : { itens, cursor: proximo };
   }
 
   /**

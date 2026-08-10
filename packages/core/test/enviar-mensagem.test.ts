@@ -101,6 +101,7 @@ function deps(): DepsEnvio {
       buscarPorMessageId: async () => null,
       salvar: async (e) => void estado.enviosSalvos.push(e),
       contarPorCampanha: async () => estado.enviosSalvos.length,
+      listarPorCampanha: async () => ({ itens: [] }),
       listarPorContato: async () => estado.enviosSalvos,
     },
     templates: {
