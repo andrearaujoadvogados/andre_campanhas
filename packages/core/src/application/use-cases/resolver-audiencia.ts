@@ -25,6 +25,30 @@ export interface AudienciaResolvida {
 }
 
 /**
+ * Aplica a seleção individual da Etapa 3 sobre os elegíveis já resolvidos.
+ *
+ * **Ausente e vazio não são a mesma coisa**, e é aqui que essa distinção vive.
+ * Ausente significa "o operador não mexeu na seleção" — vai para todos os
+ * elegíveis. Vazio significa "o operador desmarcou todo mundo" — não vai para
+ * ninguém.
+ *
+ * Confundir os dois fazia o disparo sair para a lista inteira justamente quando
+ * a tela dizia "0 destinatários selecionados". O chamador deve tratar o vazio
+ * como estado inválido antes de chegar aqui; esta função apenas se recusa a
+ * inventar uma audiência que ninguém pediu.
+ */
+export function aplicarSelecaoIndividual(
+  elegiveis: readonly Contact[],
+  selecionados: readonly string[] | undefined,
+): readonly Contact[] {
+  if (selecionados === undefined) return elegiveis;
+  // Set, e não `includes`: a lista chega com milhares de ids e o filtro roda uma
+  // vez por contato elegível.
+  const escolhidos = new Set(selecionados);
+  return elegiveis.filter((c) => escolhidos.has(String(c.contactId)));
+}
+
+/**
  * Resolve a audiência de uma campanha — o snapshot imutável de §6.2, nota 4.
  *
  * A ordem dos filtros importa e é deliberada:

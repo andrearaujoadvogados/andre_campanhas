@@ -177,6 +177,16 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
 
   const podeSalvar = dados.nome.trim() !== '' && dados.templateId !== '' && dados.listId !== '';
 
+  /**
+   * Desmarcou todo mundo — estado inválido, e não "envie para todos".
+   *
+   * Trava aqui em vez de deixar o backend recusar: o operador precisa ver o
+   * problema na tela que o criou, e não como erro de validação depois do clique
+   * em disparar. O contrato e o launcher recusam a mesma coisa, cada um por sua
+   * conta — esta é a barreira que explica, as outras são as que garantem.
+   */
+  const semDestinatarios = desmarcados.size > 0 && selecionadosIds.length === 0;
+
   const validoNoPasso = (p: number): boolean => {
     if (p === 0) return dados.nome.trim() !== '' && dados.remetenteEmail.trim() !== '';
     if (p === 1) return dados.templateId !== '';
@@ -487,10 +497,16 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
             <ErroCaixa erro={teste.error} />
           </div>
 
+          {semDestinatarios && (
+            <Aviso
+              tom="alerta"
+              texto="Nenhum destinatário selecionado. Volte para a Etapa 3 e escolha ao menos um contato — ou clique em “Selecionar todos” para enviar à lista inteira."
+            />
+          )}
           <ErroCaixa erro={disparar.error} />
           <Botao
             carregando={disparar.isPending}
-            disabled={!podeSalvar}
+            disabled={!podeSalvar || semDestinatarios}
             onClick={() => {
               const rotulo = dados.agendarPara === '' ? 'Disparar agora' : 'Agendar';
               if (
@@ -520,7 +536,7 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
         <Botao
           variante="secundario"
           carregando={salvarRascunho.isPending}
-          disabled={!podeSalvar}
+          disabled={!podeSalvar || semDestinatarios}
           onClick={() => salvarRascunho.mutate()}
         >
           Salvar rascunho

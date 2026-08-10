@@ -203,8 +203,19 @@ export const criarCampanhaSchema = z.object({
   tagsFiltro: z.array(z.string().trim().min(1).max(60)).max(50).default([]),
   /** Leads só entram quando marcado (padrão falso). */
   incluirLeads: z.boolean().default(false),
-  /** Se presente, restringe o disparo a estes contatos (seleção individual). */
-  destinatariosSelecionados: z.array(z.string().min(1)).max(100_000).optional(),
+  /**
+   * Se presente, restringe o disparo a estes contatos (seleção individual).
+   *
+   * `.min(1)` de propósito: lista vazia é recusada em vez de aceita. Omitir o
+   * campo significa "todos os elegíveis" — se vazio também fosse aceito, os dois
+   * estados ficariam indistinguíveis no banco, e "não quero enviar para ninguém"
+   * viraria "envie para a lista inteira".
+   */
+  destinatariosSelecionados: z
+    .array(z.string().min(1))
+    .min(1, 'Selecione ao menos um destinatário, ou remova o filtro para enviar a todos.')
+    .max(100_000)
+    .optional(),
 });
 export type CriarCampanhaInput = z.infer<typeof criarCampanhaSchema>;
 

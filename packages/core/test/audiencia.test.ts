@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { resolverAudiencia } from '../src/application/use-cases/resolver-audiencia.js';
+import {
+  aplicarSelecaoIndividual,
+  resolverAudiencia,
+} from '../src/application/use-cases/resolver-audiencia.js';
 import { verificarElegibilidade, type Contact } from '../src/domain/contact/contact.js';
 import { EmailAddress } from '../src/domain/shared/email-address.js';
 import { contactId, listId, TENANT_PADRAO } from '../src/domain/shared/ids.js';
@@ -213,6 +216,37 @@ describe('leads e filtro de tags — §5', () => {
     // Case-insensitive: "Tributário" casa "tributário". Os outros dois saem.
     expect(comFiltro.elegiveis).toHaveLength(1);
     expect(comFiltro.excluidos.porMotivo['FORA_DO_FILTRO_DE_TAGS']).toBe(2);
+  });
+});
+
+describe('seleção individual — Etapa 3', () => {
+  const ana = contato({ email: 'ana@exemplo.com' });
+  const bruno = contato({ email: 'bruno@exemplo.com' });
+  const carla = contato({ email: 'carla@exemplo.com' });
+  const elegiveis = [ana, bruno, carla];
+
+  it('sem seleção, vai para todos os elegíveis', () => {
+    expect(aplicarSelecaoIndividual(elegiveis, undefined)).toHaveLength(3);
+  });
+
+  it('com seleção, vai só para os escolhidos', () => {
+    const r = aplicarSelecaoIndividual(elegiveis, [String(ana.contactId), String(carla.contactId)]);
+    expect(r.map((c) => c.email.value)).toEqual(['ana@exemplo.com', 'carla@exemplo.com']);
+  });
+
+  it('SELEÇÃO VAZIA NÃO VIRA "TODOS" — o operador desmarcou todo mundo', () => {
+    // A regressão que este teste tranca: seleção vazia era tratada como ausente,
+    // e o disparo saía para a lista inteira com a tela dizendo "0 selecionados".
+    // Enviar para ninguém é recuperável; enviar para todos não é.
+    expect(aplicarSelecaoIndividual(elegiveis, [])).toHaveLength(0);
+  });
+
+  it('id que não está entre os elegíveis é ignorado, não promove ninguém', () => {
+    // Um contato pode ter sido descadastrado entre a prévia e o disparo: sai da
+    // audiência e o id remanescente na seleção não deve trazê-lo de volta.
+    const r = aplicarSelecaoIndividual(elegiveis, [String(bruno.contactId), 'c-fantasma@nada.com']);
+    expect(r).toHaveLength(1);
+    expect(r[0]?.email.value).toBe('bruno@exemplo.com');
   });
 });
 
