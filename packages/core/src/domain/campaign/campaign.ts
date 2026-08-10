@@ -4,29 +4,21 @@ import type { CampaignId, ListId, TemplateId, TenantId, UserId } from '../shared
 /**
  * Ciclo de vida da campanha — §5.8.
  *
- *   RASCUNHO → EM_REVISAO → APROVADA → AGENDADA → ENVIANDO ⇄ PAUSADA → CONCLUIDA
- *        ↑__________|                       └──────────────────────────→ CANCELADA
+ *   RASCUNHO → AGENDADA → ENVIANDO ⇄ PAUSADA → CONCLUIDA
+ *        └──────────────────────────────────────→ CANCELADA / FALHA
+ *
+ * **Sem etapa de aprovação.** O portão EM_REVISAO/APROVADA foi removido por
+ * decisão do escritório: quem monta a campanha é quem dispara. A Etapa 4 do
+ * assistente é só um resumo para a própria pessoa conferir e enviar um teste —
+ * não um fluxo com aprovador e status "aguardando aprovação".
+ *
+ * O que **não** caiu junto foi a auditoria do disparo: `enviadaPor`,
+ * `disparadaEm` e `hashConteudoEnviado` registram quem disparou, quando e um
+ * fingerprint do conteúdo que saiu. Para um escritório de advocacia, esse rastro
+ * é prova documental do que foi enviado — o portão sumiu, o registro não.
  */
 export type CampaignStatus =
-  | 'RASCUNHO'
-  | 'EM_REVISAO'
-  | 'APROVADA'
-  | 'AGENDADA'
-  | 'ENVIANDO'
-  | 'PAUSADA'
-  | 'CONCLUIDA'
-  | 'CANCELADA';
-
-export interface Aprovacao {
-  readonly aprovadoPor: UserId;
-  readonly aprovadoEm: Date;
-  /**
-   * Hash do conteúdo no momento da aprovação. Sem ele, "aprovado" seria um
-   * carimbo sem valor probatório — exatamente o oposto do que a exigência da
-   * OAB pede (§10.3).
-   */
-  readonly hashConteudoAprovado: string;
-}
+  'RASCUNHO' | 'AGENDADA' | 'ENVIANDO' | 'PAUSADA' | 'CONCLUIDA' | 'CANCELADA' | 'FALHA';
 
 export interface Campaign {
   readonly tenantId: TenantId;
@@ -40,9 +32,32 @@ export interface Campaign {
   readonly remetenteNome: string;
   readonly remetenteEmail: string;
   readonly replyTo?: string;
+  /**
+   * Assunto próprio do boletim — §8. Quando presente, sobrepõe o assunto do
+   * modelo no envio: o mesmo modelo pode sair com assuntos diferentes a cada
+   * boletim. Ausente = usa o assunto do modelo.
+   */
+  readonly assunto?: string;
+  /**
+   * Segmentação da audiência — §8, Etapa 3. `tagsFiltro` filtra por tag (lógica
+   * OU); `incluirLeads` libera leads (padrão falso); `destinatariosSelecionados`,
+   * quando presente, restringe o disparo a esses contatos (desmarcação individual).
+   */
+  readonly tagsFiltro?: readonly string[];
+  readonly incluirLeads?: boolean;
+  readonly destinatariosSelecionados?: readonly string[];
   readonly criadoPor: UserId;
   readonly criadoEm: Date;
-  readonly aprovacao?: Aprovacao;
+  /**
+   * Auditoria do disparo — substitui a antiga `aprovacao`.
+   *
+   * `enviadaPor` é quem acionou o disparo ou o agendamento; `disparadaEm` é o
+   * instante em que a campanha entrou em ENVIANDO; `hashConteudoEnviado` é o
+   * fingerprint do conteúdo no disparo. Ausentes enquanto a campanha não saiu.
+   */
+  readonly enviadaPor?: UserId;
+  readonly disparadaEm?: Date;
+  readonly hashConteudoEnviado?: string;
   /**
    * Quantos destinatários o launcher enfileirou no disparo.
    *
@@ -55,11 +70,14 @@ export interface Campaign {
 }
 
 /**
- * Tudo que, se mudar, invalida uma aprovação. É o insumo do hash.
- * Manter explícito (em vez de hashear o objeto inteiro) evita que um campo
- * irrelevante — `atualizadoEm`, por exemplo — invalide aprovações sem motivo.
+ * O que compõe o fingerprint de conteúdo da campanha — o insumo do hash de
+ * auditoria gravado em `hashConteudoEnviado`.
+ *
+ * Mantido explícito (em vez de hashear o objeto inteiro) para que um campo
+ * irrelevante — `atualizadoEm`, por exemplo — não mude o fingerprint sem que o
+ * conteúdo tenha mudado de fato.
  */
-export interface ConteudoAprovavel {
+export interface ConteudoCampanha {
   readonly templateId: TemplateId;
   readonly templateVersao: number;
   readonly listId: ListId;
@@ -71,14 +89,14 @@ export interface ConteudoAprovavel {
 }
 
 const TRANSICOES: Readonly<Record<CampaignStatus, readonly CampaignStatus[]>> = {
-  RASCUNHO: ['EM_REVISAO', 'CANCELADA'],
-  EM_REVISAO: ['APROVADA', 'RASCUNHO', 'CANCELADA'],
-  APROVADA: ['AGENDADA', 'ENVIANDO', 'RASCUNHO', 'CANCELADA'],
-  AGENDADA: ['ENVIANDO', 'APROVADA', 'CANCELADA'],
-  ENVIANDO: ['PAUSADA', 'CONCLUIDA', 'CANCELADA'],
+  RASCUNHO: ['AGENDADA', 'ENVIANDO', 'CANCELADA'],
+  AGENDADA: ['ENVIANDO', 'RASCUNHO', 'CANCELADA'],
+  ENVIANDO: ['PAUSADA', 'CONCLUIDA', 'CANCELADA', 'FALHA'],
   PAUSADA: ['ENVIANDO', 'CANCELADA'],
   CONCLUIDA: [],
   CANCELADA: [],
+  // Uma falha de disparo pode ser corrigida e o rascunho reaproveitado.
+  FALHA: ['RASCUNHO', 'CANCELADA'],
 };
 
 export function podeTransicionar(de: CampaignStatus, para: CampaignStatus): boolean {
@@ -97,79 +115,20 @@ function transicionar(campanha: Campaign, para: CampaignStatus): Result<Campaign
   return ok({ ...campanha, status: para });
 }
 
-export function enviarParaRevisao(campanha: Campaign): Result<Campaign, DomainError> {
-  return transicionar(campanha, 'EM_REVISAO');
-}
-
 /**
- * Aprovação — §5.8.
+ * Carimba a auditoria do disparo sobre a campanha, sem transicionar.
  *
- * O autor pode aprovar a própria campanha.
- *
- * Já foi diferente: exigia-se um segundo `ADMIN`. A regra caiu por decisão do
- * escritório em 2026-08-08 — o sistema é de uso interno, e quem escreve as
- * campanhas é o advogado responsável por elas. Exigir uma segunda pessoa não
- * acrescentava revisão nenhuma, só um passo que não podia ser cumprido.
- *
- * **A etapa continua existindo, e não é formalidade.** Ela é o último ponto de
- * parada antes de um disparo que não tem volta: grava quem aprovou, quando, e um
- * hash do conteúdo aprovado — de modo que editar template, assunto ou audiência
- * depois invalida a aprovação e devolve a campanha para EM_REVISAO. Ver
- * `verificarAprovacaoVigente`. Sem esse hash, "aprovado" seria um carimbo sem
- * valor nenhum.
+ * Chamado pela rota no instante em que o operador aciona o disparo (ou o
+ * agendamento): grava quem acionou e o fingerprint do conteúdo naquele momento.
+ * A transição para ENVIANDO acontece depois, no launcher, que registra
+ * `disparadaEm`.
  */
-export function aprovar(
+export function registrarDisparo(
   campanha: Campaign,
-  aprovadoPor: UserId,
+  enviadaPor: UserId,
   hashConteudo: string,
-  agora: Date,
-): Result<Campaign, DomainError> {
-  if (campanha.status !== 'EM_REVISAO') {
-    return err(
-      domainError(
-        'APROVACAO_INVALIDA',
-        `Só é possível aprovar campanha EM_REVISAO. Status atual: ${campanha.status}.`,
-      ),
-    );
-  }
-  const aprovada = transicionar(campanha, 'APROVADA');
-  if (!aprovada.ok) return aprovada;
-
-  return ok({
-    ...aprovada.value,
-    aprovacao: { aprovadoPor, aprovadoEm: agora, hashConteudoAprovado: hashConteudo },
-  });
-}
-
-/**
- * A aprovação vale para *aquele* conteúdo. Editar template, assunto, remetente
- * ou audiência depois de aprovada invalida a aprovação e devolve a campanha
- * para revisão. Sem esta verificação, alguém poderia aprovar um boletim
- * institucional e disparar outra coisa com o mesmo carimbo.
- */
-export function verificarAprovacaoVigente(
-  campanha: Campaign,
-  hashConteudoAtual: string,
-): Result<Campaign, DomainError> {
-  if (campanha.aprovacao === undefined) {
-    return err(domainError('APROVACAO_INVALIDA', 'Campanha sem registro de aprovação.'));
-  }
-  if (campanha.aprovacao.hashConteudoAprovado !== hashConteudoAtual) {
-    return err(
-      domainError(
-        'CONTEUDO_ALTERADO_APOS_APROVACAO',
-        'O conteúdo mudou depois da aprovação. A campanha precisa ser revisada novamente.',
-      ),
-    );
-  }
-  return ok(campanha);
-}
-
-/** Edição de conteúdo revoga a aprovação — o caminho de volta para RASCUNHO. */
-export function revogarAprovacaoPorEdicao(campanha: Campaign): Campaign {
-  if (campanha.status !== 'APROVADA' && campanha.status !== 'AGENDADA') return campanha;
-  const { aprovacao: _descartada, ...resto } = campanha;
-  return { ...resto, status: 'RASCUNHO' };
+): Campaign {
+  return { ...campanha, enviadaPor, hashConteudoEnviado: hashConteudo };
 }
 
 export function agendar(
@@ -184,13 +143,16 @@ export function agendar(
   return r.ok ? ok({ ...r.value, agendadaPara: quando }) : r;
 }
 
-export function iniciarEnvio(
-  campanha: Campaign,
-  hashConteudoAtual: string,
-): Result<Campaign, DomainError> {
-  const vigente = verificarAprovacaoVigente(campanha, hashConteudoAtual);
-  if (!vigente.ok) return vigente;
-  return transicionar(campanha, 'ENVIANDO');
+/**
+ * RASCUNHO ou AGENDADA → ENVIANDO. Registra o instante do disparo.
+ *
+ * Sem verificação de aprovação: o portão foi removido. As barreiras que
+ * permanecem são a transição de estado válida e, no launcher, a supressão e a
+ * elegibilidade de cada contato.
+ */
+export function iniciarEnvio(campanha: Campaign, agora: Date): Result<Campaign, DomainError> {
+  const r = transicionar(campanha, 'ENVIANDO');
+  return r.ok ? ok({ ...r.value, disparadaEm: agora }) : r;
 }
 
 export const pausar = (c: Campaign): Result<Campaign, DomainError> => transicionar(c, 'PAUSADA');
@@ -199,8 +161,11 @@ export const concluir = (c: Campaign): Result<Campaign, DomainError> =>
   transicionar(c, 'CONCLUIDA');
 export const cancelar = (c: Campaign): Result<Campaign, DomainError> =>
   transicionar(c, 'CANCELADA');
+export const falhar = (c: Campaign): Result<Campaign, DomainError> => transicionar(c, 'FALHA');
 
 /** Estados em que o `sender` deve parar de consumir a fila — ADR-05. */
 export function deveInterromperEnvio(status: CampaignStatus): boolean {
-  return status === 'PAUSADA' || status === 'CANCELADA' || status === 'CONCLUIDA';
+  return (
+    status === 'PAUSADA' || status === 'CANCELADA' || status === 'CONCLUIDA' || status === 'FALHA'
+  );
 }

@@ -48,7 +48,7 @@ describe('listagem de campanhas', () => {
   it('lista sem filtro por padrão', async () => {
     montar();
     expect(await screen.findByText('Boletim de agosto')).toBeInTheDocument();
-    expect(caminhos).toEqual(['/campanhas']);
+    expect(caminhos).toEqual(['/boletins']);
   });
 
   it('filtrar por situação passa o status para a API', async () => {
@@ -58,7 +58,7 @@ describe('listagem de campanhas', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Enviando' }));
 
-    expect(caminhos).toContain('/campanhas?status=ENVIANDO');
+    expect(caminhos).toContain('/boletins?status=ENVIANDO');
   });
 
   it('mostra o aviso de truncamento em vez de esconder campanhas', async () => {
@@ -87,10 +87,10 @@ describe('listagem de campanhas', () => {
     resposta = { itens: [], truncado: false };
     montar();
 
-    expect(await screen.findByText(/nenhuma campanha criada ainda/i)).toBeInTheDocument();
+    expect(await screen.findByText(/nenhum boletim criado ainda/i)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Pausada' }));
-    expect(await screen.findByText(/nenhuma campanha nesta situação/i)).toBeInTheDocument();
+    expect(await screen.findByText(/nenhum boletim nesta situação/i)).toBeInTheDocument();
   });
 
   it('mostra a data de agendamento quando existe, em vez da criação', async () => {

@@ -532,7 +532,7 @@ describe('relatórios', () => {
   it('devolve contadores, taxas e risco juntos', async () => {
     estado.contadores = { enviados: 1000, entregues: 950, aberturasUnicas: 380, bouncesHard: 50 };
 
-    const corpo = (await (await req('/relatorios/campanhas/k-1')).json()) as {
+    const corpo = (await (await req('/relatorios/boletins/k-1')).json()) as {
       taxas: { abertura: number; bounceHard: number };
       risco: { nivel: string; avisos: string[] };
     };
@@ -546,7 +546,7 @@ describe('relatórios', () => {
 
   it('explica a base de cada taxa', async () => {
     // Sem isso, "abertura 42%" não diz se é sobre enviados ou entregues.
-    const corpo = (await (await req('/relatorios/campanhas/k-1')).json()) as {
+    const corpo = (await (await req('/relatorios/boletins/k-1')).json()) as {
       baseDeCalculo: Record<string, string>;
     };
 
@@ -555,7 +555,7 @@ describe('relatórios', () => {
   });
 
   it('campanha sem eventos devolve tudo zerado, não erro', async () => {
-    const corpo = (await (await req('/relatorios/campanhas/k-1')).json()) as {
+    const corpo = (await (await req('/relatorios/boletins/k-1')).json()) as {
       contadores: { enviados: number };
       taxas: { entrega: number };
     };
@@ -566,7 +566,7 @@ describe('relatórios', () => {
 
   it('404 para campanha inexistente', async () => {
     estado.campanha = null;
-    expect((await req('/relatorios/campanhas/k-999')).status).toBe(404);
+    expect((await req('/relatorios/boletins/k-999')).status).toBe(404);
   });
 
   it('resumo exige a lista de campanhas — não varre a base', async () => {

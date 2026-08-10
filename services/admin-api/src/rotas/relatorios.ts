@@ -24,7 +24,7 @@ export const rotasRelatorios = new Hono<{ Variables: Variaveis }>();
  * para quem não sabe que a AWS suspende a conta perto de 10% — e é justamente
  * quem não sabe que vai olhar essa tela.
  */
-rotasRelatorios.get('/campanhas/:id', async (c) => {
+rotasRelatorios.get('/boletins/:id', async (c) => {
   const { metricas, campanhas } = await obterDependencias();
   const usuario = c.get('usuario');
   const campaignId = novoCampaignId(c.req.param('id'));

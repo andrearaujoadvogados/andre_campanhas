@@ -37,13 +37,12 @@ export const baseLegalSchema = z.enum(['LEGITIMO_INTERESSE', 'CONSENTIMENTO', 'E
 
 export const campaignStatusSchema = z.enum([
   'RASCUNHO',
-  'EM_REVISAO',
-  'APROVADA',
   'AGENDADA',
   'ENVIANDO',
   'PAUSADA',
   'CONCLUIDA',
   'CANCELADA',
+  'FALHA',
 ]);
 
 export const papelUsuarioSchema = z.enum(['ADMIN', 'OPERADOR']);
@@ -61,6 +60,18 @@ const emailSchema = z
 export const criarContatoSchema = z.object({
   email: emailSchema,
   nome: z.string().trim().min(1).max(200).optional(),
+  telefone: z.string().trim().max(40).optional(),
+  empresa: z.string().trim().max(200).optional(),
+  /**
+   * Tags livres para segmentar (lógica OU no filtro da campanha). A UI manda como
+   * texto separado por vírgula e converte para lista antes de enviar.
+   */
+  tags: z.array(z.string().trim().min(1).max(60)).max(50).default([]),
+  /**
+   * Lead — não recebe campanha por padrão (§5). Ausente = contato normal.
+   * Mantido opcional para não quebrar chamadas existentes.
+   */
+  isLead: z.boolean().default(false),
   // Obrigatório: sob legítimo interesse, o vínculo é a prova da base legal (§6.2).
   relacionamento: relacionamentoSchema,
   relacionamentoDesde: z.coerce.date().optional(),
@@ -160,11 +171,20 @@ export type ResultadoImportacao = z.infer<typeof resultadoImportacaoSchema>;
 
 // ── Template ─────────────────────────────────────────────────────────────────
 
+export const tipoTemplateSchema = z.enum(['VISUAL', 'CODIGO']);
+
 export const salvarTemplateSchema = z.object({
   nome: z.string().trim().min(1).max(200),
   assunto: z.string().trim().min(1).max(200),
   preheader: z.string().trim().max(200).optional(),
   corpoHtml: z.string().min(1).max(500_000),
+  /** Como foi montado. Padrão CODIGO para compatibilidade com chamadas antigas. */
+  tipo: tipoTemplateSchema.default('CODIGO'),
+  categoria: z.string().trim().max(60).optional(),
+  /** JSON dos blocos do editor visual (quando tipo = VISUAL). */
+  estruturaVisual: z.string().max(2_000_000).optional(),
+  /** Miniatura (data URL ou URL) para o card. */
+  thumbnail: z.string().max(500_000).optional(),
 });
 export type SalvarTemplateInput = z.infer<typeof salvarTemplateSchema>;
 
@@ -177,30 +197,54 @@ export const criarCampanhaSchema = z.object({
   remetenteNome: z.string().trim().min(1).max(100),
   remetenteEmail: emailSchema,
   replyTo: emailSchema.optional(),
+  /** Assunto próprio do boletim; ausente = usa o do modelo. */
+  assunto: z.string().trim().max(200).optional(),
+  /** Filtro por tag (lógica OU). Vazio = não filtra. */
+  tagsFiltro: z.array(z.string().trim().min(1).max(60)).max(50).default([]),
+  /** Leads só entram quando marcado (padrão falso). */
+  incluirLeads: z.boolean().default(false),
+  /** Se presente, restringe o disparo a estes contatos (seleção individual). */
+  destinatariosSelecionados: z.array(z.string().min(1)).max(100_000).optional(),
 });
 export type CriarCampanhaInput = z.infer<typeof criarCampanhaSchema>;
+
+/** Prévia de audiência — conta e lista os elegíveis para a Etapa 3 do wizard. */
+export const previaAudienciaSchema = z.object({
+  listId: z.string().min(1),
+  tagsFiltro: z.array(z.string().trim().min(1).max(60)).max(50).default([]),
+  incluirLeads: z.boolean().default(false),
+});
+export type PreviaAudienciaInput = z.infer<typeof previaAudienciaSchema>;
 
 /**
  * Edição de campanha.
  *
- * Todos os campos opcionais: a tela manda só o que mudou. Editar uma campanha
- * já aprovada revoga a aprovação e devolve para rascunho — quem revisou
- * aprovou *aquele* conteúdo.
+ * Todos os campos opcionais: a tela manda só o que mudou. Editável só enquanto
+ * a campanha não começou a sair (RASCUNHO ou AGENDADA); depois do disparo, o que
+ * saiu é fato registrado e não muda.
  */
 export const editarCampanhaSchema = criarCampanhaSchema.partial();
 export type EditarCampanhaInput = z.infer<typeof editarCampanhaSchema>;
+
+/**
+ * Envio de teste — até 3 endereços.
+ *
+ * Teto baixo de propósito: teste é o operador conferir o resultado antes de
+ * disparar, não um segundo canal de envio. Três cobre "eu, o André e a
+ * secretária" sem virar uma campanha paralela sem audiência nem descadastro.
+ */
+export const enviarTesteSchema = z.object({
+  destinatarios: z
+    .array(emailSchema)
+    .min(1, 'Informe ao menos um e-mail.')
+    .max(3, 'No máximo 3 endereços de teste.'),
+});
+export type EnviarTesteInput = z.infer<typeof enviarTesteSchema>;
 
 export const agendarCampanhaSchema = z.object({
   agendadaPara: z.coerce.date(),
 });
 export type AgendarCampanhaInput = z.infer<typeof agendarCampanhaSchema>;
-
-export const aprovarCampanhaSchema = z.object({
-  /** Hash do que o revisor viu. Se divergir do atual, a aprovação é recusada (§5.8). */
-  hashConteudoRevisado: z.string().min(1),
-  observacao: z.string().max(1000).optional(),
-});
-export type AprovarCampanhaInput = z.infer<typeof aprovarCampanhaSchema>;
 
 // ── Descadastro (endpoint público) ───────────────────────────────────────────
 

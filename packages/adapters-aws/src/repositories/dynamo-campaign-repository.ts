@@ -18,13 +18,12 @@ import { campanhaParaItem, itemParaCampanha } from '../mappers/campaign-mapper.j
 
 const STATUS_TODOS: readonly Campaign['status'][] = [
   'RASCUNHO',
-  'EM_REVISAO',
-  'APROVADA',
   'AGENDADA',
   'ENVIANDO',
   'PAUSADA',
   'CONCLUIDA',
   'CANCELADA',
+  'FALHA',
 ];
 
 const ordenacao = (c: Campaign): number => (c.agendadaPara ?? c.criadoEm).getTime();

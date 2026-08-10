@@ -173,6 +173,49 @@ describe('resolverAudiencia', () => {
   });
 });
 
+describe('leads e filtro de tags — §5', () => {
+  const input = { tenantId: TENANT_PADRAO, listId: listId('l-1'), segmento: todos<Contact>() };
+
+  it('lead não recebe por padrão', async () => {
+    const r = await resolverAudiencia(
+      repos([contato({ email: 'lead@exemplo.com', isLead: true })]),
+      input,
+    );
+    expect(r.elegiveis).toHaveLength(0);
+    expect(r.excluidos.porMotivo['LEAD']).toBe(1);
+  });
+
+  it('lead recebe quando a campanha marca incluir leads', async () => {
+    const r = await resolverAudiencia(
+      repos([contato({ email: 'lead@exemplo.com', isLead: true })]),
+      {
+        ...input,
+        incluirLeads: true,
+      },
+    );
+    expect(r.elegiveis).toHaveLength(1);
+  });
+
+  it('filtra por tag com lógica OU; sem tag pedida, não filtra', async () => {
+    const contatos = [
+      contato({ email: 'trib@exemplo.com', tags: ['tributário'] }),
+      contato({ email: 'trab@exemplo.com', tags: ['trabalhista'] }),
+      contato({ email: 'sem@exemplo.com' }),
+    ];
+
+    const semFiltro = await resolverAudiencia(repos(contatos), input);
+    expect(semFiltro.elegiveis).toHaveLength(3);
+
+    const comFiltro = await resolverAudiencia(repos(contatos), {
+      ...input,
+      tagsFiltro: ['Tributário', 'previdenciário'],
+    });
+    // Case-insensitive: "Tributário" casa "tributário". Os outros dois saem.
+    expect(comFiltro.elegiveis).toHaveLength(1);
+    expect(comFiltro.excluidos.porMotivo['FORA_DO_FILTRO_DE_TAGS']).toBe(2);
+  });
+});
+
 describe('verificarElegibilidade', () => {
   it('o status é o que bloqueia, e o motivo diz qual', () => {
     // Sobrou uma condição só. O motivo carrega o status para que a tela consiga

@@ -11,6 +11,8 @@ import {
   DynamoSendRepository,
   DynamoSuppressionRepository,
   CognitoGestaoUsuarios,
+  FakeEmailProvider,
+  SesEmailProvider,
   S3Storage,
   SecretsProvider,
   Sha256EmailHasher,
@@ -19,6 +21,7 @@ import {
   UuidGenerator,
   dynamoDoc,
   cognito,
+  ses,
   s3,
   secrets,
   sqs,
@@ -28,6 +31,7 @@ import { SFNClient } from '@aws-sdk/client-sfn';
 import { LiquidEmailRenderer } from '@emailmkt/email-render';
 import type {
   AuditLogger,
+  EmailProvider,
   GestaoUsuarios,
   CampaignRepository,
   CampaignScheduler,
@@ -62,6 +66,7 @@ export interface Dependencias {
   readonly envios: SendRepository;
   readonly eventos: EventRepository;
   readonly renderer: EmailRenderer;
+  readonly provedorEmail: EmailProvider;
   readonly supressao: SuppressionRepository;
   readonly auditoria: AuditLogger;
   readonly gestaoUsuarios: GestaoUsuarios;
@@ -120,6 +125,23 @@ async function montar(): Promise<Dependencias> {
     envios: new DynamoSendRepository(doc, tabela),
     eventos: new DynamoEventRepository(doc, tabela),
     renderer: new LiquidEmailRenderer(),
+    /**
+     * Provedor de e-mail — só o envio de teste usa, no `admin-api`.
+     *
+     * Mesma regra do sender: em dev sem SES explícito, provedor falso, para não
+     * mandar teste com dado real a um endereço verificado da equipe (§9.1). O
+     * SES vive em us-east-2; a permissão atravessa a região.
+     *
+     * Configuration Set é **opcional** aqui, e de propósito: e-mail de teste não
+     * deve entrar nas métricas da campanha (a rota `/teste` já envia sem ele).
+     * Por isso não usamos `exigirEnv` — a `admin-api` não carrega essa variável
+     * na stack, e exigi-la faria toda requisição do painel falhar na inicialização
+     * do container.
+     */
+    provedorEmail:
+      process.env['AMBIENTE'] === 'dev' && process.env['USAR_SES_EM_DEV'] !== 'true'
+        ? new FakeEmailProvider()
+        : new SesEmailProvider(ses(), { configurationSet: process.env['CONFIGURATION_SET'] ?? '' }),
     supressao: new DynamoSuppressionRepository(doc, tabela),
     auditoria: new DynamoAuditLogger(doc, tabela, ids),
     gestaoUsuarios: new CognitoGestaoUsuarios(cognito(), exigirEnv('USER_POOL_ID')),

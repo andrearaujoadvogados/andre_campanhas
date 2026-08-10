@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -41,8 +41,9 @@ function campanha(over: Partial<Campanha> = {}): Campanha {
     listId: 'l-1',
     criadoPor: 'operador@escritorio.com.br',
     criadoEm: '2026-08-07T12:00:00Z',
-    aprovacao: null,
-    hashConteudoAtual: 'hash-do-que-esta-na-tela',
+    enviadaPor: null,
+    disparadaEm: null,
+    hashConteudoEnviado: null,
     ...over,
   };
 }
@@ -62,9 +63,9 @@ function montar(usuario: Usuario) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/campanhas/k-1']}>
+      <MemoryRouter initialEntries={['/boletins/k-1']}>
         <Routes>
-          <Route path="/campanhas/:id" element={<CampanhaDetalhe usuario={usuario} />} />
+          <Route path="/boletins/:id" element={<CampanhaDetalhe usuario={usuario} />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -77,40 +78,28 @@ beforeEach(() => {
   campanhaAtual = campanha();
 });
 
-describe('fluxo de aprovação — §5.8 e §10.3', () => {
-  it('reenvia o hash do conteúdo ao aprovar', async () => {
-    // Sem isto, TODA aprovação falharia: o backend compara o hash recebido com
-    // o conteúdo atual para detectar edição entre a revisão e o clique.
-    campanhaAtual = campanha({ status: 'EM_REVISAO' });
+describe('sem etapa de aprovação — quem monta dispara', () => {
+  it('rascunho oferece disparar agora, sem passo de revisão nem aprovação', async () => {
+    // O portão EM_REVISAO/APROVADA foi removido: a Etapa 4 é só resumo + teste,
+    // e o disparo parte direto do rascunho. Este teste impede o portão de voltar.
     montar(ADMIN);
 
-    await userEvent.click(await screen.findByRole('button', { name: /aprovar conteúdo/i }));
+    expect(await screen.findByRole('button', { name: /disparar agora/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /enviar para revisão/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /aprovar/i })).toBeNull();
+  });
 
-    await waitFor(() => {
-      expect(chamadas).toContainEqual({
-        caminho: '/campanhas/k-1/aprovacao',
-        corpo: { hashConteudoRevisado: 'hash-do-que-esta-na-tela' },
-      });
+  it('mostra quem disparou quando a campanha já saiu', async () => {
+    // Auditoria do disparo no lugar da aprovação: o rastro do que saiu e por
+    // ordem de quem continua registrado, mesmo sem o portão.
+    campanhaAtual = campanha({
+      status: 'ENVIANDO',
+      enviadaPor: 'advogado@escritorio.com.br',
+      disparadaEm: '2026-08-08T13:00:00Z',
     });
-  });
-
-  it('o autor aprova a própria campanha', async () => {
-    // A exigência de um segundo aprovador caiu em 2026-08-08. O domínio e a API
-    // mudaram juntos; a tela continuou desabilitando o botão, o que travava o
-    // fluxo inteiro para quem trabalha sozinho. Este teste é o que impede a
-    // divergência de voltar.
-    campanhaAtual = campanha({ status: 'EM_REVISAO', criadoPor: ADMIN.email });
     montar(ADMIN);
 
-    expect(await screen.findByRole('button', { name: /aprovar conteúdo/i })).toBeEnabled();
-  });
-
-  it('operador vê que a campanha aguarda administrador, sem botão de aprovar', async () => {
-    campanhaAtual = campanha({ status: 'EM_REVISAO' });
-    montar(OPERADOR);
-
-    expect(await screen.findByText(/aguarda aprovação de um administrador/i)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /aprovar conteúdo/i })).toBeNull();
+    expect(await screen.findByText(/advogado@escritorio.com.br/i)).toBeInTheDocument();
   });
 });
 
@@ -133,15 +122,15 @@ describe('avisos do backend chegam à tela', () => {
 });
 
 describe('ações disponíveis por estado', () => {
-  it('rascunho oferece enviar para revisão, não disparar', async () => {
+  it('rascunho oferece disparo e agendamento', async () => {
     montar(ADMIN);
 
-    expect(await screen.findByRole('button', { name: /enviar para revisão/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /disparar agora/i })).toBeNull();
+    expect(await screen.findByRole('button', { name: /disparar agora/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^agendar$/i })).toBeInTheDocument();
   });
 
-  it('aprovada oferece disparo e agendamento', async () => {
-    campanhaAtual = campanha({ status: 'APROVADA' });
+  it('agendada também oferece disparo imediato e reagendamento', async () => {
+    campanhaAtual = campanha({ status: 'AGENDADA' });
     montar(ADMIN);
 
     expect(await screen.findByRole('button', { name: /disparar agora/i })).toBeInTheDocument();
@@ -155,7 +144,7 @@ describe('ações disponíveis por estado', () => {
     montar(OPERADOR);
 
     await screen.findByRole('button', { name: /pausar/i });
-    expect(screen.queryByRole('button', { name: /cancelar campanha/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /cancelar boletim/i })).toBeNull();
   });
 
   it('campanha concluída não oferece ação destrutiva', async () => {
@@ -163,7 +152,7 @@ describe('ações disponíveis por estado', () => {
     montar(ADMIN);
 
     await screen.findByText(/concluída/i);
-    expect(screen.queryByRole('button', { name: /cancelar campanha/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /cancelar boletim/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /pausar/i })).toBeNull();
   });
 });
@@ -173,7 +162,7 @@ describe('gestão da campanha na tela', () => {
     campanhaAtual = campanha({ status: 'RASCUNHO' });
     montar(ADMIN);
 
-    expect(await screen.findByRole('button', { name: /editar campanha/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /editar boletim/i })).toBeInTheDocument();
   });
 
   it('não oferece editar depois do disparo', async () => {
@@ -183,14 +172,16 @@ describe('gestão da campanha na tela', () => {
     montar(ADMIN);
 
     await screen.findByText(/boletim tributário/i);
-    expect(screen.queryByRole('button', { name: /editar campanha/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /editar boletim/i })).toBeNull();
   });
 
   it('só oferece excluir para rascunho', async () => {
-    campanhaAtual = campanha({ status: 'EM_REVISAO' });
+    // AGENDADA ainda é editável (o launcher lê o conteúdo mais recente), mas não
+    // é excluível — há um agendamento armado apontando para ela.
+    campanhaAtual = campanha({ status: 'AGENDADA' });
     montar(ADMIN);
 
-    await screen.findByRole('button', { name: /editar campanha/i });
+    await screen.findByRole('button', { name: /editar boletim/i });
     expect(screen.queryByRole('button', { name: /excluir/i })).toBeNull();
   });
 

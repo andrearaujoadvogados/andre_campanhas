@@ -6,6 +6,7 @@ import {
   FormularioCampanha,
   type DadosCampanha,
 } from '../componentes/FormularioCampanha.tsx';
+import { AssistenteBoletim } from '../componentes/AssistenteBoletim.tsx';
 import { Link, useParams } from 'react-router-dom';
 import { api, type ComAviso } from '../lib/api.js';
 import { ROTULO_STATUS_CAMPANHA, dataHora, numero } from '../lib/formato.js';
@@ -39,9 +40,10 @@ export interface Campanha extends ComAviso {
   replyTo?: string;
   criadoPor: string;
   criadoEm: string;
-  aprovacao: { aprovadoPor: string; aprovadoEm: string } | null;
-  /** Devolvido pela API; reenviado na aprovação. Ver `Aprovar`. */
-  hashConteudoAtual: string;
+  // Auditoria do disparo — substitui a antiga `aprovacao`.
+  enviadaPor: string | null;
+  disparadaEm: string | null;
+  hashConteudoEnviado: string | null;
   totalDestinatarios?: number;
   /** Quantos já têm registro de envio. Só vem para status que já dispararam. */
   processados?: number;
@@ -50,13 +52,12 @@ export interface Campanha extends ComAviso {
 const FILTROS = [
   { valor: '', rotulo: 'Todas' },
   { valor: 'RASCUNHO', rotulo: 'Rascunho' },
-  { valor: 'EM_REVISAO', rotulo: 'Em revisão' },
-  { valor: 'APROVADA', rotulo: 'Aprovada' },
   { valor: 'AGENDADA', rotulo: 'Agendada' },
   { valor: 'ENVIANDO', rotulo: 'Enviando' },
   { valor: 'PAUSADA', rotulo: 'Pausada' },
   { valor: 'CONCLUIDA', rotulo: 'Concluída' },
   { valor: 'CANCELADA', rotulo: 'Cancelada' },
+  { valor: 'FALHA', rotulo: 'Falha' },
 ] as const;
 
 interface Listagem {
@@ -69,54 +70,23 @@ interface Listagem {
 export function Campanhas() {
   const [status, definirStatus] = useState('');
   const [criando, definirCriando] = useState(false);
-  const [novaCampanha, definirNovaCampanha] = useState<DadosCampanha>(CAMPANHA_VAZIA);
-  const qc = useQueryClient();
-  const navegar = useNavigate();
-
-  const criar = useMutation({
-    mutationFn: () =>
-      api.post<Campanha>('/campanhas', {
-        ...novaCampanha,
-        // Campo opcional: mandar string vazia faria o schema recusar por
-        // formato de e-mail inválido.
-        ...(novaCampanha.replyTo.trim() === '' ? { replyTo: undefined } : {}),
-      }),
-    onSuccess: (k) => {
-      definirCriando(false);
-      definirNovaCampanha(CAMPANHA_VAZIA);
-      void qc.invalidateQueries({ queryKey: ['campanhas'] });
-      // Vai direto para o detalhe: é lá que se revisa, aprova e dispara.
-      navegar(`/campanhas/${k.campaignId}`);
-    },
-  });
 
   const campanhas = useQuery({
     queryKey: ['campanhas', status],
-    queryFn: () => api.get<Listagem>(`/campanhas${status === '' ? '' : `?status=${status}`}`),
+    queryFn: () => api.get<Listagem>(`/boletins${status === '' ? '' : `?status=${status}`}`),
   });
 
   return (
     <div className="space-y-6">
       <TituloPagina
-        acao={!criando && <Botao onClick={() => definirCriando(true)}>Nova campanha</Botao>}
+        acao={!criando && <Botao onClick={() => definirCriando(true)}>Novo boletim</Botao>}
       >
-        Campanhas
+        Boletins
       </TituloPagina>
 
       {criando && (
-        <Cartao titulo="Nova campanha">
-          <FormularioCampanha
-            valor={novaCampanha}
-            aoMudar={definirNovaCampanha}
-            aoSalvar={() => criar.mutate()}
-            salvando={criar.isPending}
-            erro={criar.error}
-            rotuloSalvar="Criar campanha"
-            aoCancelar={() => {
-              definirCriando(false);
-              definirNovaCampanha(CAMPANHA_VAZIA);
-            }}
-          />
+        <Cartao titulo="Novo boletim">
+          <AssistenteBoletim aoCancelar={() => definirCriando(false)} />
         </Cartao>
       )}
 
@@ -156,7 +126,7 @@ export function Campanhas() {
         {campanhas.data?.itens.length === 0 && (
           <Vazio
             mensagem={
-              status === '' ? 'Nenhuma campanha criada ainda.' : 'Nenhuma campanha nesta situação.'
+              status === '' ? 'Nenhum boletim criado ainda.' : 'Nenhum boletim nesta situação.'
             }
           />
         )}
@@ -169,7 +139,7 @@ export function Campanhas() {
             >
               <div className="min-w-0">
                 <Link
-                  to={`/campanhas/${c.campaignId}`}
+                  to={`/boletins/${c.campaignId}`}
                   className="inline-flex min-h-11 items-center font-medium break-words text-ink hover:underline"
                 >
                   {c.nome}
@@ -192,7 +162,7 @@ export function Campanhas() {
 }
 
 /** Espelha o `EDITAVEIS` da API. A recusa de verdade é lá; aqui é ergonomia. */
-const EDITAVEIS = new Set(['RASCUNHO', 'EM_REVISAO', 'APROVADA', 'AGENDADA']);
+const EDITAVEIS = new Set(['RASCUNHO', 'AGENDADA']);
 
 export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
   const { id = '' } = useParams();
@@ -205,7 +175,7 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
 
   const editar = useMutation({
     mutationFn: () =>
-      api.patch<Campanha & ComAviso>(`/campanhas/${id}`, {
+      api.patch<Campanha & ComAviso>(`/boletins/${id}`, {
         ...rascunho,
         ...(rascunho.replyTo.trim() === '' ? { replyTo: undefined } : {}),
       }),
@@ -217,16 +187,16 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
   });
 
   const excluir = useMutation({
-    mutationFn: () => api.delete(`/campanhas/${id}`),
+    mutationFn: () => api.delete(`/boletins/${id}`),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['campanhas'] });
-      navegar('/campanhas');
+      navegar('/boletins');
     },
   });
 
   const campanha = useQuery({
     queryKey: ['campanha', id],
-    queryFn: () => api.get<Campanha>(`/campanhas/${id}`),
+    queryFn: () => api.get<Campanha>(`/boletins/${id}`),
     // Enquanto está enviando, o progresso muda sozinho — recarrega a cada 5s
     // para a barra andar sem o operador precisar atualizar a página.
     refetchInterval: (q) =>
@@ -235,7 +205,7 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
 
   const acao = useMutation({
     mutationFn: (entrada: { caminho: string; corpo?: unknown }) =>
-      api.post<Campanha & ComAviso>(`/campanhas/${id}${entrada.caminho}`, entrada.corpo),
+      api.post<Campanha & ComAviso>(`/boletins/${id}${entrada.caminho}`, entrada.corpo),
     onSuccess: (r) => {
       // O aviso do backend vai para a tela. Ver `Aviso` em componentes/base.
       definirAviso(r.aviso);
@@ -255,13 +225,13 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
   return (
     <div className="space-y-6">
       <Link
-        to="/campanhas"
+        to="/boletins"
         className="inline-flex min-h-11 items-center text-sm text-ink-suave hover:text-ink hover:underline"
       >
         <span aria-hidden="true" className="mr-1">
           ←
         </span>
-        Campanhas
+        Boletins
       </Link>
 
       <TituloPagina
@@ -279,7 +249,7 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
       <ErroCaixa erro={excluir.error} />
 
       {editando ? (
-        <Cartao titulo="Editar campanha">
+        <Cartao titulo="Editar boletim">
           <FormularioCampanha
             valor={rascunho}
             aoMudar={definirRascunho}
@@ -322,11 +292,11 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
             <dd className="text-ink">{dataHora(c.agendadaPara)}</dd>
           </div>
           <div>
-            <dt className="text-ink-suave">Aprovação</dt>
+            <dt className="text-ink-suave">Disparada por</dt>
             <dd className="text-ink">
-              {c.aprovacao === null
+              {c.enviadaPor === null
                 ? '—'
-                : `${c.aprovacao.aprovadoPor} em ${dataHora(c.aprovacao.aprovadoEm)}`}
+                : `${c.enviadaPor}${c.disparadaEm === null ? '' : ` em ${dataHora(c.disparadaEm)}`}`}
             </dd>
           </div>
         </dl>
@@ -355,20 +325,20 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
                 definirEditando(true);
               }}
             >
-              Editar campanha
+              Editar boletim
             </Botao>
 
             {/**
-             * Excluir só rascunho, e só ADMIN. A partir da revisão existe rastro
-             * de quem leu; a partir do disparo, registros de envio apontando
-             * para a campanha. O backend recusa; aqui nem oferecemos.
+             * Excluir só rascunho, e só ADMIN. A partir do disparo há registros
+             * de envio apontando para a campanha. O backend recusa; aqui nem
+             * oferecemos.
              */}
             {c.status === 'RASCUNHO' && ehAdmin && (
               <Botao
                 variante="perigo"
                 carregando={excluir.isPending}
                 onClick={() => {
-                  if (window.confirm(`Excluir a campanha "${c.nome}"? Isso não pode ser desfeito.`))
+                  if (window.confirm(`Excluir o boletim "${c.nome}"? Isso não pode ser desfeito.`))
                     excluir.mutate();
                 }}
               >
@@ -376,10 +346,10 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
               </Botao>
             )}
           </div>
-          {c.status !== 'RASCUNHO' && (
+          {c.status === 'AGENDADA' && (
             <p className="mt-3 text-sm text-ink-suave">
-              Editar uma campanha aprovada devolve ela para rascunho: a aprovação valia para o
-              conteúdo anterior.
+              O boletim está agendado. Editar aqui atualiza o conteúdo — o disparo continua marcado
+              para o horário definido.
             </p>
           )}
         </Cartao>
@@ -387,16 +357,18 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
 
       <Cartao titulo="Ações">
         <div className="flex flex-wrap gap-2">
-          {c.status === 'RASCUNHO' && (
-            <Botao carregando={executando} onClick={() => acao.mutate({ caminho: '/revisao' })}>
-              Enviar para revisão
-            </Botao>
-          )}
-
-          {c.status === 'EM_REVISAO' && <Aprovar campanha={c} ehAdmin={ehAdmin} />}
-
-          {(c.status === 'APROVADA' || c.status === 'AGENDADA') && (
-            <Botao carregando={executando} onClick={() => acao.mutate({ caminho: '/disparo' })}>
+          {(c.status === 'RASCUNHO' || c.status === 'AGENDADA') && (
+            <Botao
+              carregando={executando}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Disparar o boletim "${c.nome}" agora? O envio começa imediatamente e não pode ser desfeito.`,
+                  )
+                )
+                  acao.mutate({ caminho: '/disparo' });
+              }}
+            >
               Disparar agora
             </Botao>
           )}
@@ -430,12 +402,12 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
               carregando={executando}
               onClick={() => acao.mutate({ caminho: '/cancelamento' })}
             >
-              Cancelar campanha
+              Cancelar boletim
             </Botao>
           )}
         </div>
 
-        {(c.status === 'APROVADA' || c.status === 'AGENDADA') && (
+        {(c.status === 'RASCUNHO' || c.status === 'AGENDADA') && (
           <div className="mt-5 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-end">
             <div className="flex-1">
               <Campo rotulo="Agendar para" ajuda="Horário de Brasília.">
@@ -468,7 +440,7 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
         to={`/relatorios/${c.campaignId}`}
         className="inline-flex min-h-11 items-center text-sm text-ink hover:underline"
       >
-        Ver relatório desta campanha
+        Ver relatório deste boletim
         <span aria-hidden="true" className="ml-1">
           →
         </span>
@@ -477,18 +449,6 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
   );
 }
 
-/**
- * Aprovação — §5.8 e §10.3.
- *
- * Dois detalhes que, se faltarem, quebram o fluxo inteiro:
- *
- * 1. **Reenviar `hashConteudoAtual`.** O backend compara com o conteúdo no
- *    momento do clique; se alguém editou o modelo entre abrir esta tela e
- *    aprovar, a aprovação é recusada com `CONTEUDO_ALTERADO_APOS_APROVACAO`. Sem
- *    mandar o hash, *toda* aprovação falharia.
- * 2. **Só ADMIN aprova.** Esconder o botão de quem é operador evita o clique
- *    que só produziria um 403 — o controle de verdade é o `exigirPapel` da API.
- */
 /**
  * Progresso do disparo — "processados de N".
  *
@@ -529,7 +489,7 @@ function ProgressoEnvio({ campanha }: { campanha: Campanha }) {
         <div role="alert" className="rounded-md border border-alerta/30 bg-alerta-fundo px-4 py-3">
           <p className="text-sm text-alerta">
             Nenhum destinatário foi processado ainda. Se isto persistir por alguns minutos, o
-            disparo pode estar travado — cancele a campanha para encerrá-lo e crie uma nova.
+            disparo pode estar travado — cancele o boletim para encerrá-lo e crie um novo.
           </p>
         </div>
       )}
@@ -539,44 +499,6 @@ function ProgressoEnvio({ campanha }: { campanha: Campanha }) {
           Disparo concluído. As taxas de entrega, abertura e clique estão no relatório.
         </p>
       )}
-    </div>
-  );
-}
-
-function Aprovar({ campanha, ehAdmin }: { campanha: Campanha; ehAdmin: boolean }) {
-  const qc = useQueryClient();
-  const aprovar = useMutation({
-    mutationFn: () =>
-      api.post<Campanha>(`/campanhas/${campanha.campaignId}/aprovacao`, {
-        hashConteudoRevisado: campanha.hashConteudoAtual,
-      }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['campanha', campanha.campaignId] }),
-  });
-
-  if (!ehAdmin) {
-    return (
-      <Aviso texto="Esta campanha aguarda aprovação de um administrador antes de poder ser disparada." />
-    );
-  }
-
-  return (
-    <div className="w-full space-y-3">
-      {/**
-       * O autor aprova a própria campanha desde 2026-08-08. A etapa continua
-       * existindo, e o que ela protege não é "duas pessoas" — é o conteúdo:
-       * a aprovação grava o hash do que foi revisado, e editar template,
-       * assunto ou audiência depois a invalida.
-       */}
-      <p className="text-sm text-ink-suave">
-        Aprovar registra o conteúdo exato que será enviado. Se algo mudar depois, a aprovação cai e
-        a campanha volta para revisão.
-      </p>
-      <div className="flex gap-2">
-        <Botao carregando={aprovar.isPending} onClick={() => aprovar.mutate()}>
-          Aprovar conteúdo
-        </Botao>
-      </div>
-      <ErroCaixa erro={aprovar.error} />
     </div>
   );
 }

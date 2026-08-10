@@ -203,7 +203,7 @@ export function Selo({ tom = 'neutro', children }: { tom?: TomSelo; children: Re
 export function tomDoStatusCampanha(status: string): TomSelo {
   if (status === 'CONCLUIDA') return 'positivo';
   if (status === 'ENVIANDO' || status === 'AGENDADA') return 'atencao';
-  if (status === 'CANCELADA') return 'critico';
+  if (status === 'CANCELADA' || status === 'FALHA') return 'critico';
   return 'neutro';
 }
 
