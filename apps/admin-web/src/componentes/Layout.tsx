@@ -4,6 +4,9 @@ import { sair, type Usuario } from '../lib/auth.js';
 import { Logo } from './Logo.tsx';
 
 const SECOES = [
+  // `end` porque a raiz casaria com todas as rotas: sem isso, "Visão geral"
+  // ficaria marcado como seção atual em qualquer tela do painel.
+  { para: '/', rotulo: 'Visão geral', end: true },
   { para: '/boletins', rotulo: 'Boletins' },
   { para: '/listas', rotulo: 'Listas' },
   { para: '/contatos', rotulo: 'Contatos' },
@@ -44,7 +47,13 @@ function Navegacao({ visiveis, aoNavegar }: { visiveis: typeof SECOES; aoNavegar
   return (
     <nav aria-label="Seções do painel" className="flex flex-col gap-1">
       {visiveis.map((s) => (
-        <NavLink key={s.para} to={s.para} className={classeLink} onClick={aoNavegar}>
+        <NavLink
+          key={s.para}
+          to={s.para}
+          end={s.end === true}
+          className={classeLink}
+          onClick={aoNavegar}
+        >
           {s.rotulo}
         </NavLink>
       ))}
