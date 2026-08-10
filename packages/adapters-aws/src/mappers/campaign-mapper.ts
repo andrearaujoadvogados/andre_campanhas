@@ -76,7 +76,27 @@ export function campanhaParaItem(campanha: Campaign): ItemCampanha {
   };
 }
 
+/**
+ * Status gravados pelo fluxo com aprovação, que não existem mais no domínio.
+ *
+ * Campanhas criadas antes de 2026-08-10 podem estar no banco com um deles. Sem
+ * esta tradução, o valor cru atravessaria o cast de `status` e chegaria ao
+ * domínio como um estado que `TRANSICOES` não conhece — a campanha ficaria
+ * inoperável, e a única pista seria um `TypeError` no CloudWatch.
+ *
+ * `RASCUNHO` é o destino certo para os dois: nenhum deles havia disparado, e o
+ * rascunho é justamente o estado de quem ainda pode sair. A campanha volta a ser
+ * editável e disparável, e na primeira gravação o item migra sozinho — o
+ * `gsi3pk` é reescrito com o status novo.
+ */
+const STATUS_LEGADOS: Readonly<Record<string, Campaign['status']>> = {
+  EM_REVISAO: 'RASCUNHO',
+  APROVADA: 'RASCUNHO',
+};
+
 export function itemParaCampanha(item: Record<string, unknown>): Campaign {
+  const statusBruto = String(item['status']);
+
   return {
     tenantId: tenantId(String(item['tenantId'])),
     campaignId: campaignId(String(item['campaignId'])),
@@ -84,7 +104,7 @@ export function itemParaCampanha(item: Record<string, unknown>): Campaign {
     templateId: templateId(String(item['templateId'])),
     templateVersao: Number(item['templateVersao']),
     listId: listId(String(item['listId'])),
-    status: String(item['status']) as Campaign['status'],
+    status: STATUS_LEGADOS[statusBruto] ?? (statusBruto as Campaign['status']),
     ...(item['agendadaPara'] === undefined
       ? {}
       : { agendadaPara: new Date(String(item['agendadaPara'])) }),

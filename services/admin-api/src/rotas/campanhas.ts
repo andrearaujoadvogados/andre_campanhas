@@ -164,10 +164,28 @@ rotasCampanhas.patch('/:id', validarCorpo(editarCampanhaSchema), async (c) => {
       : { destinatariosSelecionados: dados.destinatariosSelecionados }),
   };
 
-  await deps.campanhas.salvar(editada);
-  await registrar(deps, c, 'EDITOU', editada, { nome: campanha.nome }, { nome: editada.nome });
+  /**
+   * Editou uma campanha agendada: o fingerprint tem de acompanhar.
+   *
+   * `hashConteudoEnviado` é gravado quando o operador agenda, e o launcher só
+   * dispara horas ou dias depois, lendo o conteúdo mais recente. Sem recalcular
+   * aqui, o hash descreveria o conteúdo do agendamento e não o que de fato saiu
+   * — e um fingerprint que aponta para outra coisa é pior que nenhum: dá a um
+   * registro errado a aparência de prova. Para um escritório de advocacia, é
+   * justamente esse rastro que precisa se sustentar.
+   *
+   * Só recalcula quando já existe: campanha que nunca foi agendada nem disparada
+   * não tem o que carimbar, e o hash nasce no disparo.
+   */
+  const comHash: Campaign =
+    editada.hashConteudoEnviado === undefined
+      ? editada
+      : { ...editada, hashConteudoEnviado: deps.hasherConteudo.hash(conteudoParaHash(editada)) };
 
-  return c.json(paraResposta(editada));
+  await deps.campanhas.salvar(comHash);
+  await registrar(deps, c, 'EDITOU', comHash, { nome: campanha.nome }, { nome: comHash.nome });
+
+  return c.json(paraResposta(comHash));
 });
 
 /**
@@ -343,6 +361,26 @@ rotasCampanhas.post('/:id/teste', validarCorpo(enviarTesteSchema), async (c) => 
     const endereco = EmailAddress.create(email);
     if (!endereco.ok) {
       falhas.push({ email, motivo: endereco.error.message });
+      continue;
+    }
+
+    /**
+     * A supressão vale também para o teste.
+     *
+     * O teste pula audiência e elegibilidade de propósito — é uma cópia para
+     * conferência, não parte do disparo. A supressão é outra coisa: quem se
+     * descadastrou ou reclamou pediu para não receber mais nada deste remetente,
+     * e "era só um teste" não é uma exceção que a pessoa concordou em abrir. É
+     * também o registro que a ANPD leria como descumprimento.
+     *
+     * Três endereços digitados à mão erram com facilidade — basta colar o
+     * endereço de um cliente para conferir como ficou.
+     */
+    if (await deps.supressao.estaSuprimido(campanha.tenantId, deps.hasher.hash(endereco.value))) {
+      falhas.push({
+        email,
+        motivo: 'Endereço na lista de supressão (descadastro, bounce ou reclamação).',
+      });
       continue;
     }
 

@@ -99,8 +99,17 @@ const TRANSICOES: Readonly<Record<CampaignStatus, readonly CampaignStatus[]>> = 
   FALHA: ['RASCUNHO', 'CANCELADA'],
 };
 
+/**
+ * Falha fechado diante de status desconhecido.
+ *
+ * `TRANSICOES[de]` devolve `undefined` para qualquer valor fora do tipo — e o
+ * banco guarda strings, não o tipo. Campanhas gravadas sob o fluxo antigo
+ * trazem `EM_REVISAO` e `APROVADA`, que deixaram de existir aqui; sem o `?.`
+ * isto lançaria `TypeError` e derrubaria a Lambda em vez de recusar a transição.
+ * Um status que não se conhece não autoriza transição nenhuma.
+ */
 export function podeTransicionar(de: CampaignStatus, para: CampaignStatus): boolean {
-  return TRANSICOES[de].includes(para);
+  return TRANSICOES[de]?.includes(para) ?? false;
 }
 
 function transicionar(campanha: Campaign, para: CampaignStatus): Result<Campaign, DomainError> {

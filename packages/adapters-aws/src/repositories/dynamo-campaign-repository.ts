@@ -26,6 +26,20 @@ const STATUS_TODOS: readonly Campaign['status'][] = [
   'FALHA',
 ];
 
+/**
+ * Partições do fluxo com aprovação, varridas só na leitura.
+ *
+ * O `gsi3pk` carrega o status, então uma campanha gravada como `APROVADA` vive
+ * numa partição que nenhuma das consultas novas visita: ela não sumiria com
+ * alarde, apenas deixaria de aparecer na listagem. Varrer estas duas as traz de
+ * volta; `itemParaCampanha` traduz o status para `RASCUNHO`, e a primeira
+ * gravação reescreve a chave e migra o item de partição.
+ *
+ * Removível quando não restar nenhuma campanha anterior a 2026-08-10 — o que se
+ * verifica consultando estas mesmas partições e recebendo zero itens.
+ */
+const PARTICOES_LEGADAS: readonly string[] = ['EM_REVISAO', 'APROVADA'];
+
 const ordenacao = (c: Campaign): number => (c.agendadaPara ?? c.criadoEm).getTime();
 
 export class DynamoCampaignRepository implements CampaignRepository {
@@ -72,7 +86,9 @@ export class DynamoCampaignRepository implements CampaignRepository {
     }
 
     const paginas = await Promise.all(
-      STATUS_TODOS.map((status) => this.consultarStatus(tenantId, status, filtro.limite)),
+      [...STATUS_TODOS, ...PARTICOES_LEGADAS].map((status) =>
+        this.consultarStatus(tenantId, status, filtro.limite),
+      ),
     );
 
     const itens = paginas
@@ -89,7 +105,9 @@ export class DynamoCampaignRepository implements CampaignRepository {
 
   private async consultarStatus(
     tenantId: TenantId,
-    status: Campaign['status'],
+    // `string`, e não `Campaign['status']`: as partições legadas guardam valores
+    // que o domínio já não declara, e são justamente as que precisam ser lidas.
+    status: string,
     limite: number,
     cursor?: string,
   ) {

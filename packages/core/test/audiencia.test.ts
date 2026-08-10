@@ -199,6 +199,22 @@ describe('leads e filtro de tags — §5', () => {
     expect(r.elegiveis).toHaveLength(1);
   });
 
+  it('motivo permanente vence o configurável no resumo de exclusões', async () => {
+    // Um lead que também está descadastrado conta como DESCADASTRADO, não como
+    // LEAD. Os dois excluem, mas só um é fato sobre a lista: "lead" some assim
+    // que alguém marca "incluir leads", enquanto o descadastro é definitivo. O
+    // resumo existe para dizer se a lista está saudável, e essa distinção é a
+    // diferença entre um diagnóstico útil e um enganoso.
+    const r = await resolverAudiencia(
+      repos([contato({ email: 'saiu@exemplo.com', isLead: true, status: 'DESCADASTRADO' })]),
+      input,
+    );
+
+    expect(r.elegiveis).toHaveLength(0);
+    expect(r.excluidos.porMotivo['STATUS_DESCADASTRADO']).toBe(1);
+    expect(r.excluidos.porMotivo['LEAD']).toBeUndefined();
+  });
+
   it('filtra por tag com lógica OU; sem tag pedida, não filtra', async () => {
     const contatos = [
       contato({ email: 'trib@exemplo.com', tags: ['tributário'] }),

@@ -32,11 +32,35 @@ function erroSes(name: string): Error {
   return e;
 }
 
+describe('Configuration Set — quem manda é a mensagem', () => {
+  /** Devolve o input do `SendEmailCommand` que o provider montou. */
+  async function inputEnviado(msg: MensagemEmail) {
+    const cliente = clienteFalso({ MessageId: 'm-1' });
+    await new SesEmailProvider(cliente).enviar(msg);
+    const enviar = cliente.send as unknown as ReturnType<typeof vi.fn>;
+    return enviar.mock.calls[0]?.[0].input as Record<string, unknown>;
+  }
+
+  it('usa o Configuration Set que a mensagem pede', async () => {
+    const input = await inputEnviado(mensagem());
+    expect(input['ConfigurationSetName']).toBe('cs');
+  });
+
+  it('vazio significa NENHUM, e o parâmetro é omitido', async () => {
+    // O e-mail de teste do painel manda `''` para não contaminar as métricas da
+    // campanha com abertura e clique de quem só estava conferindo. Antes o
+    // provider ignorava a mensagem e aplicava o padrão do construtor, então o
+    // teste entrava nas métricas e saía com os links reescritos.
+    //
+    // Omitir não é o mesmo que mandar vazio: o SES recusa `ConfigurationSetName: ''`.
+    const input = await inputEnviado({ ...mensagem(), configurationSet: '' });
+    expect(input).not.toHaveProperty('ConfigurationSetName');
+  });
+});
+
 describe('SesEmailProvider — envio', () => {
   it('devolve o messageId no sucesso', async () => {
-    const provider = new SesEmailProvider(clienteFalso({ MessageId: 'abc-123' }), {
-      configurationSet: 'cs',
-    });
+    const provider = new SesEmailProvider(clienteFalso({ MessageId: 'abc-123' }));
     const r = await provider.enviar(mensagem());
 
     expect(r.ok).toBe(true);
@@ -45,7 +69,7 @@ describe('SesEmailProvider — envio', () => {
 
   it('inclui os cabeçalhos de descadastro em um clique (RFC 8058)', async () => {
     const cliente = clienteFalso({ MessageId: 'x' });
-    const provider = new SesEmailProvider(cliente, { configurationSet: 'cs' });
+    const provider = new SesEmailProvider(cliente);
     await provider.enviar(mensagem());
 
     const enviado = vi.mocked(cliente.send).mock.calls[0]?.[0] as unknown as {
@@ -66,7 +90,7 @@ describe('SesEmailProvider — envio', () => {
 
   it('sempre manda a parte texto junto com a HTML', async () => {
     const cliente = clienteFalso({ MessageId: 'x' });
-    await new SesEmailProvider(cliente, { configurationSet: 'cs' }).enviar(mensagem());
+    await new SesEmailProvider(cliente).enviar(mensagem());
 
     const enviado = vi.mocked(cliente.send).mock.calls[0]?.[0] as unknown as {
       input: { Content: { Simple: { Body: Record<string, unknown> } } };
@@ -78,7 +102,7 @@ describe('SesEmailProvider — envio', () => {
   it('sanitiza tags para o formato aceito pelo SES', async () => {
     const cliente = clienteFalso({ MessageId: 'x' });
     const msg = { ...mensagem(), tags: { origem: 'lista/agosto 2026' } };
-    await new SesEmailProvider(cliente, { configurationSet: 'cs' }).enviar(msg);
+    await new SesEmailProvider(cliente).enviar(msg);
 
     const enviado = vi.mocked(cliente.send).mock.calls[0]?.[0] as unknown as {
       input: { EmailTags: { Name: string; Value: string }[] };
@@ -89,7 +113,7 @@ describe('SesEmailProvider — envio', () => {
   it('trata resposta sem MessageId como erro transitório, não como sucesso', async () => {
     // Registrar envio sem messageId criaria um envio órfão: nenhum evento
     // futuro poderia ser correlacionado a ele.
-    const provider = new SesEmailProvider(clienteFalso({}), { configurationSet: 'cs' });
+    const provider = new SesEmailProvider(clienteFalso({}));
     const r = await provider.enviar(mensagem());
 
     expect(r.ok).toBe(false);
@@ -99,7 +123,7 @@ describe('SesEmailProvider — envio', () => {
 
 describe('SesEmailProvider — classificação de erro (§5.5)', () => {
   const classificar = async (name: string) => {
-    const provider = new SesEmailProvider(clienteFalso(erroSes(name)), { configurationSet: 'cs' });
+    const provider = new SesEmailProvider(clienteFalso(erroSes(name)));
     const r = await provider.enviar(mensagem());
     expect(r.ok).toBe(false);
     return r.ok ? null : r.error;

@@ -15,10 +15,7 @@ type Retorno =
  * implementação desta mesma interface (§5.3), não uma refatoração.
  */
 export class SesEmailProvider implements EmailProvider {
-  constructor(
-    private readonly cliente: SESv2Client,
-    private readonly opcoes: { readonly configurationSet: string },
-  ) {}
+  constructor(private readonly cliente: SESv2Client) {}
 
   async enviar(mensagem: MensagemEmail): Promise<Retorno> {
     try {
@@ -27,7 +24,22 @@ export class SesEmailProvider implements EmailProvider {
           FromEmailAddress: `${mensagem.deNome} <${mensagem.deEmail}>`,
           Destination: { ToAddresses: [mensagem.para.value] },
           ...(mensagem.replyTo === undefined ? {} : { ReplyToAddresses: [mensagem.replyTo] }),
-          ConfigurationSetName: this.opcoes.configurationSet,
+          // Quem manda no Configuration Set é a mensagem, e string vazia
+          // significa nenhum — não "use o padrão".
+          //
+          // Este campo existia em `MensagemEmail` e era ignorado: valia sempre o
+          // valor do construtor. O e-mail de teste do painel passa `''` de
+          // propósito, para não gerar abertura e clique atribuídos à campanha, e
+          // essa intenção morria em silêncio — os testes entravam nas métricas do
+          // envio real e saíam com os links reescritos para o domínio de
+          // rastreamento. Ter duas fontes para o mesmo valor era o defeito; agora
+          // há uma só.
+          //
+          // Omitir o parâmetro não é o mesmo que mandá-lo vazio: o SES recusa
+          // `ConfigurationSetName: ''`.
+          ...(mensagem.configurationSet === ''
+            ? {}
+            : { ConfigurationSetName: mensagem.configurationSet }),
           // Tags viram dimensões nos eventos: é o que permite atribuir um bounce
           // à campanha certa sem consultar o banco (§5.7).
           EmailTags: Object.entries(mensagem.tags).map(([Name, Value]) => ({

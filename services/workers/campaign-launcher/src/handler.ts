@@ -87,6 +87,26 @@ export const handler = async (entrada: EntradaLauncher): Promise<SaidaLauncher> 
     );
   }
 
+  /**
+   * Rascunho com data de agendamento é estado incoerente — não dispara.
+   *
+   * Aceitar RASCUNHO abriu o disparo imediato de quem acabou de montar o
+   * boletim, mas também tirou a proteção que existia antes: com o fluxo de
+   * aprovação, uma campanha que voltasse para rascunho deixava de ser
+   * disparável, e isso neutralizava um agendamento pendente. Hoje o domínio
+   * permite `AGENDADA → RASCUNHO` e o agendamento na AWS sobrevive a essa volta.
+   *
+   * Nenhuma rota faz essa transição no momento — a guarda é para que a primeira
+   * que fizer não descubra do jeito ruim. Quem desagendar deve limpar
+   * `agendadaPara` e cancelar o agendamento; até lá, o disparo para aqui.
+   */
+  if (campanha.status === 'RASCUNHO' && campanha.agendadaPara !== undefined) {
+    throw new Error(
+      `Campanha ${entrada.campaignId} está em RASCUNHO mas mantém agendamento para ` +
+        `${campanha.agendadaPara.toISOString()}. Estado incoerente: nada foi enviado.`,
+    );
+  }
+
   const audiencia = await resolverAudiencia(
     { contatos, supressao, hasher, clock },
     {
