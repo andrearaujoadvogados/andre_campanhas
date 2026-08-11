@@ -156,7 +156,7 @@ export function Contatos({ usuario }: { usuario: Usuario }) {
            */}
           <Campo
             rotulo="Vínculo com o escritório"
-            ajuda="Descreve a relação com o escritório. Ajuda a segmentar os boletins."
+            ajuda="Descreve a relação com o escritório. Ajuda a segmentar as campanhas."
             obrigatorio
           >
             <select
@@ -180,7 +180,7 @@ export function Contatos({ usuario }: { usuario: Usuario }) {
             onChange={(e) => definirIsLead(e.target.checked)}
             className="h-4 w-4"
           />
-          É um lead (não recebe boletim por padrão — só quando o boletim marca “incluir leads”)
+          É um lead (não recebe campanha por padrão — só quando a campanha marca “incluir leads”)
         </label>
 
         <div className="mt-4 space-y-3">
@@ -428,7 +428,7 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
                 onChange={(e) => definirRascunho({ ...rascunho, isLead: e.target.checked })}
                 className="h-4 w-4"
               />
-              É um lead (não recebe boletim por padrão)
+              É um lead (não recebe campanha por padrão)
             </label>
             <ErroCaixa erro={editar.error} />
             <div className="flex flex-wrap gap-2">
@@ -450,13 +450,13 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
        * conclui que há um bug. O motivo mais provável — vínculo não classificado
        * — é resolvível em dois cliques, desde que ele saiba disso.
        */}
-      <Cartao titulo="Recebimento de boletins">
+      <Cartao titulo="Recebimento de campanhas">
         {c.status === 'ATIVO' || c.status === 'SUPRIMIDO' ? (
           <div className="space-y-3">
             <p className="text-sm text-ink-suave">
               {c.status === 'SUPRIMIDO'
-                ? 'Este contato está marcado para não receber boletins.'
-                : 'Este contato recebe os boletins das listas de que participa.'}
+                ? 'Este contato está marcado para não receber campanhas.'
+                : 'Este contato recebe as campanhas das listas de que participa.'}
             </p>
             <ErroCaixa erro={alternarEnvio.error} />
             <Botao
@@ -474,7 +474,7 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
            * últimos derrubam a reputação de envio da conta inteira se ignorados.
            */
           <p className="text-sm text-ink-suave">
-            Este contato não recebe boletins, e isso não pode ser desfeito pelo painel — a situação
+            Este contato não recebe campanhas, e isso não pode ser desfeito pelo painel — a situação
             partiu do próprio destinatário ou do provedor de e-mail dele.
           </p>
         )}

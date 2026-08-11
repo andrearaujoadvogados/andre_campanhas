@@ -77,7 +77,7 @@ export function Relatorio() {
 
   const relatorio = useQuery({
     queryKey: ['relatorio', id],
-    queryFn: () => api.get<Relatorio>(`/relatorios/boletins/${id}`),
+    queryFn: () => api.get<Relatorio>(`/relatorios/campanhas/${id}`),
     // Campanha em andamento muda a cada minuto; sem isso o operador ficaria
     // recarregando a página para saber se avançou.
     refetchInterval: 60_000,
@@ -92,12 +92,12 @@ export function Relatorio() {
   return (
     <div className="space-y-6">
       <Link
-        to={`/boletins/${r.campaignId}`}
+        to={`/campanhas/${r.campaignId}`}
         className="inline-flex min-h-11 items-center gap-1.5 text-sm text-ink-suave hover:text-ink hover:underline"
       >
         <span aria-hidden="true">←</span>
         {/* Fora de contexto, "← Nome da campanha" não diz que é um caminho de volta. */}
-        <span className="sr-only">Voltar para o boletim </span>
+        <span className="sr-only">Voltar para a campanha </span>
         {r.nome}
       </Link>
 
@@ -217,7 +217,7 @@ function TabelaDestinatarios({ id }: { id: string }) {
     initialPageParam: '',
     queryFn: ({ pageParam }) =>
       api.get<{ itens: DestinatarioRelatorio[]; cursor?: string }>(
-        `/relatorios/boletins/${id}/destinatarios${pageParam === '' ? '' : `?cursor=${encodeURIComponent(pageParam)}`}`,
+        `/relatorios/campanhas/${id}/destinatarios${pageParam === '' ? '' : `?cursor=${encodeURIComponent(pageParam)}`}`,
       ),
     getNextPageParam: (ultima) => ultima.cursor,
   });

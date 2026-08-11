@@ -50,9 +50,9 @@ interface Resumo {
 const JA_DISPAROU = new Set(['ENVIANDO', 'PAUSADA', 'CONCLUIDA', 'FALHA']);
 
 export function Dashboard() {
-  const boletins = useQuery({
+  const campanhas = useQuery({
     queryKey: ['campanhas', ''],
-    queryFn: () => api.get<Listagem>('/boletins'),
+    queryFn: () => api.get<Listagem>('/campanhas'),
   });
 
   const listas = useQuery({
@@ -60,13 +60,13 @@ export function Dashboard() {
     queryFn: () => api.get<{ itens: Lista[] }>('/listas'),
   });
 
-  const itens = boletins.data?.itens ?? [];
+  const itens = campanhas.data?.itens ?? [];
   const comMetrica = itens.filter((c) => JA_DISPAROU.has(c.status));
 
   /**
    * A agregação recebe ids explícitos — a API não varre a base de propósito, para
    * não trocar um dashboard por uma conta de DynamoDB inesperada. Sem nenhum
-   * boletim disparado não há o que somar, e chamar devolveria 400.
+   * campanha disparada não há o que somar, e chamar devolveria 400.
    */
   const ids = comMetrica.map((c) => c.campaignId);
   const resumo = useQuery({
@@ -75,7 +75,7 @@ export function Dashboard() {
     queryFn: () => api.get<Resumo>(`/relatorios/resumo?campanhas=${ids.join(',')}`),
   });
 
-  if (boletins.isLoading) return <Carregando />;
+  if (campanhas.isLoading) return <Carregando />;
 
   const porEstado = (estado: string) => itens.filter((c) => c.status === estado).length;
   const contatos = (listas.data?.itens ?? []).reduce(
@@ -101,7 +101,7 @@ export function Dashboard() {
     <div className="space-y-6">
       <TituloPagina>Visão geral</TituloPagina>
 
-      <ErroCaixa erro={boletins.error} />
+      <ErroCaixa erro={campanhas.error} />
 
       {/**
        * O que precisa de ação vem primeiro, e some quando não há nada.
@@ -116,14 +116,14 @@ export function Dashboard() {
               <Aviso
                 key={c.campaignId}
                 tom="alerta"
-                texto={`O boletim "${c.nome}" está enviando e ainda não processou ninguém. Pode estar travado.`}
+                texto={`A campanha "${c.nome}" está enviando e ainda não processou ninguém. Pode estar travado.`}
               />
             ))}
 
             {contatos === 0 && (
               <Aviso
                 tom="alerta"
-                texto="Nenhuma lista tem contatos. Importe a base antes de montar um boletim — sem contatos não há para quem enviar."
+                texto="Nenhuma lista tem contatos. Importe a base antes de montar uma campanha — sem contatos não há para quem enviar."
               />
             )}
 
@@ -170,8 +170,8 @@ export function Dashboard() {
         <Cartao
           titulo={
             ids.length === 1
-              ? 'Desempenho — 1 boletim disparado'
-              : `Desempenho — ${numero(ids.length)} boletins disparados`
+              ? 'Desempenho — 1 campanha disparada'
+              : `Desempenho — ${numero(ids.length)} campanhas disparadas`
           }
         >
           {resumo.isLoading && <Carregando />}
@@ -198,8 +198,8 @@ export function Dashboard() {
         </Cartao>
       )}
 
-      <Cartao titulo="Boletins recentes">
-        {recentes.length === 0 && <Vazio mensagem="Nenhum boletim criado ainda." />}
+      <Cartao titulo="Campanhas recentes">
+        {recentes.length === 0 && <Vazio mensagem="Nenhuma campanha criada ainda." />}
         <ul className="divide-y divide-line">
           {recentes.map((c) => (
             <li
@@ -208,7 +208,7 @@ export function Dashboard() {
             >
               <div className="min-w-0">
                 <Link
-                  to={`/boletins/${c.campaignId}`}
+                  to={`/campanhas/${c.campaignId}`}
                   className="inline-flex min-h-11 items-center font-medium break-words text-ink hover:underline"
                 >
                   {c.nome}

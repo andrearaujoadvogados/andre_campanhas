@@ -88,10 +88,10 @@ rotasCampanhas.post('/', validarCorpo(criarCampanhaSchema), async (c) => {
 /**
  * Duplicar — §7 do briefing.
  *
- * Cria um RASCUNHO novo a partir de um boletim existente, copiando o conteúdo e
+ * Cria um RASCUNHO novo a partir de uma campanha existente, copiando o conteúdo e
  * a segmentação (modelo, lista, remetente, assunto, filtro de tag). **Não** copia
  * o que é próprio de um disparo: agendamento, seleção individual e a auditoria do
- * envio nascem em branco — a cópia é um novo boletim, não um clone do que saiu.
+ * envio nascem em branco — a cópia é um nova campanha, não um clone do que saiu.
  */
 rotasCampanhas.post('/:id/duplicacao', async (c) => {
   const deps = await obterDependencias();
@@ -235,7 +235,7 @@ rotasCampanhas.patch('/:id', validarCorpo(editarCampanhaSchema), async (c) => {
 });
 
 /**
- * Exclusão — qualquer boletim que não tenha enviado nada. Só ADMIN.
+ * Exclusão — qualquer campanha que não tenha enviado nada. Só ADMIN.
  *
  * A trava é o envio, não o status: rascunho, cancelado e falho somem; o que
  * chegou a mandar mensagem fica. Ver o porquê no corpo da rota.
@@ -253,7 +253,7 @@ rotasCampanhas.delete('/:id', async (c) => {
       {
         code: 'CAMPANHA_NAO_EXCLUIVEL',
         message:
-          'O boletim está enviando agora. Cancele primeiro — a exclusão fica disponível depois.',
+          'A campanha está enviando agora. Cancele primeiro — a exclusão fica disponível depois.',
       },
       409,
     );
@@ -263,7 +263,7 @@ rotasCampanhas.delete('/:id', async (c) => {
    * O que impede a exclusão é o envio, não o status.
    *
    * Antes só RASCUNHO podia ser excluído, e o efeito prático era ninguém
-   * conseguir limpar a lista: um boletim cancelado ou que falhou ficava para
+   * conseguir limpar a lista: uma campanha cancelado ou que falhou ficava para
    * sempre na tela, sem ter enviado nada a ninguém.
    *
    * O motivo real da restrição sempre foi outro — registros de envio apontam
@@ -278,7 +278,7 @@ rotasCampanhas.delete('/:id', async (c) => {
       {
         code: 'CAMPANHA_NAO_EXCLUIVEL',
         message:
-          `Este boletim já enviou ${envios} mensagem(ns) e não pode ser excluído: os registros de ` +
+          `Esta campanha já enviou ${envios} mensagem(ns) e não pode ser excluído: os registros de ` +
           'envio e o relatório apontam para ele, e o destinatário tem direito de saber o que recebeu.',
       },
       409,

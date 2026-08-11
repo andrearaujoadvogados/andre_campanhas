@@ -24,7 +24,7 @@ export const rotasRelatorios = new Hono<{ Variables: Variaveis }>();
  * para quem não sabe que a AWS suspende a conta perto de 10% — e é justamente
  * quem não sabe que vai olhar essa tela.
  */
-rotasRelatorios.get('/boletins/:id', async (c) => {
+rotasRelatorios.get('/campanhas/:id', async (c) => {
   const { metricas, campanhas } = await obterDependencias();
   const usuario = c.get('usuario');
   const campaignId = novoCampaignId(c.req.param('id'));
@@ -54,7 +54,7 @@ rotasRelatorios.get('/boletins/:id', async (c) => {
  * eventos (adiado, junto com a série temporal — analytics V2). As taxas
  * agregadas de abertura/clique já estão no relatório da campanha acima.
  */
-rotasRelatorios.get('/boletins/:id/destinatarios', async (c) => {
+rotasRelatorios.get('/campanhas/:id/destinatarios', async (c) => {
   const { envios, contatos } = await obterDependencias();
   const usuario = c.get('usuario');
   const campaignId = novoCampaignId(c.req.param('id'));

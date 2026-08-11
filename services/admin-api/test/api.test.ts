@@ -61,7 +61,7 @@ function campanhaFalsa(over: Partial<Campaign> = {}): Campaign {
   return {
     tenantId: TENANT_PADRAO,
     campaignId: campaignId('k-1'),
-    nome: 'Boletim',
+    nome: 'Campanha',
     templateId: templateId('t-1'),
     templateVersao: 1,
     listId: listId('l-1'),
@@ -254,7 +254,7 @@ describe('sem etapa de aprovação — o portão foi removido', () => {
   it('a rota de aprovação não existe mais', async () => {
     estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
     const r = await req(
-      '/boletins/k-1/aprovacao',
+      '/campanhas/k-1/aprovacao',
       { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } },
       evento({ grupos: ['admin'] }),
     );
@@ -263,13 +263,13 @@ describe('sem etapa de aprovação — o portão foi removido', () => {
 
   it('a rota de envio para revisão não existe mais', async () => {
     estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
-    const r = await req('/boletins/k-1/revisao', { method: 'POST' }, evento());
+    const r = await req('/campanhas/k-1/revisao', { method: 'POST' }, evento());
     expect(r.status).toBe(404);
   });
 
   it('o detalhe da campanha expõe a auditoria do disparo, não a aprovação', async () => {
     estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
-    const r = await req('/boletins/k-1', {}, evento());
+    const r = await req('/campanhas/k-1', {}, evento());
     const corpo = (await r.json()) as Record<string, unknown>;
 
     expect(corpo).toHaveProperty('enviadaPor');
@@ -282,7 +282,7 @@ describe('sem etapa de aprovação — o portão foi removido', () => {
 describe('transições de campanha', () => {
   it('pausa avisa que mensagens em voo ainda saem', async () => {
     estado.campanha = campanhaFalsa({ status: 'ENVIANDO' });
-    const r = await req('/boletins/k-1/pausa', { method: 'POST' }, evento());
+    const r = await req('/campanhas/k-1/pausa', { method: 'POST' }, evento());
     const corpo = (await r.json()) as { aviso?: string };
 
     expect(r.status).toBe(200);
@@ -291,7 +291,7 @@ describe('transições de campanha', () => {
 
   it('recusa transição inválida com 409, não 500', async () => {
     estado.campanha = campanhaFalsa({ status: 'CONCLUIDA' });
-    const r = await req('/boletins/k-1/pausa', { method: 'POST' }, evento());
+    const r = await req('/campanhas/k-1/pausa', { method: 'POST' }, evento());
 
     expect(r.status).toBe(409);
     expect(await r.json()).toMatchObject({ code: 'TRANSICAO_INVALIDA' });
@@ -299,12 +299,12 @@ describe('transições de campanha', () => {
 
   it('cancelamento é restrito a ADMIN', async () => {
     estado.campanha = campanhaFalsa({ status: 'ENVIANDO' });
-    const r = await req('/boletins/k-1/cancelamento', { method: 'POST' }, evento());
+    const r = await req('/campanhas/k-1/cancelamento', { method: 'POST' }, evento());
     expect(r.status).toBe(403);
   });
 
   it('404 para campanha inexistente', async () => {
-    const r = await req('/boletins/k-999', {}, evento());
+    const r = await req('/campanhas/k-999', {}, evento());
     expect(r.status).toBe(404);
   });
 });
@@ -389,7 +389,7 @@ describe('correlação e vazamento de erro', () => {
       },
     });
 
-    const r = await req('/boletins/k-1', {}, evento());
+    const r = await req('/campanhas/k-1', {}, evento());
     const corpo = (await r.json()) as { code: string; message: string; correlationId?: string };
 
     expect(r.status).toBe(500);
@@ -406,7 +406,7 @@ describe('agendamento e disparo — ADR-05 (sem aprovação)', () => {
     // que dispararia sozinho depois. CONCLUIDA não pode ser reagendada.
     estado.campanha = campanhaFalsa({ status: 'CONCLUIDA' });
     const r = await req(
-      '/boletins/k-1/agendamento',
+      '/campanhas/k-1/agendamento',
       {
         method: 'POST',
         body: JSON.stringify({ agendadaPara: '2099-01-01T09:00:00Z' }),
@@ -422,7 +422,7 @@ describe('agendamento e disparo — ADR-05 (sem aprovação)', () => {
   it('agenda a partir do rascunho e registra quem agendou', async () => {
     estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
     const r = await req(
-      '/boletins/k-1/agendamento',
+      '/campanhas/k-1/agendamento',
       {
         method: 'POST',
         body: JSON.stringify({ agendadaPara: '2099-01-01T09:00:00Z' }),
@@ -440,7 +440,7 @@ describe('agendamento e disparo — ADR-05 (sem aprovação)', () => {
 
   it('disparo recusa status que não pode sair (CONCLUIDA)', async () => {
     estado.campanha = campanhaFalsa({ status: 'CONCLUIDA' });
-    const r = await req('/boletins/k-1/disparo', { method: 'POST' }, evento());
+    const r = await req('/campanhas/k-1/disparo', { method: 'POST' }, evento());
 
     expect(r.status).toBe(409);
     expect(estado.disparos).toBe(0);
@@ -448,7 +448,7 @@ describe('agendamento e disparo — ADR-05 (sem aprovação)', () => {
 
   it('dispara rascunho direto — quem monta dispara — e grava auditoria', async () => {
     estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
-    const r = await req('/boletins/k-1/disparo', { method: 'POST' }, evento({ sub: REVISOR }));
+    const r = await req('/campanhas/k-1/disparo', { method: 'POST' }, evento({ sub: REVISOR }));
     const corpo = (await r.json()) as { execucao: string; aviso: string };
 
     expect(estado.disparos).toBe(1);
@@ -464,7 +464,7 @@ describe('agendamento e disparo — ADR-05 (sem aprovação)', () => {
     // Sem isto, a campanha cancelada seguiria com o gatilho armado e uma
     // execução falsa apareceria no histórico.
     estado.campanha = campanhaFalsa({ status: 'AGENDADA' });
-    await req('/boletins/k-1/cancelamento', { method: 'POST' }, evento({ grupos: ['admin'] }));
+    await req('/campanhas/k-1/cancelamento', { method: 'POST' }, evento({ grupos: ['admin'] }));
 
     expect(estado.agendamentoCancelado).toBe(true);
   });
@@ -473,7 +473,7 @@ describe('agendamento e disparo — ADR-05 (sem aprovação)', () => {
 describe('e-mail de teste — a supressão vale aqui também', () => {
   const enviarTeste = (destinatarios: string[]) =>
     req(
-      '/boletins/k-1/teste',
+      '/campanhas/k-1/teste',
       {
         method: 'POST',
         body: JSON.stringify({ destinatarios }),
@@ -521,7 +521,7 @@ describe('e-mail de teste — a supressão vale aqui também', () => {
 describe('listagem de campanhas — §6.3, padrão 7', () => {
   it('sem filtro, varre todos os status', async () => {
     estado.campanha = campanhaFalsa();
-    const r = await req('/boletins', {}, evento());
+    const r = await req('/campanhas', {}, evento());
 
     expect(r.status).toBe(200);
     // A chave é omitida, não passada como undefined — é o que o port espera
@@ -532,7 +532,7 @@ describe('listagem de campanhas — §6.3, padrão 7', () => {
 
   it('com filtro, passa o status adiante para consultar uma partição só', async () => {
     estado.campanha = campanhaFalsa({ status: 'ENVIANDO' });
-    await req('/boletins?status=ENVIANDO', {}, evento());
+    await req('/campanhas?status=ENVIANDO', {}, evento());
 
     expect(estado.filtrosUsados[0]).toMatchObject({ status: 'ENVIANDO' });
   });
@@ -540,14 +540,14 @@ describe('listagem de campanhas — §6.3, padrão 7', () => {
   it('recusa status inválido em vez de ignorar o filtro em silêncio', async () => {
     // Ignorar devolveria todas as campanhas para quem pediu um subconjunto —
     // e o operador confiaria no resultado errado.
-    const r = await req('/boletins?status=INVENTADO', {}, evento());
+    const r = await req('/campanhas?status=INVENTADO', {}, evento());
     expect(r.status).toBe(400);
   });
 
   it('avisa quando a listagem foi cortada', async () => {
     estado.campanha = campanhaFalsa();
     estado.truncado = true;
-    const r = await req('/boletins', {}, evento());
+    const r = await req('/campanhas', {}, evento());
     const corpo = (await r.json()) as { truncado: boolean; aviso?: string };
 
     expect(corpo.truncado).toBe(true);
@@ -556,13 +556,13 @@ describe('listagem de campanhas — §6.3, padrão 7', () => {
 
   it('limita o tamanho da página pedida', async () => {
     estado.campanha = campanhaFalsa();
-    await req('/boletins?limite=9999', {}, evento());
+    await req('/campanhas?limite=9999', {}, evento());
 
     expect(estado.filtrosUsados[0]).toMatchObject({ limite: 100 });
   });
 
   it('exige autenticação', async () => {
-    const r = await req('/boletins', {}, evento({ semAuthorizer: true }));
+    const r = await req('/campanhas', {}, evento({ semAuthorizer: true }));
     expect(r.status).toBe(401);
   });
 });
@@ -572,7 +572,7 @@ describe('listagem de campanhas — §6.3, padrão 7', () => {
 describe('editar e excluir campanha', () => {
   const patch = (corpo: unknown, grupos: unknown = ['admin']) =>
     req(
-      '/boletins/k-1',
+      '/campanhas/k-1',
       {
         method: 'PATCH',
         body: JSON.stringify(corpo),
@@ -582,7 +582,7 @@ describe('editar e excluir campanha', () => {
     );
 
   const excluir = (grupos: unknown = ['admin']) =>
-    req('/boletins/k-1', { method: 'DELETE' }, evento({ grupos }));
+    req('/campanhas/k-1', { method: 'DELETE' }, evento({ grupos }));
 
   it('edita rascunho', async () => {
     estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
@@ -644,11 +644,11 @@ describe('editar e excluir campanha', () => {
   });
 
   // A trava da exclusão é o envio, não o status. Antes só RASCUNHO saía, e o
-  // efeito era ninguém conseguir limpar a lista: um boletim cancelado, que nunca
+  // efeito era ninguém conseguir limpar a lista: uma campanha cancelado, que nunca
   // mandou nada a ninguém, ficava na tela para sempre.
 
   it.each(['AGENDADA', 'CANCELADA', 'FALHA', 'CONCLUIDA'] as const)(
-    'exclui boletim em %s que não enviou nada',
+    'exclui campanha em %s que não enviou nada',
     async (status) => {
       estado.campanha = campanhaFalsa({ status });
       estado.enviosDaCampanha = 0;
@@ -657,7 +657,7 @@ describe('editar e excluir campanha', () => {
     },
   );
 
-  it('NÃO exclui boletim que já enviou — o registro tem dono', async () => {
+  it('NÃO exclui campanha que já enviou — o registro tem dono', async () => {
     // O destinatário tem direito de saber o que recebeu, e o relatório aponta
     // para esta campanha. Apagá-la deixaria os dois sem referente.
     estado.campanha = campanhaFalsa({ status: 'CONCLUIDA' });
@@ -677,21 +677,21 @@ describe('editar e excluir campanha', () => {
     expect(await r.json()).toMatchObject({ code: 'CAMPANHA_NAO_EXCLUIVEL' });
   });
 
-  it('operador também exclui — quem monta gerencia o próprio boletim', async () => {
-    // A trava de ADMIN caiu: excluir um boletim que não enviou nada não apaga
+  it('operador também exclui — quem monta gerencia o própria campanha', async () => {
+    // A trava de ADMIN caiu: excluir uma campanha que não enviou nada não apaga
     // prova nenhuma, e restringi-la a ADMIN só travava a limpeza da lista.
     estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
     estado.enviosDaCampanha = 0;
     expect((await excluir(['operador'])).status).toBe(204);
   });
 
-  it('duplica um boletim, criando um rascunho novo', async () => {
-    estado.campanha = campanhaFalsa({ status: 'CONCLUIDA', nome: 'Boletim de agosto' });
-    const r = await req('/boletins/k-1/duplicacao', { method: 'POST' }, evento());
+  it('duplica uma campanha, criando um rascunho novo', async () => {
+    estado.campanha = campanhaFalsa({ status: 'CONCLUIDA', nome: 'Campanha de agosto' });
+    const r = await req('/campanhas/k-1/duplicacao', { method: 'POST' }, evento());
     const corpo = (await r.json()) as { status: string; nome: string };
 
     expect(r.status).toBe(201);
     expect(corpo.status).toBe('RASCUNHO');
-    expect(corpo.nome).toBe('Boletim de agosto (cópia)');
+    expect(corpo.nome).toBe('Campanha de agosto (cópia)');
   });
 });

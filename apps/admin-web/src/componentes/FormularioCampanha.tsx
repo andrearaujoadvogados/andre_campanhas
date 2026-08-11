@@ -96,7 +96,7 @@ export function FormularioCampanha({
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <Campo
-          rotulo="Nome do boletim"
+          rotulo="Nome da campanha"
           ajuda="Só o escritório vê. Serve para achá-la depois."
           obrigatorio
           erro={erros['nome']}
@@ -202,13 +202,13 @@ export function FormularioCampanha({
       {opcoesModelo.length === 0 && !modelos.isLoading && (
         <p className="text-sm text-ink-suave">
           Nenhum modelo cadastrado ainda. Crie um em <strong>Modelos</strong> antes de montar o
-          boletim.
+          campanha.
         </p>
       )}
       {opcoesLista.length === 0 && !listas.isLoading && (
         <p className="text-sm text-ink-suave">
           Nenhuma lista cadastrada ainda. Crie uma em <strong>Listas</strong> antes de montar o
-          boletim.
+          campanha.
         </p>
       )}
     </div>

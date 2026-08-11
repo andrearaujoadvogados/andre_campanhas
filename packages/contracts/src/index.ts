@@ -197,7 +197,7 @@ export const salvarTipoEmailSchema = z.object({
 });
 export type SalvarTipoEmailInput = z.infer<typeof salvarTipoEmailSchema>;
 
-// ── Campanha / Boletim ───────────────────────────────────────────────────────
+// ── Campanha / Campanha ───────────────────────────────────────────────────────
 
 export const criarCampanhaSchema = z.object({
   nome: z.string().trim().min(1).max(200),
@@ -208,7 +208,7 @@ export const criarCampanhaSchema = z.object({
   remetenteNome: z.string().trim().min(1).max(100),
   remetenteEmail: emailSchema,
   replyTo: emailSchema.optional(),
-  /** Assunto próprio do boletim; ausente = usa o do modelo. */
+  /** Assunto próprio da campanha; ausente = usa o do modelo. */
   assunto: z.string().trim().max(200).optional(),
   /** Filtro por tag (lógica OU). Vazio = não filtra. */
   tagsFiltro: z.array(z.string().trim().min(1).max(60)).max(50).default([]),

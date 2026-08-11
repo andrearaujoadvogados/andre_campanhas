@@ -6,7 +6,7 @@ import {
   FormularioCampanha,
   type DadosCampanha,
 } from '../componentes/FormularioCampanha.tsx';
-import { AssistenteBoletim } from '../componentes/AssistenteBoletim.tsx';
+import { AssistenteCampanha } from '../componentes/AssistenteCampanha.tsx';
 import { Link, useParams } from 'react-router-dom';
 import { api, type ComAviso } from '../lib/api.js';
 import { ROTULO_STATUS_CAMPANHA, dataHora, numero } from '../lib/formato.js';
@@ -75,7 +75,7 @@ export function Campanhas() {
 
   const campanhas = useQuery({
     queryKey: ['campanhas', status],
-    queryFn: () => api.get<Listagem>(`/boletins${status === '' ? '' : `?status=${status}`}`),
+    queryFn: () => api.get<Listagem>(`/campanhas${status === '' ? '' : `?status=${status}`}`),
   });
   const tipos = useQuery({
     queryKey: ['tipos'],
@@ -96,14 +96,14 @@ export function Campanhas() {
   return (
     <div className="space-y-6">
       <TituloPagina
-        acao={!criando && <Botao onClick={() => definirCriando(true)}>Novo boletim</Botao>}
+        acao={!criando && <Botao onClick={() => definirCriando(true)}>Nova campanha</Botao>}
       >
-        Boletins
+        Campanhas
       </TituloPagina>
 
       {criando && (
-        <Cartao titulo="Novo boletim">
-          <AssistenteBoletim aoCancelar={() => definirCriando(false)} />
+        <Cartao titulo="Nova campanha">
+          <AssistenteCampanha aoCancelar={() => definirCriando(false)} />
         </Cartao>
       )}
 
@@ -165,8 +165,8 @@ export function Campanhas() {
           <Vazio
             mensagem={
               status === '' && filtroTipo === ''
-                ? 'Nenhum boletim criado ainda.'
-                : 'Nenhum boletim para este filtro.'
+                ? 'Nenhuma campanha criada ainda.'
+                : 'Nenhuma campanha para este filtro.'
             }
           />
         )}
@@ -179,7 +179,7 @@ export function Campanhas() {
             >
               <div className="min-w-0">
                 <Link
-                  to={`/boletins/${c.campaignId}`}
+                  to={`/campanhas/${c.campaignId}`}
                   className="inline-flex min-h-11 items-center font-medium break-words text-ink hover:underline"
                 >
                   {c.nome}
@@ -220,7 +220,7 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
 
   const editar = useMutation({
     mutationFn: () =>
-      api.patch<Campanha & ComAviso>(`/boletins/${id}`, {
+      api.patch<Campanha & ComAviso>(`/campanhas/${id}`, {
         ...rascunho,
         ...(rascunho.replyTo.trim() === '' ? { replyTo: undefined } : {}),
       }),
@@ -232,25 +232,25 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
   });
 
   const excluir = useMutation({
-    mutationFn: () => api.delete(`/boletins/${id}`),
+    mutationFn: () => api.delete(`/campanhas/${id}`),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['campanhas'] });
-      navegar('/boletins');
+      navegar('/campanhas');
     },
   });
 
   const duplicar = useMutation({
-    mutationFn: () => api.post<Campanha>(`/boletins/${id}/duplicacao`),
+    mutationFn: () => api.post<Campanha>(`/campanhas/${id}/duplicacao`),
     onSuccess: (k) => {
       void qc.invalidateQueries({ queryKey: ['campanhas'] });
       // Vai direto para o rascunho novo: é lá que se ajusta e dispara.
-      navegar(`/boletins/${k.campaignId}`);
+      navegar(`/campanhas/${k.campaignId}`);
     },
   });
 
   const campanha = useQuery({
     queryKey: ['campanha', id],
-    queryFn: () => api.get<Campanha>(`/boletins/${id}`),
+    queryFn: () => api.get<Campanha>(`/campanhas/${id}`),
     refetchInterval: (q) => {
       const c = q.state.data as Campanha | undefined;
       // Enquanto está enviando, o progresso muda sozinho — recarrega a cada 5s
@@ -276,7 +276,7 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
 
   const acao = useMutation({
     mutationFn: (entrada: { caminho: string; corpo?: unknown }) =>
-      api.post<Campanha & ComAviso>(`/boletins/${id}${entrada.caminho}`, entrada.corpo),
+      api.post<Campanha & ComAviso>(`/campanhas/${id}${entrada.caminho}`, entrada.corpo),
     onSuccess: (r) => {
       // O aviso do backend vai para a tela. Ver `Aviso` em componentes/base.
       definirAviso(r.aviso);
@@ -308,25 +308,25 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
   const disparoEmCurso = c.status === 'RASCUNHO' && c.enviadaPor !== null;
 
   /**
-   * Excluir vale para qualquer boletim que não esteja saindo agora.
+   * Excluir vale para qualquer campanha que não esteja saindo agora.
    *
-   * Não exige mais ADMIN: quem monta gerencia o próprio boletim. A trava real é
+   * Não exige mais ADMIN: quem monta gerencia o própria campanha. A trava real é
    * ter registro de envio, e esse número mora no backend — ele recusa e explica
-   * (um boletim já enviado tem auditoria e relatório apontando para ele). Aqui só
-   * fica de fora o boletim em pleno envio, que é o que a tela sabe sozinha.
+   * (uma campanha já enviada tem auditoria e relatório apontando para ele). Aqui só
+   * fica de fora a campanha em pleno envio, que é o que a tela sabe sozinha.
    */
   const podeExcluir = c.status !== 'ENVIANDO';
 
   return (
     <div className="space-y-6">
       <Link
-        to="/boletins"
+        to="/campanhas"
         className="inline-flex min-h-11 items-center text-sm text-ink-suave hover:text-ink hover:underline"
       >
         <span aria-hidden="true" className="mr-1">
           ←
         </span>
-        Boletins
+        Campanhas
       </Link>
 
       <TituloPagina
@@ -344,7 +344,7 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
       <ErroCaixa erro={excluir.error} />
 
       {editando ? (
-        <Cartao titulo="Editar boletim">
+        <Cartao titulo="Editar campanha">
           <FormularioCampanha
             valor={rascunho}
             aoMudar={definirRascunho}
@@ -421,12 +421,12 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
                   definirEditando(true);
                 }}
               >
-                Editar boletim
+                Editar campanha
               </Botao>
             )}
 
             {/**
-             * Duplicar está sempre disponível, inclusive para boletim já enviado:
+             * Duplicar está sempre disponível, inclusive para campanha já enviada:
              * o caso mais comum é partir do último para montar o próximo. Cria um
              * rascunho novo e leva para ele.
              */}
@@ -439,29 +439,29 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
             </Botao>
 
             {/**
-             * Excluir qualquer boletim que não esteja enviando.
+             * Excluir qualquer campanha que não esteja enviando.
              *
              * Quem decide de verdade é o backend, que recusa se houver registro
              * de envio — a tela não tem esse número. Oferecer o botão e deixar a
              * recusa explicar o motivo é melhor que esconder a ação: escondida,
-             * a impressão é de que boletim antigo nunca sai da lista.
+             * a impressão é de que campanha antiga nunca sai da lista.
              */}
             {podeExcluir && (
               <Botao
                 variante="perigo"
                 carregando={excluir.isPending}
                 onClick={() => {
-                  if (window.confirm(`Excluir o boletim "${c.nome}"? Isso não pode ser desfeito.`))
+                  if (window.confirm(`Excluir a campanha "${c.nome}"? Isso não pode ser desfeito.`))
                     excluir.mutate();
                 }}
               >
-                Excluir boletim
+                Excluir campanha
               </Botao>
             )}
           </div>
           {c.status === 'AGENDADA' && (
             <p className="mt-3 text-sm text-ink-suave">
-              O boletim está agendado. Editar aqui atualiza o conteúdo — o disparo continua marcado
+              A campanha está agendada. Editar aqui atualiza o conteúdo — o disparo continua marcado
               para o horário definido.
             </p>
           )}
@@ -482,7 +482,7 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
               onClick={() => {
                 if (
                   window.confirm(
-                    `Disparar o boletim "${c.nome}" agora? O envio começa imediatamente e não pode ser desfeito.`,
+                    `Disparar a campanha "${c.nome}" agora? O envio começa imediatamente e não pode ser desfeito.`,
                   )
                 )
                   acao.mutate({ caminho: '/disparo' });
@@ -521,7 +521,7 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
               carregando={executando}
               onClick={() => acao.mutate({ caminho: '/cancelamento' })}
             >
-              Cancelar boletim
+              Cancelar campanha
             </Botao>
           )}
         </div>
@@ -559,7 +559,7 @@ export function CampanhaDetalhe({ usuario }: { usuario: Usuario }) {
         to={`/relatorios/${c.campaignId}`}
         className="inline-flex min-h-11 items-center text-sm text-ink hover:underline"
       >
-        Ver relatório deste boletim
+        Ver relatório desta campanha
         <span aria-hidden="true" className="ml-1">
           →
         </span>
@@ -608,7 +608,7 @@ function ProgressoEnvio({ campanha }: { campanha: Campanha }) {
         <div role="alert" className="rounded-md border border-alerta/30 bg-alerta-fundo px-4 py-3">
           <p className="text-sm text-alerta">
             Nenhum destinatário foi processado ainda. Se isto persistir por alguns minutos, o
-            disparo pode estar travado — cancele o boletim para encerrá-lo e crie um novo.
+            disparo pode estar travado — cancele a campanha para encerrá-lo e crie um novo.
           </p>
         </div>
       )}

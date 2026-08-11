@@ -14,7 +14,7 @@ vi.mock('../src/lib/api.js', () => ({
 function base(over: Record<string, unknown> = {}) {
   return {
     campaignId: 'k-1',
-    nome: 'Boletim',
+    nome: 'Campanha',
     status: 'CONCLUIDA',
     contadores: { enviados: 1000, entregues: 950, aberturasUnicas: 380, cliquesUnicos: 40 },
     taxas: {
