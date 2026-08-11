@@ -18,6 +18,7 @@ import {
   resolverAudiencia,
   retomar,
   templateId as novoTemplateId,
+  tipoEmailId as novoTipoEmailId,
   todos,
   type Campaign,
   type Contact,
@@ -58,6 +59,7 @@ rotasCampanhas.post('/', validarCorpo(criarCampanhaSchema), async (c) => {
     tenantId: usuario.tenantId,
     campaignId: novoCampaignId(deps.ids.gerar()),
     nome: dados.nome,
+    ...(dados.tipoEmailId === undefined ? {} : { tipoEmailId: novoTipoEmailId(dados.tipoEmailId) }),
     templateId: novoTemplateId(dados.templateId),
     // Congelada no disparo (§6.2, nota 3): editar o template não pode alterar
     // retroativamente o que já foi enviado.
@@ -102,6 +104,7 @@ rotasCampanhas.post('/:id/duplicacao', async (c) => {
     tenantId: usuario.tenantId,
     campaignId: novoCampaignId(deps.ids.gerar()),
     nome: `${original.nome} (cópia)`,
+    ...(original.tipoEmailId === undefined ? {} : { tipoEmailId: original.tipoEmailId }),
     templateId: original.templateId,
     templateVersao: original.templateVersao,
     listId: original.listId,
@@ -193,6 +196,7 @@ rotasCampanhas.patch('/:id', validarCorpo(editarCampanhaSchema), async (c) => {
   const editada: Campaign = {
     ...campanha,
     ...(dados.nome === undefined ? {} : { nome: dados.nome }),
+    ...(dados.tipoEmailId === undefined ? {} : { tipoEmailId: novoTipoEmailId(dados.tipoEmailId) }),
     ...(dados.templateId === undefined ? {} : { templateId: novoTemplateId(dados.templateId) }),
     ...(dados.listId === undefined ? {} : { listId: novoListId(dados.listId) }),
     ...(dados.remetenteNome === undefined ? {} : { remetenteNome: dados.remetenteNome }),
@@ -695,6 +699,7 @@ function paraResposta(campanha: Campaign): Record<string, unknown> {
   return {
     campaignId: campanha.campaignId,
     nome: campanha.nome,
+    tipoEmailId: campanha.tipoEmailId ?? null,
     status: campanha.status,
     templateId: campanha.templateId,
     templateVersao: campanha.templateVersao,

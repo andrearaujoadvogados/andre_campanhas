@@ -11,6 +11,7 @@ export * from './domain/send/envio.js';
 export * from './domain/send/rate-limiter.js';
 export * from './domain/template/template.js';
 export * from './domain/list/lista.js';
+export * from './domain/tipo-email/tipo-email.js';
 export * from './domain/report/metricas.js';
 
 // Aplicação

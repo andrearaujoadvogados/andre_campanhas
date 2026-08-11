@@ -13,6 +13,7 @@ import {
   type Envio,
   type Lista,
   type Template,
+  type TipoEmail,
   type UsuarioDoPainel,
   type VersaoTemplate,
 } from '@emailmkt/core';
@@ -62,6 +63,8 @@ interface Estado {
   lista: Lista | null;
   campanha: Campaign | null;
   enviosDaCampanha: Envio[];
+  tiposEmail: TipoEmail[];
+  tiposSalvos: TipoEmail[];
   contatosDaLista: Contact[];
   contatoParaExportar: Contact | null;
   contatoPorEmail: Contact | null;
@@ -153,6 +156,12 @@ function montarDeps(): Dependencias {
       removerContato: async () => undefined,
       excluir: async () => void (estado.lista = null),
     },
+    tiposEmail: {
+      buscarPorId: async () => estado.tiposEmail[0] ?? null,
+      listar: async () => estado.tiposEmail,
+      salvar: async (t) => void estado.tiposSalvos.push(t),
+      excluir: async () => undefined,
+    },
     metricas: {
       incrementar: async () => undefined,
       ler: async () => estado.contadores,
@@ -224,6 +233,8 @@ beforeEach(() => {
     lista: listaFalsa(),
     campanha: null,
     enviosDaCampanha: [],
+    tiposEmail: [],
+    tiposSalvos: [],
     contatosDaLista: [],
     contatoParaExportar: null,
     contatoPorEmail: null,
@@ -347,6 +358,25 @@ describe('templates — prévia', () => {
 });
 
 // ── Listas ───────────────────────────────────────────────────────────────────
+
+describe('tipos de e-mail — catálogo gerenciável', () => {
+  it('a primeira listagem semeia "Boletim" para o catálogo nunca nascer vazio', async () => {
+    estado.tiposEmail = [];
+    const corpo = (await (await req('/tipos')).json()) as { itens: { nome: string }[] };
+
+    expect(corpo.itens).toHaveLength(1);
+    expect(corpo.itens[0]?.nome).toBe('Boletim');
+    expect(estado.tiposSalvos).toHaveLength(1);
+  });
+
+  it('cria um tipo novo e audita', async () => {
+    const r = await req('/tipos', json({ nome: 'Comunicado' }));
+
+    expect(r.status).toBe(201);
+    expect(await r.json()).toMatchObject({ nome: 'Comunicado' });
+    expect(estado.auditados).toContainEqual({ acao: 'CRIOU', recursoTipo: 'TipoEmail' });
+  });
+});
 
 describe('listas', () => {
   it('cria lista estática', async () => {

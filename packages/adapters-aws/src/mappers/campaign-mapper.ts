@@ -1,4 +1,12 @@
-import { campaignId, listId, templateId, tenantId, userId, type Campaign } from '@emailmkt/core';
+import {
+  campaignId,
+  listId,
+  templateId,
+  tenantId,
+  tipoEmailId,
+  userId,
+  type Campaign,
+} from '@emailmkt/core';
 import { chaveCampanha, gsi3StatusCampanha } from '../keys.js';
 
 export interface ItemCampanha extends Record<string, unknown> {
@@ -8,6 +16,7 @@ export interface ItemCampanha extends Record<string, unknown> {
   tenantId: string;
   campaignId: string;
   nome: string;
+  tipoEmailId?: string | undefined;
   templateId: string;
   templateVersao: number;
   listId: string;
@@ -47,6 +56,7 @@ export function campanhaParaItem(campanha: Campaign): ItemCampanha {
     tenantId: String(campanha.tenantId),
     campaignId: String(campanha.campaignId),
     nome: campanha.nome,
+    tipoEmailId: campanha.tipoEmailId === undefined ? undefined : String(campanha.tipoEmailId),
     templateId: String(campanha.templateId),
     templateVersao: campanha.templateVersao,
     listId: String(campanha.listId),
@@ -101,6 +111,9 @@ export function itemParaCampanha(item: Record<string, unknown>): Campaign {
     tenantId: tenantId(String(item['tenantId'])),
     campaignId: campaignId(String(item['campaignId'])),
     nome: String(item['nome']),
+    ...(item['tipoEmailId'] === undefined
+      ? {}
+      : { tipoEmailId: tipoEmailId(String(item['tipoEmailId'])) }),
     templateId: templateId(String(item['templateId'])),
     templateVersao: Number(item['templateVersao']),
     listId: listId(String(item['listId'])),

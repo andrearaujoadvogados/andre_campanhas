@@ -3,6 +3,7 @@ import type { Campaign } from '../../domain/campaign/campaign.js';
 import type { CampoMetrica, Envio, EventoEnvio } from '../../domain/send/envio.js';
 import type { Template, VersaoTemplate } from '../../domain/template/template.js';
 import type { Lista } from '../../domain/list/lista.js';
+import type { TipoEmail } from '../../domain/tipo-email/tipo-email.js';
 import type { SuppressionEntry } from '../../domain/suppression/suppression.js';
 import type { EmailAddress } from '../../domain/shared/email-address.js';
 import type {
@@ -12,6 +13,7 @@ import type {
   SendId,
   TemplateId,
   TenantId,
+  TipoEmailId,
   UserId,
 } from '../../domain/shared/ids.js';
 
@@ -385,6 +387,13 @@ export interface TemplateRepository {
    */
   salvarComVersao(template: Template, versao: VersaoTemplate): Promise<void>;
   salvarMeta(template: Template): Promise<void>;
+}
+
+export interface TipoEmailRepository {
+  buscarPorId(tenantId: TenantId, tipoEmailId: TipoEmailId): Promise<TipoEmail | null>;
+  listar(tenantId: TenantId): Promise<readonly TipoEmail[]>;
+  salvar(tipo: TipoEmail): Promise<void>;
+  excluir(tenantId: TenantId, tipoEmailId: TipoEmailId): Promise<void>;
 }
 
 export interface ListRepository {

@@ -1,4 +1,4 @@
-import type { CampaignId, ContactId, ListId, SendId, TenantId } from '@emailmkt/core';
+import type { CampaignId, ContactId, ListId, SendId, TenantId, TipoEmailId } from '@emailmkt/core';
 
 /**
  * Chaves da tabela única — §6.3.
@@ -46,6 +46,11 @@ export const gsi3StatusContato = (
 
 export const chaveLista = (tenantId: TenantId, listId: ListId): Chave => ({
   pk: `${t(tenantId)}#LIST#${listId}`,
+  sk: 'META',
+});
+
+export const chaveTipoEmail = (tenantId: TenantId, tipoEmailId: TipoEmailId): Chave => ({
+  pk: `${t(tenantId)}#TIPO#${tipoEmailId}`,
   sk: 'META',
 });
 
