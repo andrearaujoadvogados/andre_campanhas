@@ -22,6 +22,7 @@ const REMETENTE_PADRAO_EMAIL = 'boletins@mail.andrearaujoadvogados.com.br';
 
 interface DadosBoletim {
   nome: string;
+  tipoEmailId: string;
   assunto: string;
   templateId: string;
   listId: string;
@@ -33,6 +34,7 @@ interface DadosBoletim {
 
 const INICIAL: DadosBoletim = {
   nome: '',
+  tipoEmailId: '',
   assunto: '',
   templateId: '',
   listId: '',
@@ -90,6 +92,10 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
     queryFn: () =>
       api.get<{ itens: { listId: string; nome: string; totalContatos?: number }[] }>('/listas'),
   });
+  const tipos = useQuery({
+    queryKey: ['tipos'],
+    queryFn: () => api.get<{ itens: { tipoEmailId: string; nome: string }[] }>('/tipos'),
+  });
 
   const tagsFiltro = tagsFiltroTexto
     .split(',')
@@ -128,6 +134,7 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
 
   const corpoParaSalvar = () => ({
     nome: dados.nome.trim(),
+    ...(dados.tipoEmailId === '' ? {} : { tipoEmailId: dados.tipoEmailId }),
     templateId: dados.templateId,
     listId: dados.listId,
     remetenteNome: dados.remetenteNome.trim(),
@@ -248,6 +255,24 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
               onChange={(e) => definir('nome', e.target.value)}
               className={classeEntrada}
             />
+          </Campo>
+
+          <Campo
+            rotulo="Tipo de e-mail"
+            ajuda="Boletim, Comunicado, Convite… Gerencie os tipos em Tipos."
+          >
+            <select
+              value={dados.tipoEmailId}
+              onChange={(e) => definir('tipoEmailId', e.target.value)}
+              className={classeEntrada}
+            >
+              <option value="">— sem tipo —</option>
+              {tipos.data?.itens.map((t) => (
+                <option key={t.tipoEmailId} value={t.tipoEmailId}>
+                  {t.nome}
+                </option>
+              ))}
+            </select>
           </Campo>
 
           <Campo

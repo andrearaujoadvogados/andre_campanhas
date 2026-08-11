@@ -28,6 +28,7 @@ import {
 export interface Campanha extends ComAviso {
   campaignId: string;
   nome: string;
+  tipoEmailId?: string | null;
   status: string;
   templateId: string;
   templateVersao: number;
@@ -69,12 +70,28 @@ interface Listagem {
 
 export function Campanhas() {
   const [status, definirStatus] = useState('');
+  const [filtroTipo, definirFiltroTipo] = useState('');
   const [criando, definirCriando] = useState(false);
 
   const campanhas = useQuery({
     queryKey: ['campanhas', status],
     queryFn: () => api.get<Listagem>(`/boletins${status === '' ? '' : `?status=${status}`}`),
   });
+  const tipos = useQuery({
+    queryKey: ['tipos'],
+    queryFn: () => api.get<{ itens: { tipoEmailId: string; nome: string }[] }>('/tipos'),
+  });
+
+  const nomeTipo = (id: string | null | undefined): string | undefined =>
+    id === null || id === undefined
+      ? undefined
+      : tipos.data?.itens.find((t) => t.tipoEmailId === id)?.nome;
+
+  // Filtro por tipo roda no cliente sobre a página carregada — o índice do
+  // backend é por situação; o tipo é um recorte a mais sobre o que já veio.
+  const itens = (campanhas.data?.itens ?? []).filter(
+    (c) => filtroTipo === '' || c.tipoEmailId === filtroTipo,
+  );
 
   return (
     <div className="space-y-6">
@@ -110,6 +127,27 @@ export function Campanhas() {
         ))}
       </div>
 
+      {(tipos.data?.itens.length ?? 0) > 0 && (
+        <div>
+          <label className="mr-2 text-sm text-ink-suave" htmlFor="filtro-tipo">
+            Tipo:
+          </label>
+          <select
+            id="filtro-tipo"
+            value={filtroTipo}
+            onChange={(e) => definirFiltroTipo(e.target.value)}
+            className={`${classeEntrada} inline-block w-auto`}
+          >
+            <option value="">Todos os tipos</option>
+            {tipos.data?.itens.map((t) => (
+              <option key={t.tipoEmailId} value={t.tipoEmailId}>
+                {t.nome}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/**
        * O aviso de truncamento vem da API e é exibido, não escondido.
        *
@@ -123,16 +161,18 @@ export function Campanhas() {
       <Cartao>
         {campanhas.isLoading && <Carregando />}
         <ErroCaixa erro={campanhas.error} />
-        {campanhas.data?.itens.length === 0 && (
+        {itens.length === 0 && (
           <Vazio
             mensagem={
-              status === '' ? 'Nenhum boletim criado ainda.' : 'Nenhum boletim nesta situação.'
+              status === '' && filtroTipo === ''
+                ? 'Nenhum boletim criado ainda.'
+                : 'Nenhum boletim para este filtro.'
             }
           />
         )}
 
         <ul className="divide-y divide-line">
-          {campanhas.data?.itens.map((c) => (
+          {itens.map((c) => (
             <li
               key={c.campaignId}
               className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2"
@@ -150,9 +190,14 @@ export function Campanhas() {
                     : `agendada para ${dataHora(c.agendadaPara)}`}
                 </p>
               </div>
-              <Selo tom={tomDoStatusCampanha(c.status)}>
-                {ROTULO_STATUS_CAMPANHA[c.status] ?? c.status}
-              </Selo>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {nomeTipo(c.tipoEmailId) !== undefined && (
+                  <Selo tom="neutro">{nomeTipo(c.tipoEmailId)}</Selo>
+                )}
+                <Selo tom={tomDoStatusCampanha(c.status)}>
+                  {ROTULO_STATUS_CAMPANHA[c.status] ?? c.status}
+                </Selo>
+              </div>
             </li>
           ))}
         </ul>

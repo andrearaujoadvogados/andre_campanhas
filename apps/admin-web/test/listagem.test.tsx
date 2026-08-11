@@ -12,6 +12,9 @@ vi.mock('../src/lib/api.js', () => ({
   api: {
     get: async (caminho: string) => {
       caminhos.push(caminho);
+      // A lista também busca o catálogo de tipos; vazio aqui mantém os testes
+      // focados na listagem de boletins.
+      if (caminho.startsWith('/tipos')) return { itens: [] };
       return resposta;
     },
   },
@@ -48,7 +51,8 @@ describe('listagem de campanhas', () => {
   it('lista sem filtro por padrão', async () => {
     montar();
     expect(await screen.findByText('Boletim de agosto')).toBeInTheDocument();
-    expect(caminhos).toEqual(['/boletins']);
+    // Sem filtro por padrão: a chamada de boletins não leva `?status=`.
+    expect(caminhos.filter((c) => c.startsWith('/boletins'))).toEqual(['/boletins']);
   });
 
   it('filtrar por situação passa o status para a API', async () => {
@@ -90,7 +94,7 @@ describe('listagem de campanhas', () => {
     expect(await screen.findByText(/nenhum boletim criado ainda/i)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Pausada' }));
-    expect(await screen.findByText(/nenhum boletim nesta situação/i)).toBeInTheDocument();
+    expect(await screen.findByText(/nenhum boletim para este filtro/i)).toBeInTheDocument();
   });
 
   it('mostra a data de agendamento quando existe, em vez da criação', async () => {
