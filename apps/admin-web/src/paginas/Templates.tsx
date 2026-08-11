@@ -46,11 +46,98 @@ interface Previa {
   aviso: string;
 }
 
+/**
+ * Prévia visual do modelo no card.
+ *
+ * Renderiza o HTML do próprio modelo num iframe reduzido, em vez de depender de
+ * uma imagem gravada: o `thumbnail` nunca é preenchido hoje, e gerar imagem
+ * exigiria rasterizar o HTML em algum lugar. Assim a prévia vale para os modelos
+ * que já existem, sem migração e sem backend novo.
+ *
+ * O conteúdo vem de `GET /templates/:id` — a listagem devolve só metadados. São
+ * algumas dezenas de modelos no total, e o React Query cacheia; o custo é uma
+ * requisição por card, uma vez.
+ *
+ * `sandbox=""` e `pointer-events-none`: o HTML é autoral e não deve executar
+ * nada nem capturar o clique, que pertence ao link do card.
+ */
+function PreviaModelo({ id }: { id: string }) {
+  const conteudo = useQuery({
+    queryKey: ['template', id],
+    queryFn: () => api.get<Template>(`/templates/${id}`),
+    staleTime: 5 * 60_000,
+  });
+
+  const html = conteudo.data?.conteudo?.corpoHtml;
+
+  if (conteudo.isLoading) {
+    return <span className="text-xs text-ink-suave">carregando prévia…</span>;
+  }
+  if (html === undefined || html === '') {
+    return <span className="text-xs text-ink-suave">sem prévia</span>;
+  }
+
+  return (
+    <iframe
+      title=""
+      aria-hidden="true"
+      tabIndex={-1}
+      sandbox=""
+      srcDoc={html}
+      // 640px é a largura típica de e-mail; a escala reduz para caber no card
+      // sem reflow do conteúdo — encolher o iframe direto mudaria o layout do
+      // e-mail e a prévia mostraria algo que ninguém vai receber.
+      style={{
+        width: '640px',
+        height: '420px',
+        transform: 'scale(0.42)',
+        transformOrigin: 'top left',
+      }}
+      className="pointer-events-none border-0 bg-white"
+    />
+  );
+}
+
 export function Templates() {
+  const qc = useQueryClient();
+  const [selecionados, definirSelecionados] = useState<Set<string>>(new Set());
+  const [mostrarArquivados, definirMostrarArquivados] = useState(false);
+
   const lista = useQuery({
     queryKey: ['templates'],
     queryFn: () => api.get<{ itens: Template[]; variaveisDisponiveis: Variavel[] }>('/templates'),
   });
+
+  /**
+   * Arquivar em lote.
+   *
+   * `allSettled`, não `all`: um modelo que falhar não pode impedir os outros de
+   * saírem da lista, e o operador precisa saber quantos foram — "erro" sozinho
+   * esconderia que a maioria funcionou.
+   */
+  const arquivarSelecionados = useMutation({
+    mutationFn: async () => {
+      const ids = [...selecionados];
+      const r = await Promise.allSettled(ids.map((id) => api.delete(`/templates/${id}`)));
+      return { total: ids.length, falhas: r.filter((x) => x.status === 'rejected').length };
+    },
+    onSuccess: () => {
+      definirSelecionados(new Set());
+      void qc.invalidateQueries({ queryKey: ['templates'] });
+    },
+  });
+
+  const todos = lista.data?.itens ?? [];
+  const itens = mostrarArquivados ? todos : todos.filter((t) => !t.arquivado);
+  const arquivados = todos.length - todos.filter((t) => !t.arquivado).length;
+
+  const alternar = (id: string) =>
+    definirSelecionados((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
 
   return (
     <div className="space-y-6">
@@ -70,23 +157,90 @@ export function Templates() {
       <Cartao>
         {lista.isLoading && <Carregando />}
         <ErroCaixa erro={lista.error} />
-        {lista.data?.itens.length === 0 && <Vazio mensagem="Nenhum modelo criado ainda." />}
+        {itens.length === 0 && !lista.isLoading && <Vazio mensagem="Nenhum modelo criado ainda." />}
+
+        {itens.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex min-h-11 items-center gap-2 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={itens.length > 0 && itens.every((t) => selecionados.has(t.templateId))}
+                  onChange={(e) =>
+                    definirSelecionados(
+                      e.target.checked ? new Set(itens.map((t) => t.templateId)) : new Set(),
+                    )
+                  }
+                />
+                Selecionar todos
+              </label>
+              {selecionados.size > 0 && (
+                <>
+                  <span className="text-sm text-ink-suave">{selecionados.size} selecionado(s)</span>
+                  <Botao
+                    variante="perigo"
+                    carregando={arquivarSelecionados.isPending}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Arquivar ${selecionados.size} modelo(s)? Eles saem da lista; as versões continuam guardadas para auditoria das campanhas que já os usaram.`,
+                        )
+                      )
+                        arquivarSelecionados.mutate();
+                    }}
+                  >
+                    Arquivar selecionados
+                  </Botao>
+                </>
+              )}
+            </div>
+
+            {arquivados > 0 && (
+              <label className="flex min-h-11 items-center gap-2 text-sm text-ink-suave">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={mostrarArquivados}
+                  onChange={(e) => definirMostrarArquivados(e.target.checked)}
+                />
+                Mostrar arquivados ({arquivados})
+              </label>
+            )}
+          </div>
+        )}
+
+        <ErroCaixa erro={arquivarSelecionados.error} />
+        {arquivarSelecionados.data !== undefined && arquivarSelecionados.data.falhas > 0 && (
+          <Aviso
+            tom="alerta"
+            texto={`${arquivarSelecionados.data.falhas} de ${arquivarSelecionados.data.total} não puderam ser arquivados.`}
+          />
+        )}
 
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {lista.data?.itens.map((t) => (
+          {itens.map((t) => (
             <li
               key={t.templateId}
-              className="flex flex-col overflow-hidden rounded-lg border border-line bg-paper-light"
+              className={`flex flex-col overflow-hidden rounded-lg border bg-paper-light ${
+                selecionados.has(t.templateId) ? 'border-ink ring-1 ring-ink' : 'border-line'
+              }`}
             >
+              {/* Fora do link: marcar não pode navegar. */}
+              <label className="flex min-h-11 items-center gap-2 border-b border-line px-3 text-sm text-ink-suave">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={selecionados.has(t.templateId)}
+                  onChange={() => alternar(t.templateId)}
+                />
+                selecionar
+              </label>
+
               <Link to={`/templates/${t.templateId}`} className="flex flex-1 flex-col">
-                {/* Miniatura: quando existe, dá o reconhecimento visual do card;
-                    quando não, um marcador neutro em vez de um buraco. */}
-                <div className="flex h-32 items-center justify-center border-b border-line bg-paper">
-                  {t.thumbnail ? (
-                    <img src={t.thumbnail} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <span className="text-xs text-ink-suave">sem prévia</span>
-                  )}
+                {/* A prévia é o HTML real do modelo, reduzido. */}
+                <div className="flex h-32 items-center justify-center overflow-hidden border-b border-line bg-paper">
+                  <PreviaModelo id={t.templateId} />
                 </div>
                 <div className="min-w-0 flex-1 space-y-1 p-3">
                   <div className="flex flex-wrap items-center gap-1.5">

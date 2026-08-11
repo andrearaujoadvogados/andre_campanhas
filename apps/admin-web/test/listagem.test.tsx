@@ -1,12 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { Campanhas } from '../src/paginas/Campanhas.tsx';
 
 const caminhos: string[] = [];
+const excluidos: string[] = [];
 let resposta: Record<string, unknown>;
+/** Ids cuja exclusão o backend recusa — campanha que já enviou, por exemplo. */
+let recusaExclusao: Record<string, string> = {};
 
 vi.mock('../src/lib/api.js', () => ({
   api: {
@@ -16,6 +19,13 @@ vi.mock('../src/lib/api.js', () => ({
       // focados na listagem de campanhas.
       if (caminho.startsWith('/tipos')) return { itens: [] };
       return resposta;
+    },
+    delete: async (caminho: string) => {
+      const id = caminho.split('/').pop() ?? '';
+      const motivo = recusaExclusao[id];
+      if (motivo !== undefined) throw new Error(motivo);
+      excluidos.push(id);
+      return undefined;
     },
   },
   FalhaApi: class extends Error {},
@@ -34,6 +44,8 @@ function montar() {
 
 beforeEach(() => {
   caminhos.length = 0;
+  excluidos.length = 0;
+  recusaExclusao = {};
   resposta = {
     itens: [
       {
@@ -113,5 +125,74 @@ describe('listagem de campanhas', () => {
     montar();
 
     expect(await screen.findByText(/agendada para 15\/09\/2026/i)).toBeInTheDocument();
+  });
+});
+
+describe('exclusão em lote', () => {
+  const DUAS = {
+    itens: [
+      {
+        campaignId: 'k-1',
+        nome: 'Rascunho velho',
+        status: 'RASCUNHO',
+        criadoEm: '2026-08-01T12:00:00Z',
+      },
+      {
+        campaignId: 'k-2',
+        nome: 'Já enviada',
+        status: 'CONCLUIDA',
+        criadoEm: '2026-08-02T12:00:00Z',
+      },
+    ],
+    truncado: false,
+  };
+
+  beforeEach(() => {
+    resposta = DUAS;
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+  });
+
+  it('só oferece a ação depois de selecionar algo', async () => {
+    montar();
+    await screen.findByText('Rascunho velho');
+
+    expect(screen.queryByRole('button', { name: /excluir selecionadas/i })).toBeNull();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: /selecionar rascunho velho/i }));
+
+    expect(screen.getByRole('button', { name: /excluir selecionadas/i })).toBeInTheDocument();
+  });
+
+  it('"selecionar todas" exclui cada uma das campanhas marcadas', async () => {
+    montar();
+    await screen.findByText('Rascunho velho');
+
+    await userEvent.click(screen.getByRole('checkbox', { name: /selecionar todas/i }));
+    await userEvent.click(screen.getByRole('button', { name: /excluir selecionadas/i }));
+
+    await waitFor(() => expect(excluidos).toEqual(['k-1', 'k-2']));
+  });
+
+  it('falha parcial diz QUAIS não saíram e por quê', async () => {
+    // O caso normal, não a exceção: o backend recusa campanha que já enviou,
+    // porque relatório e auditoria apontam para ela. Sem o nome e o motivo na
+    // tela, o operador tentaria de novo às cegas.
+    recusaExclusao = { 'k-2': 'Esta campanha já enviou 3 mensagem(ns) e não pode ser excluída.' };
+    montar();
+    await screen.findByText('Já enviada');
+
+    await userEvent.click(screen.getByRole('checkbox', { name: /selecionar todas/i }));
+    await userEvent.click(screen.getByRole('button', { name: /excluir selecionadas/i }));
+
+    await screen.findByText(/já enviou 3 mensagem/i);
+
+    // Dentro do alerta: o nome também aparece na lista, e procurar na página
+    // inteira acharia os dois sem provar que a recusa foi nomeada.
+    const alerta = within(screen.getByRole('alert'));
+    expect(alerta.getByText('Já enviada')).toBeInTheDocument();
+    expect(alerta.getByText(/já enviou 3 mensagem/i)).toBeInTheDocument();
+
+    // A que podia sair, saiu: uma recusa não bloqueia as demais.
+    expect(excluidos).toEqual(['k-1']);
   });
 });
