@@ -72,6 +72,8 @@ export function Campanhas() {
   const [status, definirStatus] = useState('');
   const [filtroTipo, definirFiltroTipo] = useState('');
   const [criando, definirCriando] = useState(false);
+  const [selecionadas, definirSelecionadas] = useState<Set<string>>(new Set());
+  const qcLista = useQueryClient();
 
   const campanhas = useQuery({
     queryKey: ['campanhas', status],
@@ -92,6 +94,47 @@ export function Campanhas() {
   const itens = (campanhas.data?.itens ?? []).filter(
     (c) => filtroTipo === '' || c.tipoEmailId === filtroTipo,
   );
+
+  /**
+   * Exclusão em lote.
+   *
+   * O backend recusa campanha que já enviou (auditoria e relatório apontam para
+   * ela) e a que está enviando agora. Isso torna a falha parcial o caso normal,
+   * não a exceção: o resultado guarda o nome e o motivo de cada recusa, porque
+   * "3 de 5 excluídas" sem dizer quais deixaria o operador tentando de novo às
+   * cegas.
+   */
+  const excluirSelecionadas = useMutation({
+    mutationFn: async () => {
+      const alvos = itens.filter((c) => selecionadas.has(c.campaignId));
+      const resultados = await Promise.allSettled(
+        alvos.map((c) => api.delete(`/campanhas/${c.campaignId}`)),
+      );
+      const recusadas = resultados.flatMap((r, i) =>
+        r.status === 'rejected'
+          ? [
+              {
+                nome: alvos[i]?.nome ?? '—',
+                motivo: r.reason instanceof Error ? r.reason.message : 'Falha desconhecida.',
+              },
+            ]
+          : [],
+      );
+      return { total: alvos.length, recusadas };
+    },
+    onSuccess: () => {
+      definirSelecionadas(new Set());
+      void qcLista.invalidateQueries({ queryKey: ['campanhas'] });
+    },
+  });
+
+  const alternarSelecao = (id: string) =>
+    definirSelecionadas((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
 
   return (
     <div className="space-y-6">
@@ -171,24 +214,91 @@ export function Campanhas() {
           />
         )}
 
+        {itens.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-line pb-3">
+            <label className="flex min-h-11 items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={itens.length > 0 && itens.every((c) => selecionadas.has(c.campaignId))}
+                onChange={(e) =>
+                  definirSelecionadas(
+                    e.target.checked ? new Set(itens.map((c) => c.campaignId)) : new Set(),
+                  )
+                }
+              />
+              Selecionar todas
+            </label>
+            {selecionadas.size > 0 && (
+              <>
+                <span className="text-sm text-ink-suave">{selecionadas.size} selecionada(s)</span>
+                <Botao
+                  variante="perigo"
+                  carregando={excluirSelecionadas.isPending}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        `Excluir ${selecionadas.size} campanha(s)? Isso não pode ser desfeito. As que já enviaram mensagens são mantidas — o relatório e a auditoria apontam para elas.`,
+                      )
+                    )
+                      excluirSelecionadas.mutate();
+                  }}
+                >
+                  Excluir selecionadas
+                </Botao>
+              </>
+            )}
+          </div>
+        )}
+
+        <ErroCaixa erro={excluirSelecionadas.error} />
+        {excluirSelecionadas.data !== undefined &&
+          excluirSelecionadas.data.recusadas.length > 0 && (
+            <div
+              role="alert"
+              className="mb-3 rounded-md border border-alerta/30 bg-alerta-fundo px-4 py-3"
+            >
+              <p className="text-sm font-medium text-alerta">
+                {excluirSelecionadas.data.recusadas.length} de {excluirSelecionadas.data.total} não
+                foram excluídas:
+              </p>
+              <ul className="mt-1 space-y-1 text-sm text-ink">
+                {excluirSelecionadas.data.recusadas.map((r, i) => (
+                  <li key={i}>
+                    <strong>{r.nome}</strong> — {r.motivo}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
         <ul className="divide-y divide-line">
           {itens.map((c) => (
             <li
               key={c.campaignId}
               className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2"
             >
-              <div className="min-w-0">
-                <Link
-                  to={`/campanhas/${c.campaignId}`}
-                  className="inline-flex min-h-11 items-center font-medium break-words text-ink hover:underline"
-                >
-                  {c.nome}
-                </Link>
-                <p className="text-xs text-ink-suave">
-                  {c.agendadaPara === undefined
-                    ? `criada em ${dataHora(c.criadoEm)}`
-                    : `agendada para ${dataHora(c.agendadaPara)}`}
-                </p>
+              <div className="flex min-w-0 items-center gap-3">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 shrink-0"
+                  checked={selecionadas.has(c.campaignId)}
+                  onChange={() => alternarSelecao(c.campaignId)}
+                  aria-label={`Selecionar ${c.nome}`}
+                />
+                <div className="min-w-0">
+                  <Link
+                    to={`/campanhas/${c.campaignId}`}
+                    className="inline-flex min-h-11 items-center font-medium break-words text-ink hover:underline"
+                  >
+                    {c.nome}
+                  </Link>
+                  <p className="text-xs text-ink-suave">
+                    {c.agendadaPara === undefined
+                      ? `criada em ${dataHora(c.criadoEm)}`
+                      : `agendada para ${dataHora(c.agendadaPara)}`}
+                  </p>
+                </div>
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 {nomeTipo(c.tipoEmailId) !== undefined && (
