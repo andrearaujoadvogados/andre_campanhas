@@ -4,6 +4,7 @@ import {
   DynamoListRepository,
   DynamoMetricsRepository,
   DynamoTemplateRepository,
+  DynamoTipoEmailRepository,
   EventBridgeCampaignScheduler,
   DynamoCampaignRepository,
   DynamoContactRepository,
@@ -38,6 +39,7 @@ import type {
   EmailRenderer,
   EventRepository,
   ListRepository,
+  TipoEmailRepository,
   SendRepository,
   MetricsRepository,
   TemplateRepository,
@@ -62,6 +64,7 @@ export interface Dependencias {
   readonly agendador: CampaignScheduler;
   readonly templates: TemplateRepository;
   readonly listas: ListRepository;
+  readonly tiposEmail: TipoEmailRepository;
   readonly metricas: MetricsRepository;
   readonly envios: SendRepository;
   readonly eventos: EventRepository;
@@ -121,6 +124,7 @@ async function montar(): Promise<Dependencias> {
     }),
     templates: new DynamoTemplateRepository(doc, tabela),
     listas: new DynamoListRepository(doc, tabela),
+    tiposEmail: new DynamoTipoEmailRepository(doc, tabela),
     metricas: new DynamoMetricsRepository(doc, tabela),
     envios: new DynamoSendRepository(doc, tabela),
     eventos: new DynamoEventRepository(doc, tabela),

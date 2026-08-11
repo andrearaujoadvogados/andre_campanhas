@@ -9,6 +9,7 @@ import { ImportarContatos } from './paginas/ImportarContatos.tsx';
 import { Usuarios } from './paginas/Usuarios.tsx';
 import { Listas, ListaDetalhe } from './paginas/Listas.tsx';
 import { Templates, TemplateEditor } from './paginas/Templates.tsx';
+import { Tipos } from './paginas/Tipos.tsx';
 import { Campanhas, CampanhaDetalhe } from './paginas/Campanhas.tsx';
 import { Dashboard } from './paginas/Dashboard.tsx';
 import { Relatorio } from './paginas/Relatorio.tsx';
@@ -50,6 +51,7 @@ export function App() {
             <Route path="/contatos/:id" element={<ContatoDetalhe usuario={usuario} />} />
             <Route path="/templates" element={<Templates />} />
             <Route path="/templates/:id" element={<TemplateEditor />} />
+            <Route path="/tipos" element={<Tipos />} />
             <Route path="/relatorios/:id" element={<Relatorio />} />
             <Route path="/usuarios" element={<Usuarios usuario={usuario} />} />
             <Route path="*" element={<Navigate to="/boletins" replace />} />

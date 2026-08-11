@@ -18,6 +18,7 @@ import {
   resolverAudiencia,
   retomar,
   templateId as novoTemplateId,
+  tipoEmailId as novoTipoEmailId,
   todos,
   type Campaign,
   type Contact,
@@ -58,6 +59,7 @@ rotasCampanhas.post('/', validarCorpo(criarCampanhaSchema), async (c) => {
     tenantId: usuario.tenantId,
     campaignId: novoCampaignId(deps.ids.gerar()),
     nome: dados.nome,
+    ...(dados.tipoEmailId === undefined ? {} : { tipoEmailId: novoTipoEmailId(dados.tipoEmailId) }),
     templateId: novoTemplateId(dados.templateId),
     // Congelada no disparo (§6.2, nota 3): editar o template não pode alterar
     // retroativamente o que já foi enviado.
@@ -81,6 +83,49 @@ rotasCampanhas.post('/', validarCorpo(criarCampanhaSchema), async (c) => {
   await registrar(deps, c, 'CRIOU', campanha, undefined, { nome: campanha.nome });
 
   return c.json(paraResposta(campanha), 201);
+});
+
+/**
+ * Duplicar — §7 do briefing.
+ *
+ * Cria um RASCUNHO novo a partir de um boletim existente, copiando o conteúdo e
+ * a segmentação (modelo, lista, remetente, assunto, filtro de tag). **Não** copia
+ * o que é próprio de um disparo: agendamento, seleção individual e a auditoria do
+ * envio nascem em branco — a cópia é um novo boletim, não um clone do que saiu.
+ */
+rotasCampanhas.post('/:id/duplicacao', async (c) => {
+  const deps = await obterDependencias();
+  const usuario = c.get('usuario');
+  const original = await carregar(deps, c);
+  if (original === null) return naoEncontrada(c);
+
+  const agora = deps.clock.agora();
+  const copia: Campaign = {
+    tenantId: usuario.tenantId,
+    campaignId: novoCampaignId(deps.ids.gerar()),
+    nome: `${original.nome} (cópia)`,
+    ...(original.tipoEmailId === undefined ? {} : { tipoEmailId: original.tipoEmailId }),
+    templateId: original.templateId,
+    templateVersao: original.templateVersao,
+    listId: original.listId,
+    status: 'RASCUNHO',
+    remetenteNome: original.remetenteNome,
+    remetenteEmail: original.remetenteEmail,
+    ...(original.replyTo === undefined ? {} : { replyTo: original.replyTo }),
+    ...(original.assunto === undefined ? {} : { assunto: original.assunto }),
+    ...(original.tagsFiltro === undefined ? {} : { tagsFiltro: original.tagsFiltro }),
+    ...(original.incluirLeads ? { incluirLeads: true } : {}),
+    criadoPor: usuario.userId,
+    criadoEm: agora,
+  };
+
+  await deps.campanhas.salvar(copia);
+  await registrar(deps, c, 'CRIOU', copia, undefined, {
+    nome: copia.nome,
+    duplicadoDe: String(original.campaignId),
+  });
+
+  return c.json(paraResposta(copia), 201);
 });
 
 /**
@@ -151,6 +196,7 @@ rotasCampanhas.patch('/:id', validarCorpo(editarCampanhaSchema), async (c) => {
   const editada: Campaign = {
     ...campanha,
     ...(dados.nome === undefined ? {} : { nome: dados.nome }),
+    ...(dados.tipoEmailId === undefined ? {} : { tipoEmailId: novoTipoEmailId(dados.tipoEmailId) }),
     ...(dados.templateId === undefined ? {} : { templateId: novoTemplateId(dados.templateId) }),
     ...(dados.listId === undefined ? {} : { listId: novoListId(dados.listId) }),
     ...(dados.remetenteNome === undefined ? {} : { remetenteNome: dados.remetenteNome }),
@@ -194,7 +240,7 @@ rotasCampanhas.patch('/:id', validarCorpo(editarCampanhaSchema), async (c) => {
  * A trava é o envio, não o status: rascunho, cancelado e falho somem; o que
  * chegou a mandar mensagem fica. Ver o porquê no corpo da rota.
  */
-rotasCampanhas.delete('/:id', exigirPapel('ADMIN'), async (c) => {
+rotasCampanhas.delete('/:id', async (c) => {
   const deps = await obterDependencias();
   const campanha = await carregar(deps, c);
   if (campanha === null) return naoEncontrada(c);
@@ -653,6 +699,7 @@ function paraResposta(campanha: Campaign): Record<string, unknown> {
   return {
     campaignId: campanha.campaignId,
     nome: campanha.nome,
+    tipoEmailId: campanha.tipoEmailId ?? null,
     status: campanha.status,
     templateId: campanha.templateId,
     templateVersao: campanha.templateVersao,

@@ -10,8 +10,10 @@ import {
   userId,
   type Campaign,
   type Contact,
+  type Envio,
   type Lista,
   type Template,
+  type TipoEmail,
   type UsuarioDoPainel,
   type VersaoTemplate,
 } from '@emailmkt/core';
@@ -60,6 +62,9 @@ interface Estado {
   metaGravada: Template[];
   lista: Lista | null;
   campanha: Campaign | null;
+  enviosDaCampanha: Envio[];
+  tiposEmail: TipoEmail[];
+  tiposSalvos: TipoEmail[];
   contatosDaLista: Contact[];
   contatoParaExportar: Contact | null;
   contatoPorEmail: Contact | null;
@@ -151,6 +156,12 @@ function montarDeps(): Dependencias {
       removerContato: async () => undefined,
       excluir: async () => void (estado.lista = null),
     },
+    tiposEmail: {
+      buscarPorId: async () => estado.tiposEmail[0] ?? null,
+      listar: async () => estado.tiposEmail,
+      salvar: async (t) => void estado.tiposSalvos.push(t),
+      excluir: async () => undefined,
+    },
     metricas: {
       incrementar: async () => undefined,
       ler: async () => estado.contadores,
@@ -161,6 +172,7 @@ function montarDeps(): Dependencias {
       salvar: async () => undefined,
       contarPorCampanha: async () => 0,
       listarPorContato: async () => [],
+      listarPorCampanha: async () => ({ itens: estado.enviosDaCampanha }),
     },
     eventos: {
       salvar: async () => undefined,
@@ -220,6 +232,9 @@ beforeEach(() => {
     metaGravada: [],
     lista: listaFalsa(),
     campanha: null,
+    enviosDaCampanha: [],
+    tiposEmail: [],
+    tiposSalvos: [],
     contatosDaLista: [],
     contatoParaExportar: null,
     contatoPorEmail: null,
@@ -344,11 +359,45 @@ describe('templates — prévia', () => {
 
 // ── Listas ───────────────────────────────────────────────────────────────────
 
+describe('tipos de e-mail — catálogo gerenciável', () => {
+  it('a primeira listagem semeia "Boletim" para o catálogo nunca nascer vazio', async () => {
+    estado.tiposEmail = [];
+    const corpo = (await (await req('/tipos')).json()) as { itens: { nome: string }[] };
+
+    expect(corpo.itens).toHaveLength(1);
+    expect(corpo.itens[0]?.nome).toBe('Boletim');
+    expect(estado.tiposSalvos).toHaveLength(1);
+  });
+
+  it('cria um tipo novo e audita', async () => {
+    const r = await req('/tipos', json({ nome: 'Comunicado' }));
+
+    expect(r.status).toBe(201);
+    expect(await r.json()).toMatchObject({ nome: 'Comunicado' });
+    expect(estado.auditados).toContainEqual({ acao: 'CRIOU', recursoTipo: 'TipoEmail' });
+  });
+});
+
 describe('listas', () => {
   it('cria lista estática', async () => {
     const r = await req('/listas', json({ nome: 'Nova lista' }));
     expect(r.status).toBe(201);
     expect(estado.auditados).toContainEqual({ acao: 'CRIOU', recursoTipo: 'List' });
+  });
+
+  it('renomeia a lista (CRUD completo, sem exigir ADMIN)', async () => {
+    const r = await req(
+      '/listas/l-1',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ nome: 'Renomeada' }),
+        headers: { 'content-type': 'application/json' },
+      },
+      ['operador'],
+    );
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ nome: 'Renomeada' });
+    expect(estado.auditados).toContainEqual({ acao: 'EDITOU', recursoTipo: 'List' });
   });
 
   it('adiciona contatos em lote', async () => {
@@ -594,6 +643,25 @@ describe('relatórios', () => {
 
     expect(corpo.bounce.critico).toBe(0.1);
     expect(corpo.reclamacao.atencao).toBe(0.001);
+  });
+
+  it('lista os destinatários de um boletim — contato, status de entrega e enviado em', async () => {
+    estado.contatoParaExportar = contatoFalso();
+    estado.enviosDaCampanha = [
+      {
+        status: 'ENTREGUE',
+        contactId: 'c-1',
+        enviadoEm: new Date('2026-08-08T10:00:00Z'),
+      } as unknown as Envio,
+    ];
+
+    const corpo = (await (await req('/relatorios/boletins/k-1/destinatarios')).json()) as {
+      itens: { status: string; email: string | null }[];
+    };
+
+    expect(corpo.itens).toHaveLength(1);
+    expect(corpo.itens[0]?.status).toBe('ENTREGUE');
+    expect(corpo.itens[0]?.email).not.toBeNull();
   });
 });
 

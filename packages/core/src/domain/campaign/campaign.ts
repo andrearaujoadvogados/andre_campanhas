@@ -1,5 +1,12 @@
 import { type Result, type DomainError, ok, err, domainError } from '../shared/result.js';
-import type { CampaignId, ListId, TemplateId, TenantId, UserId } from '../shared/ids.js';
+import type {
+  CampaignId,
+  ListId,
+  TemplateId,
+  TenantId,
+  TipoEmailId,
+  UserId,
+} from '../shared/ids.js';
 
 /**
  * Ciclo de vida da campanha — §5.8.
@@ -24,6 +31,8 @@ export interface Campaign {
   readonly tenantId: TenantId;
   readonly campaignId: CampaignId;
   readonly nome: string;
+  /** Tipo de e-mail (catálogo gerenciável). Ausente = sem tipo. */
+  readonly tipoEmailId?: TipoEmailId;
   readonly templateId: TemplateId;
   readonly templateVersao: number;
   readonly listId: ListId;

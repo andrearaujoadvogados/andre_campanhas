@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { FalhaApi, api, type ComAviso } from '../lib/api.js';
 import {
   ROTULO_MOTIVO,
@@ -247,6 +247,44 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
     onSuccess: (r) => definirExportacao(r),
   });
 
+  const navegar = useNavigate();
+  const [editando, definirEditando] = useState(false);
+  const [rascunho, definirRascunho] = useState({
+    nome: '',
+    telefone: '',
+    empresa: '',
+    tagsTexto: '',
+    relacionamento: 'CLIENTE_ATIVO',
+    isLead: false,
+  });
+
+  // E-mail não é editável de propósito: trocá-lo burlaria a supressão (§ da rota).
+  const editar = useMutation({
+    mutationFn: () =>
+      api.patch<Contato>(`/contatos/${id}`, {
+        ...(rascunho.nome.trim() === '' ? {} : { nome: rascunho.nome.trim() }),
+        telefone: rascunho.telefone.trim(),
+        empresa: rascunho.empresa.trim(),
+        tags: rascunho.tagsTexto
+          .split(',')
+          .map((t) => t.trim())
+          .filter((t) => t !== ''),
+        relacionamento: rascunho.relacionamento,
+        isLead: rascunho.isLead,
+      }),
+    onSuccess: () => {
+      definirEditando(false);
+      void qcDetalhe.invalidateQueries({ queryKey: ['contato', id] });
+    },
+  });
+
+  const excluir = useMutation({
+    mutationFn: () => api.delete(`/contatos/${id}`),
+    onSuccess: () => navegar('/listas'),
+  });
+
+  const errosEdicao = editar.error instanceof FalhaApi ? editar.error.porCampo : {};
+
   if (contato.isLoading) return <Carregando />;
   if (contato.error !== null) return <ErroCaixa erro={contato.error} />;
 
@@ -314,6 +352,95 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
             <dd className="text-ink">{c.origem}</dd>
           </div>
         </dl>
+      </Cartao>
+
+      <Cartao titulo="Editar contato">
+        {!editando ? (
+          <Botao
+            variante="secundario"
+            onClick={() => {
+              definirRascunho({
+                nome: c.nome ?? '',
+                telefone: c.telefone ?? '',
+                empresa: c.empresa ?? '',
+                tagsTexto: (c.tags ?? []).join(', '),
+                relacionamento: c.relacionamento,
+                isLead: c.isLead === true,
+              });
+              definirEditando(true);
+            }}
+          >
+            Editar dados
+          </Botao>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-ink-suave">
+              O e-mail não é editável — trocá-lo abriria brecha na supressão. Para outro endereço,
+              cadastre um novo contato.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Campo rotulo="Nome" erro={errosEdicao['nome']}>
+                <input
+                  value={rascunho.nome}
+                  onChange={(e) => definirRascunho({ ...rascunho, nome: e.target.value })}
+                  className={classeEntrada}
+                />
+              </Campo>
+              <Campo rotulo="Telefone">
+                <input
+                  value={rascunho.telefone}
+                  onChange={(e) => definirRascunho({ ...rascunho, telefone: e.target.value })}
+                  className={classeEntrada}
+                />
+              </Campo>
+              <Campo rotulo="Empresa">
+                <input
+                  value={rascunho.empresa}
+                  onChange={(e) => definirRascunho({ ...rascunho, empresa: e.target.value })}
+                  className={classeEntrada}
+                />
+              </Campo>
+              <Campo rotulo="Tags" ajuda="Separadas por vírgula.">
+                <input
+                  value={rascunho.tagsTexto}
+                  onChange={(e) => definirRascunho({ ...rascunho, tagsTexto: e.target.value })}
+                  className={classeEntrada}
+                />
+              </Campo>
+              <Campo rotulo="Vínculo com o escritório">
+                <select
+                  value={rascunho.relacionamento}
+                  onChange={(e) => definirRascunho({ ...rascunho, relacionamento: e.target.value })}
+                  className={classeEntrada}
+                >
+                  {RELACIONAMENTOS.map((r) => (
+                    <option key={r} value={r}>
+                      {ROTULO_RELACIONAMENTO[r]}
+                    </option>
+                  ))}
+                </select>
+              </Campo>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={rascunho.isLead}
+                onChange={(e) => definirRascunho({ ...rascunho, isLead: e.target.checked })}
+                className="h-4 w-4"
+              />
+              É um lead (não recebe boletim por padrão)
+            </label>
+            <ErroCaixa erro={editar.error} />
+            <div className="flex flex-wrap gap-2">
+              <Botao carregando={editar.isPending} onClick={() => editar.mutate()}>
+                Salvar alterações
+              </Botao>
+              <Botao variante="secundario" onClick={() => definirEditando(false)}>
+                Cancelar
+              </Botao>
+            </div>
+          </div>
+        )}
       </Cartao>
 
       {/**
@@ -409,6 +536,28 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
               </ul>
             </div>
           )}
+
+          <div className="mt-6 border-t border-line pt-4">
+            <p className="mb-3 text-sm text-ink-suave">
+              Excluir apaga o contato em definitivo (direito de eliminação, art. 18) e registra a
+              supressão do e-mail — uma reimportação futura não o traz de volta. Não tem desfazer.
+            </p>
+            <ErroCaixa erro={excluir.error} />
+            <Botao
+              variante="perigo"
+              carregando={excluir.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Excluir definitivamente o contato "${c.nome ?? c.email}"? Isso não pode ser desfeito.`,
+                  )
+                )
+                  excluir.mutate();
+              }}
+            >
+              Excluir contato
+            </Botao>
+          </div>
         </Cartao>
       )}
     </div>

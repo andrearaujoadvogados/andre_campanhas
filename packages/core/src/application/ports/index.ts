@@ -3,6 +3,7 @@ import type { Campaign } from '../../domain/campaign/campaign.js';
 import type { CampoMetrica, Envio, EventoEnvio } from '../../domain/send/envio.js';
 import type { Template, VersaoTemplate } from '../../domain/template/template.js';
 import type { Lista } from '../../domain/list/lista.js';
+import type { TipoEmail } from '../../domain/tipo-email/tipo-email.js';
 import type { SuppressionEntry } from '../../domain/suppression/suppression.js';
 import type { EmailAddress } from '../../domain/shared/email-address.js';
 import type {
@@ -12,6 +13,7 @@ import type {
   SendId,
   TemplateId,
   TenantId,
+  TipoEmailId,
   UserId,
 } from '../../domain/shared/ids.js';
 
@@ -254,6 +256,16 @@ export interface SendRepository {
    */
   contarPorCampanha(tenantId: TenantId, campaignId: CampaignId): Promise<number>;
   /**
+   * Página de registros de envio de uma campanha — insumo do relatório por
+   * destinatário (§10). Consulta a partição da campanha (`SEND#`), então é uma
+   * Query paginada, não um Scan.
+   */
+  listarPorCampanha(
+    tenantId: TenantId,
+    campaignId: CampaignId,
+    cursor?: string,
+  ): Promise<Pagina<Envio>>;
+  /**
    * Todos os envios feitos a um contato — o insumo do dossiê de portabilidade.
    *
    * Consulta por contato, não por campanha: a pergunta do titular é "quais
@@ -375,6 +387,13 @@ export interface TemplateRepository {
    */
   salvarComVersao(template: Template, versao: VersaoTemplate): Promise<void>;
   salvarMeta(template: Template): Promise<void>;
+}
+
+export interface TipoEmailRepository {
+  buscarPorId(tenantId: TenantId, tipoEmailId: TipoEmailId): Promise<TipoEmail | null>;
+  listar(tenantId: TenantId): Promise<readonly TipoEmail[]>;
+  salvar(tipo: TipoEmail): Promise<void>;
+  excluir(tenantId: TenantId, tipoEmailId: TipoEmailId): Promise<void>;
 }
 
 export interface ListRepository {

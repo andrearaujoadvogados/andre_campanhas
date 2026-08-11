@@ -1,15 +1,39 @@
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
-import { ROTULO_STATUS_CAMPANHA, numero, percentual } from '../lib/formato.js';
+import { ROTULO_STATUS_CAMPANHA, dataHora, numero, percentual } from '../lib/formato.js';
 import {
+  Botao,
   Carregando,
   Cartao,
   ErroCaixa,
   Selo,
+  TabelaRolavel,
   TituloPagina,
+  Vazio,
+  classeEntrada,
   tomDoStatusCampanha,
 } from '../componentes/base.tsx';
+
+/** Rótulos de status de envio (StatusEnvio do domínio). */
+const ROTULO_STATUS_ENVIO: Readonly<Record<string, string>> = {
+  PENDENTE: 'Pendente',
+  ENVIADO: 'Enviado',
+  ENTREGUE: 'Entregue',
+  FALHOU: 'Falhou',
+  SUPRIMIDO: 'Suprimido',
+  CANCELADO: 'Cancelado',
+};
+
+interface DestinatarioRelatorio {
+  contactId: string;
+  nome: string | null;
+  email: string | null;
+  status: string;
+  enviadoEm: string | null;
+  falhaMotivo: string | null;
+}
 
 interface Relatorio {
   campaignId: string;
@@ -168,6 +192,116 @@ export function Relatorio() {
           ))}
         </dl>
       </Cartao>
+
+      <Cartao titulo="Por destinatário">
+        <TabelaDestinatarios id={r.campaignId} />
+      </Cartao>
+    </div>
+  );
+}
+
+/**
+ * Tabela por destinatário — §10.
+ *
+ * O status é o de entrega (enviado/entregue/falhou); abertura e clique por
+ * destinatário são eventos e ficam para o modelo de leitura de eventos (as taxas
+ * agregadas de abertura/clique estão nos cartões acima). Busca e filtro rodam no
+ * cliente sobre o que já foi carregado; "Carregar mais" traz a próxima página.
+ */
+function TabelaDestinatarios({ id }: { id: string }) {
+  const [busca, definirBusca] = useState('');
+  const [filtroStatus, definirFiltroStatus] = useState('');
+
+  const q = useInfiniteQuery({
+    queryKey: ['destinatarios', id],
+    initialPageParam: '',
+    queryFn: ({ pageParam }) =>
+      api.get<{ itens: DestinatarioRelatorio[]; cursor?: string }>(
+        `/relatorios/boletins/${id}/destinatarios${pageParam === '' ? '' : `?cursor=${encodeURIComponent(pageParam)}`}`,
+      ),
+    getNextPageParam: (ultima) => ultima.cursor,
+  });
+
+  if (q.isLoading) return <Carregando />;
+  if (q.error !== null) return <ErroCaixa erro={q.error} />;
+
+  const todos = (q.data?.pages ?? []).flatMap((p) => p.itens ?? []);
+  const buscaNorm = busca.trim().toLowerCase();
+  const itens = todos.filter(
+    (d) =>
+      (filtroStatus === '' || d.status === filtroStatus) &&
+      (buscaNorm === '' ||
+        (d.nome ?? '').toLowerCase().includes(buscaNorm) ||
+        (d.email ?? '').toLowerCase().includes(buscaNorm)),
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        <input
+          value={busca}
+          onChange={(e) => definirBusca(e.target.value)}
+          placeholder="Buscar por nome ou e-mail…"
+          className={`${classeEntrada} sm:max-w-xs`}
+        />
+        <select
+          value={filtroStatus}
+          onChange={(e) => definirFiltroStatus(e.target.value)}
+          className={`${classeEntrada} sm:max-w-xs`}
+        >
+          <option value="">Todos os status</option>
+          {Object.entries(ROTULO_STATUS_ENVIO).map(([v, rotulo]) => (
+            <option key={v} value={v}>
+              {rotulo}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {itens.length === 0 ? (
+        <Vazio mensagem="Nenhum registro de envio para este filtro." />
+      ) : (
+        <TabelaRolavel>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-line text-left text-ink-suave">
+                <th className="py-2 pr-3 font-medium">Contato</th>
+                <th className="py-2 pr-3 font-medium">Status</th>
+                <th className="py-2 pr-3 font-medium">Enviado em</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {itens.map((d) => (
+                <tr key={d.contactId}>
+                  <td className="py-2 pr-3">
+                    <span className="text-ink">{d.nome ?? d.email ?? d.contactId}</span>
+                    {d.nome !== null && d.email !== null && (
+                      <span className="block text-xs text-ink-suave">{d.email}</span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-3">
+                    <span className="text-ink">{ROTULO_STATUS_ENVIO[d.status] ?? d.status}</span>
+                    {d.falhaMotivo !== null && (
+                      <span className="block text-xs text-ink-suave">{d.falhaMotivo}</span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-3 text-ink-suave">{dataHora(d.enviadoEm)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TabelaRolavel>
+      )}
+
+      {q.hasNextPage === true && (
+        <Botao
+          variante="secundario"
+          carregando={q.isFetchingNextPage}
+          onClick={() => void q.fetchNextPage()}
+        >
+          Carregar mais
+        </Botao>
+      )}
     </div>
   );
 }

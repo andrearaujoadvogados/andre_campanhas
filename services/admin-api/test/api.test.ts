@@ -677,8 +677,21 @@ describe('editar e excluir campanha', () => {
     expect(await r.json()).toMatchObject({ code: 'CAMPANHA_NAO_EXCLUIVEL' });
   });
 
-  it('só ADMIN exclui', async () => {
+  it('operador também exclui — quem monta gerencia o próprio boletim', async () => {
+    // A trava de ADMIN caiu: excluir um boletim que não enviou nada não apaga
+    // prova nenhuma, e restringi-la a ADMIN só travava a limpeza da lista.
     estado.campanha = campanhaFalsa({ status: 'RASCUNHO' });
-    expect((await excluir(['operador'])).status).toBe(403);
+    estado.enviosDaCampanha = 0;
+    expect((await excluir(['operador'])).status).toBe(204);
+  });
+
+  it('duplica um boletim, criando um rascunho novo', async () => {
+    estado.campanha = campanhaFalsa({ status: 'CONCLUIDA', nome: 'Boletim de agosto' });
+    const r = await req('/boletins/k-1/duplicacao', { method: 'POST' }, evento());
+    const corpo = (await r.json()) as { status: string; nome: string };
+
+    expect(r.status).toBe(201);
+    expect(corpo.status).toBe('RASCUNHO');
+    expect(corpo.nome).toBe('Boletim de agosto (cópia)');
   });
 });

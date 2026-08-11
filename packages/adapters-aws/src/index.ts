@@ -15,6 +15,7 @@ export * from './repositories/dynamo-send-repository.js';
 export * from './repositories/dynamo-quota-e-circuito.js';
 export * from './repositories/dynamo-template-repository.js';
 export * from './repositories/dynamo-list-repository.js';
+export * from './repositories/dynamo-tipo-email-repository.js';
 export * from './repositories/dynamo-event-repository.js';
 
 export * from './email/ses-email-provider.js';

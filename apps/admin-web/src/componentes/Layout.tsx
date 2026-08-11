@@ -11,6 +11,7 @@ const SECOES = [
   { para: '/listas', rotulo: 'Listas' },
   { para: '/contatos', rotulo: 'Contatos' },
   { para: '/templates', rotulo: 'Modelos' },
+  { para: '/tipos', rotulo: 'Tipos' },
   // Só ADMIN. Esconder não é o controle — o controle é o `exigirPapel` da API —,
   // mas oferecer um link que devolve 403 é pior que não oferecer.
   { para: '/usuarios', rotulo: 'Usuários', somenteAdmin: true },

@@ -190,8 +190,19 @@ export type SalvarTemplateInput = z.infer<typeof salvarTemplateSchema>;
 
 // ── Campanha ─────────────────────────────────────────────────────────────────
 
+// ── Tipo de e-mail (catálogo gerenciável) ────────────────────────────────────
+
+export const salvarTipoEmailSchema = z.object({
+  nome: z.string().trim().min(1).max(60),
+});
+export type SalvarTipoEmailInput = z.infer<typeof salvarTipoEmailSchema>;
+
+// ── Campanha / Boletim ───────────────────────────────────────────────────────
+
 export const criarCampanhaSchema = z.object({
   nome: z.string().trim().min(1).max(200),
+  /** Referência ao tipo de e-mail (catálogo). Opcional. */
+  tipoEmailId: z.string().min(1).optional(),
   templateId: z.string().min(1),
   listId: z.string().min(1),
   remetenteNome: z.string().trim().min(1).max(100),
