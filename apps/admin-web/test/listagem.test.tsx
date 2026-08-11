@@ -13,7 +13,7 @@ vi.mock('../src/lib/api.js', () => ({
     get: async (caminho: string) => {
       caminhos.push(caminho);
       // A lista também busca o catálogo de tipos; vazio aqui mantém os testes
-      // focados na listagem de boletins.
+      // focados na listagem de campanhas.
       if (caminho.startsWith('/tipos')) return { itens: [] };
       return resposta;
     },
@@ -38,7 +38,7 @@ beforeEach(() => {
     itens: [
       {
         campaignId: 'k-1',
-        nome: 'Boletim de agosto',
+        nome: 'Campanha de agosto',
         status: 'CONCLUIDA',
         criadoEm: '2026-08-01T12:00:00Z',
       },
@@ -50,19 +50,19 @@ beforeEach(() => {
 describe('listagem de campanhas', () => {
   it('lista sem filtro por padrão', async () => {
     montar();
-    expect(await screen.findByText('Boletim de agosto')).toBeInTheDocument();
-    // Sem filtro por padrão: a chamada de boletins não leva `?status=`.
-    expect(caminhos.filter((c) => c.startsWith('/boletins'))).toEqual(['/boletins']);
+    expect(await screen.findByText('Campanha de agosto')).toBeInTheDocument();
+    // Sem filtro por padrão: a chamada de campanhas não leva `?status=`.
+    expect(caminhos.filter((c) => c.startsWith('/campanhas'))).toEqual(['/campanhas']);
   });
 
   it('filtrar por situação passa o status para a API', async () => {
     // Com filtro, a consulta cai numa partição só do GSI3 e pagina de verdade.
     montar();
-    await screen.findByText('Boletim de agosto');
+    await screen.findByText('Campanha de agosto');
 
     await userEvent.click(screen.getByRole('button', { name: 'Enviando' }));
 
-    expect(caminhos).toContain('/boletins?status=ENVIANDO');
+    expect(caminhos).toContain('/campanhas?status=ENVIANDO');
   });
 
   it('mostra o aviso de truncamento em vez de esconder campanhas', async () => {
@@ -83,7 +83,7 @@ describe('listagem de campanhas', () => {
 
   it('sem truncamento, não mostra aviso', async () => {
     montar();
-    await screen.findByText('Boletim de agosto');
+    await screen.findByText('Campanha de agosto');
     expect(screen.queryByRole('status')).toBeNull();
   });
 
@@ -91,10 +91,10 @@ describe('listagem de campanhas', () => {
     resposta = { itens: [], truncado: false };
     montar();
 
-    expect(await screen.findByText(/nenhum boletim criado ainda/i)).toBeInTheDocument();
+    expect(await screen.findByText(/nenhuma campanha criada ainda/i)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Pausada' }));
-    expect(await screen.findByText(/nenhum boletim para este filtro/i)).toBeInTheDocument();
+    expect(await screen.findByText(/nenhuma campanha para este filtro/i)).toBeInTheDocument();
   });
 
   it('mostra a data de agendamento quando existe, em vez da criação', async () => {

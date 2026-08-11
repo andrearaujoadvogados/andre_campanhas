@@ -41,8 +41,8 @@ export function App() {
           <Route element={<Layout usuario={usuario} />}>
             {/* A raiz passa a ser a visão geral — é para onde o logo leva. */}
             <Route index element={<Dashboard />} />
-            <Route path="/boletins" element={<Campanhas />} />
-            <Route path="/boletins/:id" element={<CampanhaDetalhe usuario={usuario} />} />
+            <Route path="/campanhas" element={<Campanhas />} />
+            <Route path="/campanhas/:id" element={<CampanhaDetalhe usuario={usuario} />} />
             <Route path="/listas" element={<Listas />} />
             <Route path="/listas/:id" element={<ListaDetalhe />} />
             <Route path="/contatos" element={<Contatos usuario={usuario} />} />
@@ -54,7 +54,7 @@ export function App() {
             <Route path="/tipos" element={<Tipos />} />
             <Route path="/relatorios/:id" element={<Relatorio />} />
             <Route path="/usuarios" element={<Usuarios usuario={usuario} />} />
-            <Route path="*" element={<Navigate to="/boletins" replace />} />
+            <Route path="*" element={<Navigate to="/campanhas" replace />} />
           </Route>
         </Routes>
       </BrowserRouter>

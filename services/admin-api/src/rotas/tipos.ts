@@ -92,8 +92,8 @@ rotasTipos.patch('/:id', validarCorpo(salvarTipoEmailSchema), async (c) => {
 });
 
 /**
- * Excluir um tipo não toca nos boletins que o usavam: eles guardam o
- * `tipoEmailId`, e a interface passa a mostrá-los como "sem tipo". Apagar o
+ * Excluir um tipo não toca nas campanhas que o usavam: elas guardam o
+ * `tipoEmailId`, e a interface passa a mostrá-las como "sem tipo". Apagar o
  * catálogo nunca apaga histórico.
  */
 rotasTipos.delete('/:id', async (c) => {

@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { Dashboard } from '../src/paginas/Dashboard.tsx';
 
 const chamadas: string[] = [];
-let boletins: Record<string, unknown>[] = [];
+let campanhas: Record<string, unknown>[] = [];
 let listas: Record<string, unknown>[] = [];
 let resumo: Record<string, unknown> = {};
 
@@ -13,7 +13,7 @@ vi.mock('../src/lib/api.js', () => ({
   api: {
     get: async (caminho: string) => {
       chamadas.push(caminho);
-      if (caminho.startsWith('/boletins')) return { itens: boletins, truncado: false };
+      if (caminho.startsWith('/campanhas')) return { itens: campanhas, truncado: false };
       if (caminho.startsWith('/listas')) return { itens: listas };
       return resumo;
     },
@@ -21,10 +21,10 @@ vi.mock('../src/lib/api.js', () => ({
   FalhaApi: class extends Error {},
 }));
 
-function boletim(over: Record<string, unknown> = {}) {
+function campanha(over: Record<string, unknown> = {}) {
   return {
     campaignId: 'k-1',
-    nome: 'Boletim de agosto',
+    nome: 'Campanha de agosto',
     status: 'RASCUNHO',
     criadoEm: '2026-08-10T12:00:00Z',
     ...over,
@@ -44,7 +44,7 @@ function montar() {
 
 beforeEach(() => {
   chamadas.length = 0;
-  boletins = [];
+  campanhas = [];
   listas = [{ listId: 'l-1', nome: 'Clientes', totalContatosAproximado: 42 }];
   resumo = {
     campanhasAgregadas: 1,
@@ -56,11 +56,11 @@ beforeEach(() => {
 
 describe('contagens por estado', () => {
   it('conta rascunhos, agendados e enviando', async () => {
-    boletins = [
-      boletim({ campaignId: 'k-1', status: 'RASCUNHO' }),
-      boletim({ campaignId: 'k-2', status: 'RASCUNHO' }),
-      boletim({ campaignId: 'k-3', status: 'AGENDADA', agendadaPara: '2026-09-01T09:00:00Z' }),
-      boletim({ campaignId: 'k-4', status: 'ENVIANDO', processados: 3, totalDestinatarios: 5 }),
+    campanhas = [
+      campanha({ campaignId: 'k-1', status: 'RASCUNHO' }),
+      campanha({ campaignId: 'k-2', status: 'RASCUNHO' }),
+      campanha({ campaignId: 'k-3', status: 'AGENDADA', agendadaPara: '2026-09-01T09:00:00Z' }),
+      campanha({ campaignId: 'k-4', status: 'ENVIANDO', processados: 3, totalDestinatarios: 5 }),
     ];
     montar();
 
@@ -83,7 +83,7 @@ describe('contagens por estado', () => {
 
 describe('o bloco de atenção só aparece quando há motivo', () => {
   it('fica fora da tela quando está tudo em ordem', async () => {
-    boletins = [boletim({ status: 'RASCUNHO' })];
+    campanhas = [campanha({ status: 'RASCUNHO' })];
     montar();
 
     await screen.findByText('Rascunhos');
@@ -100,10 +100,10 @@ describe('o bloco de atenção só aparece quando há motivo', () => {
   });
 
   it('denuncia disparo travado — enviando sem ninguém processado', async () => {
-    boletins = [
-      boletim({
+    campanhas = [
+      campanha({
         status: 'ENVIANDO',
-        nome: 'Boletim travado',
+        nome: 'Campanha travada',
         processados: 0,
         totalDestinatarios: 2,
       }),
@@ -114,7 +114,7 @@ describe('o bloco de atenção só aparece quando há motivo', () => {
   });
 
   it('não denuncia quando o envio está andando', async () => {
-    boletins = [boletim({ status: 'ENVIANDO', processados: 2, totalDestinatarios: 5 })];
+    campanhas = [campanha({ status: 'ENVIANDO', processados: 2, totalDestinatarios: 5 })];
     montar();
 
     await screen.findByText('Rascunhos');
@@ -122,7 +122,7 @@ describe('o bloco de atenção só aparece quando há motivo', () => {
   });
 
   it('mostra o aviso de risco que vem do domínio', async () => {
-    boletins = [boletim({ status: 'CONCLUIDA' })];
+    campanhas = [campanha({ status: 'CONCLUIDA' })];
     resumo = {
       ...resumo,
       risco: {
@@ -142,9 +142,9 @@ describe('desempenho agregado', () => {
   it('não pede o resumo quando nada foi disparado', async () => {
     // A rota exige ids e devolveria 400 com a lista vazia. Além disso, quatro
     // zeros pareceriam fracasso onde houve apenas nenhum envio.
-    boletins = [
-      boletim({ status: 'RASCUNHO' }),
-      boletim({ campaignId: 'k-2', status: 'AGENDADA' }),
+    campanhas = [
+      campanha({ status: 'RASCUNHO' }),
+      campanha({ campaignId: 'k-2', status: 'AGENDADA' }),
     ];
     montar();
 
@@ -153,11 +153,11 @@ describe('desempenho agregado', () => {
     expect(screen.queryByText(/^Entrega$/)).toBeNull();
   });
 
-  it('agrega só os boletins que já produziram métrica', async () => {
-    boletins = [
-      boletim({ campaignId: 'k-1', status: 'RASCUNHO' }),
-      boletim({ campaignId: 'k-2', status: 'CONCLUIDA' }),
-      boletim({ campaignId: 'k-3', status: 'ENVIANDO' }),
+  it('agrega só as campanhas que já produziram métrica', async () => {
+    campanhas = [
+      campanha({ campaignId: 'k-1', status: 'RASCUNHO' }),
+      campanha({ campaignId: 'k-2', status: 'CONCLUIDA' }),
+      campanha({ campaignId: 'k-3', status: 'ENVIANDO' }),
     ];
     montar();
 
@@ -169,7 +169,7 @@ describe('desempenho agregado', () => {
   });
 
   it('mostra as taxas com a base de cálculo ao lado', async () => {
-    boletins = [boletim({ status: 'CONCLUIDA' })];
+    campanhas = [campanha({ status: 'CONCLUIDA' })];
     montar();
 
     // Uma casa decimal e vírgula: o formatador é pt-BR de propósito, porque
@@ -180,7 +180,7 @@ describe('desempenho agregado', () => {
   });
 
   it('marca o bounce quando passa do limiar', async () => {
-    boletins = [boletim({ status: 'CONCLUIDA' })];
+    campanhas = [campanha({ status: 'CONCLUIDA' })];
     resumo = {
       ...resumo,
       taxas: { entrega: 0.8, abertura: 0.1, clique: 0.01, bounceHard: 0.12 },
@@ -192,23 +192,23 @@ describe('desempenho agregado', () => {
   });
 });
 
-describe('boletins recentes', () => {
+describe('campanhas recentes', () => {
   it('lista os mais novos primeiro, com link para o detalhe', async () => {
-    boletins = [
-      boletim({ campaignId: 'k-antigo', nome: 'Antigo', criadoEm: '2026-08-01T12:00:00Z' }),
-      boletim({ campaignId: 'k-novo', nome: 'Novo', criadoEm: '2026-08-10T12:00:00Z' }),
+    campanhas = [
+      campanha({ campaignId: 'k-antigo', nome: 'Antigo', criadoEm: '2026-08-01T12:00:00Z' }),
+      campanha({ campaignId: 'k-novo', nome: 'Novo', criadoEm: '2026-08-10T12:00:00Z' }),
     ];
     montar();
 
     const links = await screen.findAllByRole('link');
     const nomes = links.map((l) => l.textContent);
     expect(nomes.indexOf('Novo')).toBeLessThan(nomes.indexOf('Antigo'));
-    expect(screen.getByRole('link', { name: 'Novo' })).toHaveAttribute('href', '/boletins/k-novo');
+    expect(screen.getByRole('link', { name: 'Novo' })).toHaveAttribute('href', '/campanhas/k-novo');
   });
 
   it('diz quando não há nenhum', async () => {
-    boletins = [];
+    campanhas = [];
     montar();
-    expect(await screen.findByText(/nenhum boletim criado ainda/i)).toBeInTheDocument();
+    expect(await screen.findByText(/nenhuma campanha criada ainda/i)).toBeInTheDocument();
   });
 });

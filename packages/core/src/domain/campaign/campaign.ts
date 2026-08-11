@@ -42,9 +42,9 @@ export interface Campaign {
   readonly remetenteEmail: string;
   readonly replyTo?: string;
   /**
-   * Assunto próprio do boletim — §8. Quando presente, sobrepõe o assunto do
+   * Assunto próprio da campanha — §8. Quando presente, sobrepõe o assunto do
    * modelo no envio: o mesmo modelo pode sair com assuntos diferentes a cada
-   * boletim. Ausente = usa o assunto do modelo.
+   * campanha. Ausente = usa o assunto do modelo.
    */
   readonly assunto?: string;
   /**

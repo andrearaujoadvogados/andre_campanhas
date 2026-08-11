@@ -7,7 +7,7 @@ const SECOES = [
   // `end` porque a raiz casaria com todas as rotas: sem isso, "Visão geral"
   // ficaria marcado como seção atual em qualquer tela do painel.
   { para: '/', rotulo: 'Visão geral', end: true },
-  { para: '/boletins', rotulo: 'Boletins' },
+  { para: '/campanhas', rotulo: 'Campanhas' },
   { para: '/listas', rotulo: 'Listas' },
   { para: '/contatos', rotulo: 'Contatos' },
   { para: '/templates', rotulo: 'Modelos' },
@@ -25,8 +25,8 @@ const classeLink = ({ isActive }: { isActive: boolean }): string =>
 /**
  * O logo é o caminho de volta ao início — convenção que ninguém precisa aprender.
  *
- * Aponta para `/`, não para `/boletins`: a rota raiz decide qual é a tela
- * inicial, e se um dia ela deixar de ser a lista de boletins, este link não
+ * Aponta para `/`, não para `/campanhas`: a rota raiz decide qual é a tela
+ * inicial, e se um dia ela deixar de ser a lista de campanhas, este link não
  * precisa saber. O `aria-label` existe porque o conteúdo do link é uma imagem,
  * e "André Araújo Advogados" sozinho não diria a quem usa leitor de tela que
  * clicar leva para algum lugar.

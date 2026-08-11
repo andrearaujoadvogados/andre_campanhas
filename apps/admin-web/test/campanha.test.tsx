@@ -32,7 +32,7 @@ vi.mock('../src/lib/api.js', () => ({
 function campanha(over: Partial<Campanha> = {}): Campanha {
   return {
     campaignId: 'k-1',
-    nome: 'Boletim tributário',
+    nome: 'Campanha tributário',
     status: 'RASCUNHO',
     templateId: 't-1',
     templateVersao: 2,
@@ -63,9 +63,9 @@ function montar(usuario: Usuario) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/boletins/k-1']}>
+      <MemoryRouter initialEntries={['/campanhas/k-1']}>
         <Routes>
-          <Route path="/boletins/:id" element={<CampanhaDetalhe usuario={usuario} />} />
+          <Route path="/campanhas/:id" element={<CampanhaDetalhe usuario={usuario} />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -144,7 +144,7 @@ describe('ações disponíveis por estado', () => {
     montar(OPERADOR);
 
     await screen.findByRole('button', { name: /pausar/i });
-    expect(screen.queryByRole('button', { name: /cancelar boletim/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /cancelar campanha/i })).toBeNull();
   });
 
   it('campanha concluída não oferece ação destrutiva', async () => {
@@ -152,7 +152,7 @@ describe('ações disponíveis por estado', () => {
     montar(ADMIN);
 
     await screen.findByText(/concluída/i);
-    expect(screen.queryByRole('button', { name: /cancelar boletim/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /cancelar campanha/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /pausar/i })).toBeNull();
   });
 });
@@ -162,7 +162,7 @@ describe('gestão da campanha na tela', () => {
     campanhaAtual = campanha({ status: 'RASCUNHO' });
     montar(ADMIN);
 
-    expect(await screen.findByRole('button', { name: /editar boletim/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /editar campanha/i })).toBeInTheDocument();
   });
 
   it('não oferece editar depois do disparo', async () => {
@@ -171,35 +171,35 @@ describe('gestão da campanha na tela', () => {
     campanhaAtual = campanha({ status: 'ENVIANDO' });
     montar(ADMIN);
 
-    await screen.findByText(/boletim tributário/i);
-    expect(screen.queryByRole('button', { name: /editar boletim/i })).toBeNull();
+    await screen.findByText(/campanha tributário/i);
+    expect(screen.queryByRole('button', { name: /editar campanha/i })).toBeNull();
   });
 
-  it('oferece excluir para boletim antigo que não está enviando', async () => {
+  it('oferece excluir para campanha antiga que não está enviando', async () => {
     // A regra deixou de ser "só rascunho": o que trava a exclusão é haver
     // registro de envio, e isso só o backend sabe. Esconder o botão fazia parecer
-    // que boletim cancelado nunca sai da lista.
+    // que campanha cancelado nunca sai da lista.
     campanhaAtual = campanha({ status: 'CANCELADA' });
     montar(ADMIN);
 
-    expect(await screen.findByRole('button', { name: /excluir boletim/i })).toBeEnabled();
+    expect(await screen.findByRole('button', { name: /excluir campanha/i })).toBeEnabled();
   });
 
   it('não oferece excluir enquanto está enviando', async () => {
     campanhaAtual = campanha({ status: 'ENVIANDO' });
     montar(ADMIN);
 
-    await screen.findByText(/boletim tributário/i);
+    await screen.findByText(/campanha tributário/i);
     expect(screen.queryByRole('button', { name: /excluir/i })).toBeNull();
   });
 
   it('operador também vê o botão de excluir — a trava de ADMIN caiu', async () => {
-    // Excluir um boletim que não enviou nada não apaga prova; quem monta
-    // gerencia o próprio boletim. O backend ainda recusa os que já enviaram.
+    // Excluir uma campanha que não enviou nada não apaga prova; quem monta
+    // gerencia o própria campanha. O backend ainda recusa os que já enviaram.
     campanhaAtual = campanha({ status: 'RASCUNHO' });
     montar(OPERADOR);
 
-    expect(await screen.findByRole('button', { name: /excluir boletim/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /excluir campanha/i })).toBeInTheDocument();
   });
 });
 
@@ -225,7 +225,7 @@ describe('progresso do envio', () => {
     campanhaAtual = campanha({ status: 'RASCUNHO' });
     montar(ADMIN);
 
-    await screen.findByText(/boletim tributário/i);
+    await screen.findByText(/campanha tributário/i);
     expect(screen.queryByText(/processados/i)).toBeNull();
   });
 });

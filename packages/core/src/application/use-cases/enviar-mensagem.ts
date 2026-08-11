@@ -144,7 +144,7 @@ export async function enviarMensagem(
   });
   const urlDescadastro = `${entrada.baseUrlDescadastro}?t=${encodeURIComponent(token)}`;
 
-  // Assunto próprio do boletim sobrepõe o do modelo (§8). Ausente = usa o do
+  // Assunto próprio da campanha sobrepõe o do modelo (§8). Ausente = usa o do
   // modelo. O corpo continua vindo do modelo (o Criador de e-mails vive lá).
   //
   // Spread em vez de objeto novo: montar `{ assunto, corpoHtml }` à mão faria

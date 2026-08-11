@@ -19,7 +19,7 @@ interface TipoEmail {
 
 /**
  * Gestão dos tipos de e-mail — o catálogo que alimenta o seletor de tipo do
- * boletim e o filtro da listagem. "Boletim" é semeado pelo backend; daqui o
+ * campanha e o filtro da listagem. "Boletim" é semeado pelo backend; daqui o
  * usuário cria, renomeia e remove os demais.
  */
 export function Tipos() {
@@ -59,11 +59,11 @@ export function Tipos() {
 
   return (
     <div className="space-y-6">
-      <TituloPagina>Tipos de e-mail</TituloPagina>
+      <TituloPagina>Tipos de campanha</TituloPagina>
 
       <Cartao titulo="Novo tipo">
         <p className="mb-3 text-sm text-ink-suave">
-          Cada boletim escolhe um tipo (Boletim, Comunicado, Convite…). Serve para organizar e
+          Cada campanha escolhe um tipo (Boletim, Comunicado, Convite…). Serve para organizar e
           filtrar os envios.
         </p>
         <div className="flex flex-wrap items-end gap-2">
@@ -134,7 +134,7 @@ export function Tipos() {
                     onClick={() => {
                       if (
                         window.confirm(
-                          `Excluir o tipo "${t.nome}"? Os boletins que o usavam continuam existindo, sem tipo.`,
+                          `Excluir o tipo "${t.nome}"? As campanhas que o usavam continuam existindo, sem tipo.`,
                         )
                       )
                         excluir.mutate(t.tipoEmailId);

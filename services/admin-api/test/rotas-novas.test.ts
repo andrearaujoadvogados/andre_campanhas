@@ -87,7 +87,7 @@ function templateFalso(): Template {
   return {
     tenantId: TENANT_PADRAO,
     templateId: templateId('t-1'),
-    nome: 'Boletim',
+    nome: 'Campanha',
     versaoAtual: 3,
     arquivado: false,
     criadoPor: userId('u-1'),
@@ -265,7 +265,7 @@ const json = (corpo: unknown, metodo = 'POST'): RequestInit => ({
 // ── Templates ────────────────────────────────────────────────────────────────
 
 describe('templates — versões imutáveis (§6.2, nota 3)', () => {
-  const conteudo = { nome: 'Boletim', assunto: 'Olá', corpoHtml: '<p>oi</p>' };
+  const conteudo = { nome: 'Campanha', assunto: 'Olá', corpoHtml: '<p>oi</p>' };
 
   it('criar começa na versão 1', async () => {
     const r = await req('/templates', json(conteudo));
@@ -566,7 +566,7 @@ describe('relatórios', () => {
     estado.campanha = {
       tenantId: TENANT_PADRAO,
       campaignId: campaignId('k-1'),
-      nome: 'Boletim',
+      nome: 'Campanha',
       templateId: templateId('t-1'),
       templateVersao: 1,
       listId: listId('l-1'),
@@ -581,7 +581,7 @@ describe('relatórios', () => {
   it('devolve contadores, taxas e risco juntos', async () => {
     estado.contadores = { enviados: 1000, entregues: 950, aberturasUnicas: 380, bouncesHard: 50 };
 
-    const corpo = (await (await req('/relatorios/boletins/k-1')).json()) as {
+    const corpo = (await (await req('/relatorios/campanhas/k-1')).json()) as {
       taxas: { abertura: number; bounceHard: number };
       risco: { nivel: string; avisos: string[] };
     };
@@ -595,7 +595,7 @@ describe('relatórios', () => {
 
   it('explica a base de cada taxa', async () => {
     // Sem isso, "abertura 42%" não diz se é sobre enviados ou entregues.
-    const corpo = (await (await req('/relatorios/boletins/k-1')).json()) as {
+    const corpo = (await (await req('/relatorios/campanhas/k-1')).json()) as {
       baseDeCalculo: Record<string, string>;
     };
 
@@ -604,7 +604,7 @@ describe('relatórios', () => {
   });
 
   it('campanha sem eventos devolve tudo zerado, não erro', async () => {
-    const corpo = (await (await req('/relatorios/boletins/k-1')).json()) as {
+    const corpo = (await (await req('/relatorios/campanhas/k-1')).json()) as {
       contadores: { enviados: number };
       taxas: { entrega: number };
     };
@@ -615,7 +615,7 @@ describe('relatórios', () => {
 
   it('404 para campanha inexistente', async () => {
     estado.campanha = null;
-    expect((await req('/relatorios/boletins/k-999')).status).toBe(404);
+    expect((await req('/relatorios/campanhas/k-999')).status).toBe(404);
   });
 
   it('resumo exige a lista de campanhas — não varre a base', async () => {
@@ -645,7 +645,7 @@ describe('relatórios', () => {
     expect(corpo.reclamacao.atencao).toBe(0.001);
   });
 
-  it('lista os destinatários de um boletim — contato, status de entrega e enviado em', async () => {
+  it('lista os destinatários de uma campanha — contato, status de entrega e enviado em', async () => {
     estado.contatoParaExportar = contatoFalso();
     estado.enviosDaCampanha = [
       {
@@ -655,7 +655,7 @@ describe('relatórios', () => {
       } as unknown as Envio,
     ];
 
-    const corpo = (await (await req('/relatorios/boletins/k-1/destinatarios')).json()) as {
+    const corpo = (await (await req('/relatorios/campanhas/k-1/destinatarios')).json()) as {
       itens: { status: string; email: string | null }[];
     };
 

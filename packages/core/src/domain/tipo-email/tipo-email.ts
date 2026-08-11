@@ -4,7 +4,7 @@ import type { TenantId, TipoEmailId, UserId } from '../shared/ids.js';
  * Tipo de e-mail — a taxonomia que o escritório gerencia (Boletim, Comunicado,
  * Convite…). "Boletim" é um dos tipos, não o nome do item.
  *
- * É um catálogo por tenant, com CRUD próprio. O boletim guarda o `tipoEmailId`;
+ * É um catálogo por tenant, com CRUD próprio. A campanha guarda o `tipoEmailId`;
  * a interface resolve o nome pelo catálogo, então renomear um tipo reflete em
  * todos os e-mails que o usam, sem tocar em cada um.
  */

@@ -341,7 +341,7 @@ export function ListaDetalhe() {
               <div className="mt-4">
                 <Aviso
                   tom="alerta"
-                  texto="Nenhum contato desta lista está apto a receber. Classifique o vínculo dos contatos antes de criar o boletim."
+                  texto="Nenhum contato desta lista está apto a receber. Classifique o vínculo dos contatos antes de criar a campanha."
                 />
               </div>
             )}
@@ -384,7 +384,7 @@ export function ListaDetalhe() {
            */}
           <Campo
             rotulo="Vínculo com o escritório"
-            ajuda="Descreve a relação com o escritório. Ajuda a segmentar os boletins."
+            ajuda="Descreve a relação com o escritório. Ajuda a segmentar as campanhas."
             obrigatorio
             erro={erros['relacionamento']}
           >

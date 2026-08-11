@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import { AssistenteBoletim } from '../src/componentes/AssistenteBoletim.tsx';
+import { AssistenteCampanha } from '../src/componentes/AssistenteCampanha.tsx';
 
 const posts: { caminho: string; corpo: unknown }[] = [];
 
@@ -11,7 +11,7 @@ vi.mock('../src/lib/api.js', () => ({
   api: {
     get: async (caminho: string) =>
       caminho.startsWith('/templates')
-        ? { itens: [{ templateId: 't-1', nome: 'Boletim tributário', categoria: 'Novidade' }] }
+        ? { itens: [{ templateId: 't-1', nome: 'Campanha tributário', categoria: 'Novidade' }] }
         : { itens: [{ listId: 'l-1', nome: 'Clientes', totalContatos: 42 }] },
     post: async (caminho: string, corpo: unknown) => {
       posts.push({ caminho, corpo });
@@ -49,7 +49,7 @@ function montar() {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
-        <AssistenteBoletim aoCancelar={() => {}} />
+        <AssistenteCampanha aoCancelar={() => {}} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -59,7 +59,7 @@ beforeEach(() => {
   posts.length = 0;
 });
 
-describe('assistente de boletim — wizard de 4 etapas', () => {
+describe('assistente de campanha — wizard de 4 etapas', () => {
   it('não avança do passo 1 sem nome', async () => {
     montar();
     // "Avançar" começa desabilitado: falta o nome.
@@ -71,8 +71,8 @@ describe('assistente de boletim — wizard de 4 etapas', () => {
 
     // Passo 1 tem Nome e Assunto; mira o campo Nome pelo nome acessível.
     await userEvent.type(
-      screen.getByRole('textbox', { name: /nome do boletim/i }),
-      'Boletim de agosto',
+      screen.getByRole('textbox', { name: /nome da campanha/i }),
+      'Campanha de agosto',
     );
     await userEvent.click(screen.getByRole('button', { name: /avançar/i }));
 
@@ -92,9 +92,9 @@ describe('assistente de boletim — wizard de 4 etapas', () => {
 
     await waitFor(() => {
       expect(posts).toContainEqual({
-        caminho: '/boletins',
+        caminho: '/campanhas',
         corpo: expect.objectContaining({
-          nome: 'Boletim de agosto',
+          nome: 'Campanha de agosto',
           templateId: 't-1',
           listId: 'l-1',
         }),
@@ -111,8 +111,8 @@ describe('e-mail de teste — o motivo da falha aparece na tela', () => {
     // saber o que corrigir.
     montar();
     await userEvent.type(
-      screen.getByRole('textbox', { name: /nome do boletim/i }),
-      'Boletim de agosto',
+      screen.getByRole('textbox', { name: /nome da campanha/i }),
+      'Campanha de agosto',
     );
     await userEvent.click(screen.getByRole('button', { name: /avançar/i }));
     await userEvent.click(await screen.findByRole('radio'));
@@ -136,8 +136,8 @@ describe('seleção vazia trava o disparo', () => {
   async function ateOsDestinatarios() {
     montar();
     await userEvent.type(
-      screen.getByRole('textbox', { name: /nome do boletim/i }),
-      'Boletim de agosto',
+      screen.getByRole('textbox', { name: /nome da campanha/i }),
+      'Campanha de agosto',
     );
     await userEvent.click(screen.getByRole('button', { name: /avançar/i }));
     await userEvent.click(await screen.findByRole('radio'));
@@ -172,7 +172,7 @@ describe('seleção vazia trava o disparo', () => {
 
     // Ninguém desmarcado: o campo some do corpo, e ausente significa "todos".
     await waitFor(() => {
-      const criacao = posts.find((p) => p.caminho === '/boletins');
+      const criacao = posts.find((p) => p.caminho === '/campanhas');
       expect(criacao?.corpo).not.toHaveProperty('destinatariosSelecionados');
     });
   });
@@ -186,7 +186,7 @@ describe('seleção vazia trava o disparo', () => {
     await userEvent.click(screen.getByRole('button', { name: /salvar rascunho/i }));
 
     await waitFor(() => {
-      const criacao = posts.find((p) => p.caminho === '/boletins');
+      const criacao = posts.find((p) => p.caminho === '/campanhas');
       expect(criacao?.corpo).toMatchObject({ destinatariosSelecionados: ['c-2'] });
     });
   });

@@ -21,12 +21,12 @@ const OPERADOR: Usuario = {
   papeis: ['OPERADOR'],
 };
 
-function montar(usuario: Usuario, rota = '/boletins') {
+function montar(usuario: Usuario, rota = '/campanhas') {
   return render(
     <MemoryRouter initialEntries={[rota]}>
       <Routes>
         <Route element={<Layout usuario={usuario} />}>
-          <Route path="/boletins" element={<p>conteúdo dos boletins</p>} />
+          <Route path="/campanhas" element={<p>conteúdo das campanhas</p>} />
           <Route path="/contatos" element={<p>conteúdo dos contatos</p>} />
         </Route>
       </Routes>
@@ -45,13 +45,13 @@ describe('logo do escritório', () => {
     for (const l of links) expect(l).toHaveAttribute('href', '/');
   });
 
-  it('aponta para a raiz, não para /boletins', () => {
+  it('aponta para a raiz, não para /campanhas', () => {
     // A rota raiz é quem decide qual é a tela inicial. Se um dia deixar de ser a
-    // lista de boletins, o logo não precisa ser tocado.
+    // lista de campanhas, o logo não precisa ser tocado.
     montar(ADMIN);
 
     for (const l of screen.getAllByRole('link', { name: /andré araújo advogados/i })) {
-      expect(l.getAttribute('href')).not.toBe('/boletins');
+      expect(l.getAttribute('href')).not.toBe('/campanhas');
     }
   });
 
@@ -68,7 +68,7 @@ describe('navegação lateral', () => {
     montar(ADMIN);
     const barras = screen.getAllByRole('navigation', { name: /seções do painel/i });
 
-    for (const rotulo of ['Boletins', 'Listas', 'Contatos', 'Modelos']) {
+    for (const rotulo of ['Campanhas', 'Listas', 'Contatos', 'Modelos']) {
       expect(within(barras[0] as HTMLElement).getByRole('link', { name: rotulo })).toBeVisible();
     }
   });

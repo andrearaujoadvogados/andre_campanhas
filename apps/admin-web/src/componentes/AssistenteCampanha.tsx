@@ -5,22 +5,22 @@ import { FalhaApi, api, type ComAviso } from '../lib/api.js';
 import { Aviso, Botao, Campo, ErroCaixa, classeEntrada } from './base.tsx';
 
 /**
- * Assistente de criação de boletim — §8 do briefing, versão desburocratizada.
+ * Assistente de criação de campanha — §8 do briefing, versão desburocratizada.
  *
  * Quatro passos: Configurar → E-mail → Destinatários → Revisar. Sem etapa de
  * aprovação: quem monta é quem dispara; o último passo é só resumo + teste.
  *
  * Decisões de produto (2026-08-09): a seleção de **lista é obrigatória** e o
  * **remetente vem fixo** (padrão do escritório), oculto atrás de "opções
- * avançadas" — um campo a menos por boletim. O conteúdo em si é o do Modelo
+ * avançadas" — um campo a menos por campanha. O conteúdo em si é o do Modelo
  * escolhido (o Criador de e-mails vive lá); assunto/preheader próprios do
- * boletim entram numa etapa seguinte de backend.
+ * campanha entram numa etapa seguinte de backend.
  */
 
 const REMETENTE_PADRAO_NOME = 'André Araújo Advogados';
-const REMETENTE_PADRAO_EMAIL = 'boletins@mail.andrearaujoadvogados.com.br';
+const REMETENTE_PADRAO_EMAIL = 'campanhas@mail.andrearaujoadvogados.com.br';
 
-interface DadosBoletim {
+interface DadosAssistente {
   nome: string;
   tipoEmailId: string;
   assunto: string;
@@ -32,7 +32,7 @@ interface DadosBoletim {
   agendarPara: string;
 }
 
-const INICIAL: DadosBoletim = {
+const INICIAL: DadosAssistente = {
   nome: '',
   tipoEmailId: '',
   assunto: '',
@@ -53,15 +53,15 @@ interface DestinatarioPrevia {
 
 const PASSOS = ['Configurar', 'E-mail', 'Destinatários', 'Revisar'] as const;
 
-interface RespostaBoletim extends ComAviso {
+interface RespostaCampanha extends ComAviso {
   campaignId: string;
 }
 
-export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
+export function AssistenteCampanha({ aoCancelar }: { aoCancelar: () => void }) {
   const qc = useQueryClient();
   const navegar = useNavigate();
   const [passo, definirPasso] = useState(0);
-  const [dados, definirDados] = useState<DadosBoletim>(INICIAL);
+  const [dados, definirDados] = useState<DadosAssistente>(INICIAL);
   const [campaignId, definirCampaignId] = useState<string | null>(null);
   const [avancado, definirAvancado] = useState(false);
   const [testeTexto, definirTesteTexto] = useState('');
@@ -108,7 +108,7 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
     enabled: passo === 2 && dados.listId !== '',
     queryFn: () =>
       api.post<{ total: number; destinatarios: DestinatarioPrevia[] }>(
-        '/boletins/audiencia-previa',
+        '/campanhas/audiencia-previa',
         {
           listId: dados.listId,
           tagsFiltro,
@@ -129,7 +129,7 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
       (d.empresa ?? '').toLowerCase().includes(buscaNorm),
   );
 
-  const definir = <K extends keyof DadosBoletim>(chave: K, v: DadosBoletim[K]) =>
+  const definir = <K extends keyof DadosAssistente>(chave: K, v: DadosAssistente[K]) =>
     definirDados((d) => ({ ...d, [chave]: v }));
 
   const corpoParaSalvar = () => ({
@@ -150,11 +150,11 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
   const salvarRascunho = useMutation({
     mutationFn: async (): Promise<string> => {
       if (campaignId === null) {
-        const r = await api.post<RespostaBoletim>('/boletins', corpoParaSalvar());
+        const r = await api.post<RespostaCampanha>('/campanhas', corpoParaSalvar());
         definirCampaignId(r.campaignId);
         return r.campaignId;
       }
-      await api.patch<RespostaBoletim>(`/boletins/${campaignId}`, corpoParaSalvar());
+      await api.patch<RespostaCampanha>(`/campanhas/${campaignId}`, corpoParaSalvar());
       return campaignId;
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['campanhas'] }),
@@ -168,7 +168,7 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
         .map((e) => e.trim())
         .filter((e) => e !== '');
       return api.post<{ enviados: number; falhas: { email: string; motivo: string }[] } & ComAviso>(
-        `/boletins/${id}/teste`,
+        `/campanhas/${id}/teste`,
         { destinatarios },
       );
     },
@@ -182,15 +182,15 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
     mutationFn: async () => {
       const id = await salvarRascunho.mutateAsync();
       if (dados.agendarPara !== '') {
-        return api.post<RespostaBoletim>(`/boletins/${id}/agendamento`, {
+        return api.post<RespostaCampanha>(`/campanhas/${id}/agendamento`, {
           agendadaPara: new Date(dados.agendarPara).toISOString(),
         });
       }
-      return api.post<RespostaBoletim>(`/boletins/${id}/disparo`);
+      return api.post<RespostaCampanha>(`/campanhas/${id}/disparo`);
     },
     onSuccess: async (r) => {
       await qc.invalidateQueries({ queryKey: ['campanhas'] });
-      navegar(`/boletins/${r.campaignId}`);
+      navegar(`/campanhas/${r.campaignId}`);
     },
   });
 
@@ -245,7 +245,7 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
       {passo === 0 && (
         <div className="space-y-4">
           <Campo
-            rotulo="Nome do boletim"
+            rotulo="Nome da campanha"
             ajuda="Só o escritório vê. Serve para achá-lo depois."
             obrigatorio
             erro={erros['nome']}
@@ -258,8 +258,8 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
           </Campo>
 
           <Campo
-            rotulo="Tipo de e-mail"
-            ajuda="Boletim, Comunicado, Convite… Gerencie os tipos em Tipos."
+            rotulo="Tipo de campanha"
+            ajuda="Campanha, Comunicado, Convite… Gerencie os tipos em Tipos."
           >
             <select
               value={dados.tipoEmailId}
@@ -277,7 +277,7 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
 
           <Campo
             rotulo="Assunto do e-mail"
-            ajuda="Vazio = usa o assunto do modelo. Preencha para dar a este boletim um assunto próprio."
+            ajuda="Vazio = usa o assunto do modelo. Preencha para dar a esta campanha um assunto próprio."
             erro={erros['assunto']}
           >
             <input
@@ -345,7 +345,7 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
 
       {passo === 1 && (
         <div className="space-y-3">
-          <p className="text-sm text-ink-suave">Escolha o modelo que este boletim vai usar.</p>
+          <p className="text-sm text-ink-suave">Escolha o modelo que esta campanha vai usar.</p>
           <ErroCaixa erro={modelos.error} />
           <ul className="space-y-2">
             {modelos.data?.itens.map((m) => (
@@ -557,7 +557,7 @@ export function AssistenteBoletim({ aoCancelar }: { aoCancelar: () => void }) {
             onClick={() => {
               const rotulo = dados.agendarPara === '' ? 'Disparar agora' : 'Agendar';
               if (
-                window.confirm(`${rotulo} o boletim "${dados.nome}"? Isso não pode ser desfeito.`)
+                window.confirm(`${rotulo} a campanha "${dados.nome}"? Isso não pode ser desfeito.`)
               )
                 disparar.mutate();
             }}
