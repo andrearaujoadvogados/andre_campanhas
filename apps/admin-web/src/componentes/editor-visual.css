@@ -30,15 +30,27 @@
   color: var(--color-gold);
 }
 
-/* ── Blocos (Estruturas / Blocos / Módulos) ──────────────────────────────── */
+/* ── Vitrine: Estruturas e Blocos ────────────────────────────────────────── */
+
+/* Uma coluna só: na referência os itens são faixas de largura cheia, não uma
+   grade de quadradinhos. */
+.editor-visual .gjs-blocks-c {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+}
 
 .editor-visual .gjs-block {
+  width: 100%;
+  min-height: auto;
+  margin: 0;
+  padding: 0.625rem 0.75rem;
   border: 1px solid var(--color-line);
-  border-radius: 0.375rem;
+  border-radius: 0.5rem;
   background-color: var(--color-paper-light);
   color: var(--color-ink);
-  min-height: auto;
-  padding: 0.75rem 0.5rem;
+  box-shadow: none;
   transition:
     background-color 120ms,
     border-color 120ms;
@@ -49,13 +61,46 @@
   border-color: var(--color-gold-claro);
 }
 
-.editor-visual .gjs-block__media svg {
-  fill: var(--color-ink-suave);
+/* Estrutura: a miniatura ocupa a faixa e o rótulo fica abaixo, discreto. */
+.editor-visual .gjs-block.bloco-estrutura {
+  display: block;
+  padding: 0.5rem;
 }
 
-.editor-visual .gjs-block-label {
-  font-size: 0.75rem;
-  line-height: 1rem;
+.editor-visual .gjs-block.bloco-estrutura .gjs-block__media {
+  display: block;
+  margin: 0;
+  line-height: 0;
+}
+
+.editor-visual .gjs-block.bloco-estrutura .gjs-block-label {
+  margin-top: 0.375rem;
+  font-size: 0.6875rem;
+  color: var(--color-ink-suave);
+  text-align: left;
+}
+
+/* Bloco de conteúdo: ícone à esquerda, rótulo ao lado — como na referência. */
+.editor-visual .gjs-block.bloco-conteudo {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+}
+
+.editor-visual .gjs-block.bloco-conteudo .gjs-block__media {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  color: var(--color-ink-suave);
+}
+
+.editor-visual .gjs-block.bloco-conteudo .gjs-block-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-ink);
+  text-align: left;
 }
 
 /* Cabeçalho de categoria: é o que dá o recorte "Estruturas / Blocos". */

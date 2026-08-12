@@ -1,6 +1,6 @@
 import { Suspense, lazy, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { api, type ComAviso } from '../lib/api.js';
 import { dataHora } from '../lib/formato.js';
@@ -302,6 +302,7 @@ const EditorVisual = lazy(() =>
 export function TemplateEditor() {
   const { id } = useParams();
   const ehNovo = id === undefined || id === 'novo';
+  const navegar = useNavigate();
   const qc = useQueryClient();
 
   const [nome, definirNome] = useState('');
@@ -358,6 +359,71 @@ export function TemplateEditor() {
 
   if (!carregado) return <Carregando />;
 
+  /**
+   * No criador visual o editor toma a tela.
+   *
+   * Nome, categoria, assunto e salvar moram na barra do próprio editor — é o
+   * layout da referência, e evita o que havia antes: um formulário à esquerda
+   * disputando espaço com o canvas, num editor que precisa de largura para o
+   * arrastar-e-soltar fazer sentido.
+   */
+  if (tipo === 'VISUAL') {
+    return (
+      <div className="space-y-4">
+        <Aviso texto={avisoSalvo} tom="alerta" />
+        <ErroCaixa erro={salvar.error} />
+
+        <Suspense
+          fallback={
+            <div
+              role="status"
+              aria-live="polite"
+              className="rounded-md border border-line bg-paper-light px-4 py-16 text-center text-sm text-ink-suave"
+            >
+              Carregando o editor…
+            </div>
+          }
+        >
+          <EditorVisual
+            key={`visual-${estruturaVisual === '' ? 'novo' : 'salvo'}`}
+            estruturaInicial={estruturaVisual}
+            htmlInicial={corpoHtml}
+            nome={nome}
+            aoMudarNome={definirNome}
+            categoria={categoria}
+            aoMudarCategoria={definirCategoria}
+            assunto={assunto}
+            aoMudarAssunto={definirAssunto}
+            aoSalvar={() => salvar.mutate()}
+            salvando={salvar.isPending}
+            rotuloSalvar={ehNovo ? 'Criar modelo' : 'Salvar modelo'}
+            aoVoltar={() => navegar('/templates')}
+            aoMudar={({ estruturaVisual: ev, corpoHtml: ch }) => {
+              definirEstrutura(ev);
+              definirCorpo(ch);
+            }}
+            aoPedirHtml={(html) => {
+              definirCorpo(html);
+              definirEstrutura('');
+              definirTipo('CODIGO');
+            }}
+          />
+        </Suspense>
+
+        <p className="text-sm text-ink-suave">
+          Prefere escrever o HTML?{' '}
+          <button
+            type="button"
+            onClick={() => definirTipo('CODIGO')}
+            className="font-medium text-ink underline"
+          >
+            Passar para HTML personalizado
+          </button>
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <Link
@@ -411,11 +477,7 @@ export function TemplateEditor() {
             </div>
             <Campo
               rotulo="Corpo do e-mail"
-              ajuda={
-                tipo === 'VISUAL'
-                  ? 'Arraste estruturas e blocos para montar. O link de descadastro é acrescentado automaticamente no rodapé.'
-                  : 'O link de descadastro é acrescentado automaticamente no rodapé.'
-              }
+              ajuda="O link de descadastro é acrescentado automaticamente no rodapé."
               obrigatorio
             >
               <Suspense
@@ -429,28 +491,9 @@ export function TemplateEditor() {
                   </div>
                 }
               >
-                {tipo === 'VISUAL' ? (
-                  <EditorVisual
-                    // `key` amarra o editor ao conteúdo de partida: sem ela,
-                    // alternar código→visual reaproveitaria a instância antiga e
-                    // o HTML herdado nunca entraria no canvas.
-                    key={`visual-${estruturaVisual === '' ? 'novo' : 'salvo'}`}
-                    estruturaInicial={estruturaVisual}
-                    htmlInicial={corpoHtml}
-                    aoMudar={({ estruturaVisual: ev, corpoHtml: ch }) => {
-                      definirEstrutura(ev);
-                      definirCorpo(ch);
-                    }}
-                    // "Editar como HTML" leva o compilado para o modo código.
-                    aoPedirHtml={(html) => {
-                      definirCorpo(html);
-                      definirEstrutura('');
-                      definirTipo('CODIGO');
-                    }}
-                  />
-                ) : (
-                  <EditorEmail valor={corpoHtml} aoMudar={definirCorpo} />
-                )}
+                {/* Só o modo código chega aqui: o visual ocupa a tela inteira
+                    e sai antes, no `if (tipo === 'VISUAL')` acima. */}
+                <EditorEmail valor={corpoHtml} aoMudar={definirCorpo} />
               </Suspense>
             </Campo>
 
