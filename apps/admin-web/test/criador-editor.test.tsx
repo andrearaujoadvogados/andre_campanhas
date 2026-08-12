@@ -100,6 +100,21 @@ describe('criador de e-mails — paleta e canvas', () => {
   });
 });
 
+describe('configurações globais', () => {
+  it('a largura do conteúdo é editável e escreve no design', async () => {
+    render(<Harness />);
+
+    await userEvent.click(screen.getByRole('tab', { name: /configurações globais/i }));
+    const campo = screen.getByLabelText(/largura do conteúdo/i);
+    expect(campo).toHaveValue(600);
+
+    await userEvent.clear(campo);
+    await userEvent.type(campo, '720');
+
+    expect(designAtual.settings.contentWidth).toBe(720);
+  });
+});
+
 describe('código à mão — os três níveis', () => {
   it('sem seleção, o botão fala do e-mail inteiro', () => {
     render(<Harness />);

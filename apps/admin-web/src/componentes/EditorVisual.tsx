@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { api } from '../lib/api.js';
-import { isValidDesign } from '../lib/criador/compile.js';
+import { isValidDesign, larguraDoConteudo } from '../lib/criador/compile.js';
 import { compilarParaHtml } from '../lib/criador/html.js';
 import { createDefaultDesign } from '../lib/criador/presets.js';
 import type { EmailDesign } from '../lib/criador/tipos.js';
@@ -33,7 +33,15 @@ function designInicial(estruturaInicial?: string, htmlInicial?: string): EmailDe
   if (estruturaInicial !== undefined && estruturaInicial !== '') {
     try {
       const bruto: unknown = JSON.parse(estruturaInicial);
-      if (isValidDesign(bruto)) return bruto;
+      if (isValidDesign(bruto)) {
+        // Design salvo antes de `contentWidth` existir: entra normalizado, para
+        // o campo do painel não abrir vazio e a compilação não depender do
+        // fallback para sempre.
+        return {
+          ...bruto,
+          settings: { ...bruto.settings, contentWidth: larguraDoConteudo(bruto.settings) },
+        };
+      }
     } catch {
       // estrutura de outro formato — cai para a migração abaixo
     }

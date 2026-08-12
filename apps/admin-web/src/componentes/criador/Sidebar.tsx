@@ -555,6 +555,15 @@ export function Sidebar({
       <div className="flex-1 overflow-y-auto">
         {tab === 'settings' ? (
           <div className="grid gap-4 p-4">
+            <NumberField
+              label="Largura do conteúdo"
+              value={design.settings.contentWidth}
+              // 320 é o menor celular que ainda importa; acima de 800 os
+              // clientes de desktop começam a cortar sem avisar.
+              min={320}
+              max={800}
+              onChange={(v) => onUpdateSettings({ contentWidth: v })}
+            />
             <ColorField
               label="Fundo da página"
               value={design.settings.bodyBackground}

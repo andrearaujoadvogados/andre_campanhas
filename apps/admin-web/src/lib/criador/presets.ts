@@ -119,6 +119,7 @@ export const DEFAULT_SETTINGS: DesignSettings = {
   fontFamily: "Georgia, 'Times New Roman', serif",
   textColor: TINTA_SUAVE,
   linkColor: VINHO,
+  contentWidth: 600,
 };
 
 export const FONT_OPTIONS = [
