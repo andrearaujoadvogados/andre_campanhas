@@ -49,3 +49,19 @@ if (typeof Element.prototype.getClientRects !== 'function') {
 if (typeof document.elementFromPoint !== 'function') {
   document.elementFromPoint = () => null;
 }
+
+/**
+ * O jsdom conhece o elemento <dialog> mas não implementa showModal/close — e o
+ * criador de e-mails usa o modal nativo justamente para ganhar foco preso e
+ * Esc de graça. O polyfill cobre só o que os testes exercitam: abrir, fechar
+ * e o evento `close`.
+ */
+if (typeof HTMLDialogElement !== 'undefined') {
+  HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+    this.open = false;
+    this.dispatchEvent(new Event('close'));
+  };
+}
