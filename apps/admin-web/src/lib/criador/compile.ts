@@ -131,6 +131,9 @@ export function compileDesignToMjml(design: EmailDesign, marca: Marca = null): s
 
   const { settings } = design;
   const rows = design.rows.map((row) => compileRow(row, design, marca)).join('\n');
+  // Designs gravados antes de `contentWidth` existir chegam sem o campo — o
+  // tipo diz `number`, mas o JSON do banco não lê tipos. 600 é o que sempre foi.
+  const largura = larguraDoConteudo(settings);
 
   return `<mjml>
   <mj-head>
@@ -142,10 +145,16 @@ export function compileDesignToMjml(design: EmailDesign, marca: Marca = null): s
       a { color: ${settings.linkColor}; }
     </mj-style>
   </mj-head>
-  <mj-body background-color="${escAttr(settings.bodyBackground)}" width="600px">
+  <mj-body background-color="${escAttr(settings.bodyBackground)}" width="${String(largura)}px">
 ${rows}
   </mj-body>
 </mjml>`;
+}
+
+/** Largura efetiva: designs antigos (sem o campo) valem 600, como sempre. */
+export function larguraDoConteudo(settings: { contentWidth?: number }): number {
+  const largura = settings.contentWidth;
+  return typeof largura === 'number' && Number.isFinite(largura) && largura > 0 ? largura : 600;
 }
 
 /** Validação mínima de um design vindo de fora (banco ou colagem). */

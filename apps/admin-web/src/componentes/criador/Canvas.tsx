@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 
 import { cn } from '../../lib/criador/cn.js';
+import { larguraDoConteudo } from '../../lib/criador/compile.js';
 import { limparHtmlDoUsuario } from '../../lib/criador/codigo.js';
 import { limparHtmlColado, textoParaHtml } from '../../lib/criador/paste.js';
 import { BLOCK_LABELS } from '../../lib/criador/presets.js';
@@ -1135,7 +1136,7 @@ export function Canvas({
       style={{ backgroundColor: design.settings.bodyBackground }}
       onClick={() => onSelect(null)}
     >
-      <div className="mx-auto w-[600px] max-w-full">
+      <div className="mx-auto max-w-full" style={{ width: larguraDoConteudo(design.settings) }}>
         {design.rows.length === 0 ? (
           <div
             onDragOver={

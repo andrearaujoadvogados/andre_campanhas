@@ -4,6 +4,7 @@ import {
   MARCA_INICIO,
   compileDesignToMjml,
   isValidDesign,
+  larguraDoConteudo,
 } from '../src/lib/criador/compile.js';
 import { limparHtmlDoUsuario, recortarEntreMarcadores } from '../src/lib/criador/codigo.js';
 import { addBlock, addRow, createRow, setRowCustomHtml } from '../src/lib/criador/ops.js';
@@ -83,6 +84,30 @@ describe('compilação do design para MJML', () => {
     expect(recortarEntreMarcadores(html, true)).toBe('<td>alvo</td>');
     expect(recortarEntreMarcadores(html, false)).toBe('<tr class="x"><td>alvo</td></tr>');
     expect(recortarEntreMarcadores('sem marcador', true)).toBeNull();
+  });
+});
+
+describe('largura do contêiner principal', () => {
+  it('a largura configurada vai para o mj-body e o padrão é 600', () => {
+    const { design } = designCom([createBlock('text')]);
+
+    expect(compileDesignToMjml(design)).toContain('width="600px"');
+    expect(
+      compileDesignToMjml({ ...design, settings: { ...design.settings, contentWidth: 720 } }),
+    ).toContain('width="720px"');
+  });
+
+  it('design salvo ANTES do campo existir compila com 600, não com NaN', () => {
+    // O tipo diz `number`, mas o JSON gravado no banco não lê tipos: todo design
+    // salvo pela primeira versão do criador chega sem `contentWidth`.
+    const { design } = designCom([createBlock('text')]);
+    const antigo = { ...design, settings: { ...design.settings } } as EmailDesign;
+    delete (antigo.settings as Partial<EmailDesign['settings']>).contentWidth;
+
+    expect(compileDesignToMjml(antigo)).toContain('width="600px"');
+    expect(larguraDoConteudo(antigo.settings)).toBe(600);
+    expect(larguraDoConteudo({ contentWidth: 0 })).toBe(600);
+    expect(larguraDoConteudo({ contentWidth: 480 })).toBe(480);
   });
 });
 

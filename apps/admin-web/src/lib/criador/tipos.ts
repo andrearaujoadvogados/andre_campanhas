@@ -24,6 +24,13 @@ export interface DesignSettings {
   fontFamily: string;
   textColor: string;
   linkColor: string;
+  /**
+   * Largura do contêiner principal, em px. 600 é o padrão histórico de e-mail
+   * (o que todo cliente renderiza sem surpresa); quem sabe o que está fazendo
+   * ajusta aqui e o canvas acompanha. Designs salvos antes deste campo existirem
+   * são normalizados para 600 na entrada (`normalizarDesign`).
+   */
+  contentWidth: number;
 }
 
 export interface TextBlock {
