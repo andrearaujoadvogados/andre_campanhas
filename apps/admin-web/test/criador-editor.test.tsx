@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { EditorDesign } from '../src/componentes/criador/EditorDesign.tsx';
+import { escalaDeVisualizacao } from '../src/componentes/criador/Canvas.tsx';
 import { createDefaultDesign } from '../src/lib/criador/presets.js';
 import type { EmailDesign } from '../src/lib/criador/tipos.js';
 
@@ -97,6 +98,18 @@ describe('criador de e-mails — paleta e canvas', () => {
 
     expect(blocos().length).toBe(antes - 1);
     expect(screen.queryByText('Título do e-mail')).toBeNull();
+  });
+});
+
+describe('escala de visualização do canvas', () => {
+  it('e-mail que cabe fica em 100%; que não cabe, escala na fração exata', () => {
+    // Encolher o contêiner faria o conteúdo REFLUIR e a tela mentiria sobre o
+    // layout. A escala preserva o e-mail real, só menor.
+    expect(escalaDeVisualizacao(900, 600)).toBe(1);
+    expect(escalaDeVisualizacao(600, 800)).toBe(0.75);
+    expect(escalaDeVisualizacao(400, 800)).toBe(0.5);
+    // Medida ainda não disponível (primeiro render): não escala às cegas.
+    expect(escalaDeVisualizacao(0, 800)).toBe(1);
   });
 });
 
