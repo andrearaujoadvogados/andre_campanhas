@@ -45,6 +45,8 @@ interface Estado {
   enviosSalvos: Envio[];
   enviados: number;
   circuitoAbertoPor: string | null;
+  replyToCampanha: string | undefined;
+  replyToEnviado: string | undefined;
 }
 
 let estado: Estado;
@@ -60,6 +62,7 @@ function campanha(): Campaign {
     status: 'ENVIANDO',
     remetenteNome: 'André Araújo Advogados',
     remetenteEmail: 'contato@mail.andrearaujoadvogados.com.br',
+    ...(estado.replyToCampanha === undefined ? {} : { replyTo: estado.replyToCampanha }),
     criadoPor: userId('u-1'),
     criadoEm: AGORA,
   };
@@ -103,6 +106,7 @@ function deps(): DepsEnvio {
       contarPorCampanha: async () => estado.enviosSalvos.length,
       listarPorCampanha: async () => ({ itens: [] }),
       listarPorContato: async () => estado.enviosSalvos,
+      listarRespondentes: async () => ({ itens: [] }),
     },
     templates: {
       buscarVersao: async () =>
@@ -119,10 +123,11 @@ function deps(): DepsEnvio {
       remover: async () => undefined,
     },
     provedor: {
-      enviar: async () => {
+      enviar: async (mensagem) => {
         if (estado.falhaProvedor !== null)
           return { ok: false as const, error: estado.falhaProvedor };
         estado.enviados += 1;
+        estado.replyToEnviado = mensagem.replyTo;
         return { ok: true as const, value: { providerMessageId: 'ses-msg-1' } };
       },
     },
@@ -172,7 +177,39 @@ beforeEach(() => {
     enviosSalvos: [],
     enviados: 0,
     circuitoAbertoPor: null,
+    replyToCampanha: undefined,
+    replyToEnviado: undefined,
   };
+});
+
+describe('Reply-To e o rastreamento de respostas — §1.4', () => {
+  it('sem domínio de respostas, vale o replyTo da campanha', async () => {
+    estado.replyToCampanha = 'contato@escritorio.com.br';
+
+    await enviarMensagem(deps(), ENTRADA);
+
+    expect(estado.replyToEnviado).toBe('contato@escritorio.com.br');
+  });
+
+  it('com domínio de respostas, o endereço marcado VENCE o da campanha', async () => {
+    // É uma troca consciente: sem o endereço marcado não há como saber quem
+    // respondeu. A mensagem continua chegando ao escritório porque a regra de
+    // recebimento a encaminha.
+    estado.replyToCampanha = 'contato@escritorio.com.br';
+
+    await enviarMensagem(deps(), {
+      ...ENTRADA,
+      dominioRespostas: 'respostas.mail.andrearaujoadvogados.com.br',
+    });
+
+    expect(estado.replyToEnviado).toBe('resposta+k-1@respostas.mail.andrearaujoadvogados.com.br');
+  });
+
+  it('campanha sem replyTo e sem domínio não manda cabeçalho nenhum', async () => {
+    await enviarMensagem(deps(), ENTRADA);
+
+    expect(estado.replyToEnviado).toBeUndefined();
+  });
 });
 
 describe('enviarMensagem — caminho feliz', () => {

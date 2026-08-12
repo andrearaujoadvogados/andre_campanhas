@@ -44,6 +44,19 @@ export interface ContentHasher {
   hash(conteudo: unknown): string;
 }
 
+/**
+ * Deriva o `sendId` a partir do par campanha+contato.
+ *
+ * O domínio já **declara** que o sendId é determinístico (ver `Envio`), mas
+ * quem calcula é o adaptador — é sha256, e criptografia não entra no núcleo.
+ * Existe como port porque o registro de resposta precisa fazer o caminho de
+ * volta: sabendo a campanha (vem do endereço de resposta) e o contato (vem do
+ * remetente), o envio é encontrado por GetItem direto, sem índice novo.
+ */
+export interface SendIdDeriver {
+  derivar(campaignId: CampaignId, contactId: ContactId): SendId;
+}
+
 /** Token assinado do link de descadastro — HMAC, segredo no Secrets Manager. */
 export interface UnsubscribeTokenService {
   emitir(input: { tenantId: TenantId; contactId: ContactId; campaignId: CampaignId }): string;
@@ -273,6 +286,22 @@ export interface SendRepository {
    * não escalaria nem seria confiável.
    */
   listarPorContato(tenantId: TenantId, contactId: ContactId): Promise<readonly Envio[]>;
+  /**
+   * Só os envios que receberam resposta — a lista de "quem respondeu" do
+   * relatório de campanha.
+   *
+   * Mesma partição de `listarPorCampanha`, com filtro no servidor. O filtro do
+   * DynamoDB é aplicado **depois** da leitura, então não economiza capacidade —
+   * economiza tráfego e, principalmente, evita que a interface pagine milhares
+   * de envios para achar as poucas dezenas que interessam. Como resposta é rara
+   * por natureza, uma página pode voltar vazia com cursor: quem chama precisa
+   * seguir o cursor até ele sumir, não parar na primeira página vazia.
+   */
+  listarRespondentes(
+    tenantId: TenantId,
+    campaignId: CampaignId,
+    cursor?: string,
+  ): Promise<Pagina<Envio>>;
 }
 
 /**

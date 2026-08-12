@@ -75,6 +75,46 @@ rotasRelatorios.get('/campanhas/:id/destinatarios', async (c) => {
         status: e.status,
         enviadoEm: e.enviadoEm?.toISOString() ?? null,
         falhaMotivo: e.falhaMotivo ?? null,
+        respondidoEm: e.respondidoEm?.toISOString() ?? null,
+      };
+    }),
+  );
+
+  return c.json({ itens, cursor: pagina.cursor });
+});
+
+/**
+ * Quem respondeu ao e-mail — §11, item 9.
+ *
+ * Endpoint próprio, e não um filtro do anterior, por causa da paginação: a
+ * resposta é rara, então filtrar a listagem por destinatário obrigaria a
+ * interface a percorrer milhares de envios para montar uma lista de dezenas.
+ * Aqui o filtro roda no servidor e cada página já vem enxuta.
+ *
+ * Uma página pode voltar **vazia com cursor** — é o comportamento do filtro do
+ * DynamoDB, que examina um bloco e devolve o que passou. Quem consome segue o
+ * cursor até ele sumir; parar na primeira página vazia esconderia respostas.
+ */
+rotasRelatorios.get('/campanhas/:id/respostas', async (c) => {
+  const { envios, contatos } = await obterDependencias();
+  const usuario = c.get('usuario');
+  const campaignId = novoCampaignId(c.req.param('id'));
+
+  const pagina = await envios.listarRespondentes(
+    usuario.tenantId,
+    campaignId,
+    c.req.query('cursor'),
+  );
+
+  const itens = await Promise.all(
+    pagina.itens.map(async (e) => {
+      const contato = await contatos.buscarPorId(usuario.tenantId, e.contactId);
+      return {
+        contactId: String(e.contactId),
+        nome: contato?.nome ?? null,
+        email: contato?.email.value ?? null,
+        respondidoEm: e.respondidoEm?.toISOString() ?? null,
+        enviadoEm: e.enviadoEm?.toISOString() ?? null,
       };
     }),
   );
@@ -151,6 +191,7 @@ function montarRelatorio(contadores: ContadoresCampanha): Record<string, unknown
       bounceTotal: 'bounces permanentes e temporários / enviados',
       reclamacao: 'reclamações / entregues',
       descadastro: 'descadastros / entregues',
+      resposta: 'e-mails respondidos / entregues',
     },
   };
 }

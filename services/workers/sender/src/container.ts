@@ -42,6 +42,16 @@ export const log = {
 export interface ConfigSender {
   readonly baseUrlDescadastro: string;
   readonly configurationSet: string;
+  /**
+   * Domínio que recebe as respostas — §1.4. Opcional de propósito.
+   *
+   * Sem a variável, o `Reply-To:` continua sendo o da campanha e o
+   * rastreamento de respostas simplesmente não existe. É o que permite subir o
+   * código antes de o MX estar publicado: enquanto o DNS não aponta para o SES,
+   * apontar o `Reply-To:` para lá mandaria as respostas dos clientes para um
+   * endereço que não recebe nada.
+   */
+  readonly dominioRespostas: string | undefined;
 }
 
 let cacheConfig: ConfigSender | undefined;
@@ -49,6 +59,7 @@ export async function config(): Promise<ConfigSender> {
   cacheConfig ??= {
     baseUrlDescadastro: env('URL_DESCADASTRO'),
     configurationSet: env('CONFIGURATION_SET'),
+    dominioRespostas: process.env['DOMINIO_RESPOSTAS'],
   };
   return cacheConfig;
 }

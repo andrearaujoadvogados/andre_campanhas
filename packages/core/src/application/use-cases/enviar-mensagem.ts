@@ -1,4 +1,5 @@
 import { deveInterromperEnvio } from '../../domain/campaign/campaign.js';
+import { enderecoDeResposta } from '../../domain/send/endereco-resposta.js';
 import type { Envio } from '../../domain/send/envio.js';
 import type { CampaignId, ContactId, SendId, TenantId } from '../../domain/shared/ids.js';
 import type {
@@ -55,9 +56,38 @@ export interface EntradaEnvio {
   readonly limiteDiario: number;
   readonly baseUrlDescadastro: string;
   readonly configurationSet: string;
+  /**
+   * Domínio que recebe as respostas (§1.4). Ausente = rastreamento desligado.
+   *
+   * Quando presente, o `Reply-To:` da mensagem passa a ser o endereço marcado
+   * com a campanha, e não o `replyTo` da campanha. É uma troca consciente: sem
+   * o endereço marcado não há como saber quem respondeu, e a mensagem continua
+   * chegando ao escritório porque a regra de recebimento a encaminha para a
+   * caixa configurada. Sem o domínio, tudo segue como antes.
+   */
+  readonly dominioRespostas?: string | undefined;
 }
 
 const TTL_IDEMPOTENCIA_SEGUNDOS = 60 * 60 * 24 * 7;
+
+/**
+ * Escolhe o `Reply-To:` da mensagem.
+ *
+ * Com rastreamento de resposta ligado, o endereço marcado vence o da campanha —
+ * é o único jeito de a resposta voltar identificável. O `replyTo` da campanha
+ * não é ignorado por descuido: ele deixa de ser o destino e passa a ser
+ * responsabilidade da regra de recebimento, que encaminha o que chega.
+ */
+function replyToDaMensagem(
+  entrada: EntradaEnvio,
+  replyToDaCampanha: string | undefined,
+): { replyTo?: string } {
+  const dominio = entrada.dominioRespostas;
+  if (dominio !== undefined && dominio !== '') {
+    return { replyTo: enderecoDeResposta(entrada.campaignId, dominio) };
+  }
+  return replyToDaCampanha === undefined ? {} : { replyTo: replyToDaCampanha };
+}
 const CHAVE_CIRCUITO = 'ses:conta';
 
 /**
@@ -167,7 +197,7 @@ export async function enviarMensagem(
     para: contato.email,
     deNome: campanha.remetenteNome,
     deEmail: campanha.remetenteEmail,
-    ...(campanha.replyTo === undefined ? {} : { replyTo: campanha.replyTo }),
+    ...replyToDaMensagem(entrada, campanha.replyTo),
     assunto: renderizado.assunto,
     corpoHtml: renderizado.corpoHtml,
     corpoTexto: renderizado.corpoTexto,

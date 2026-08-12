@@ -5,10 +5,12 @@ import type {
   ContentHasher,
   EmailAddress,
   EmailHasher,
+  SendId,
+  SendIdDeriver,
   TenantId,
   UnsubscribeTokenService,
 } from '@emailmkt/core';
-import { campaignId, contactId, tenantId } from '@emailmkt/core';
+import { campaignId, contactId, sendId as novoSendId, tenantId } from '@emailmkt/core';
 
 /**
  * Hash de e-mail para a lista de supressão — §6.2, nota 2.
@@ -137,4 +139,17 @@ export class HmacUnsubscribeTokenService implements UnsubscribeTokenService {
 export function calcularSendId(campanha: CampaignId, contato: ContactId): string {
   const material = `${String(campanha).length}:${campanha}:${String(contato).length}:${contato}`;
   return createHash('sha256').update(material, 'utf8').digest('base64url');
+}
+
+/**
+ * O mesmo cálculo, como port — o registro de resposta faz o caminho de volta.
+ *
+ * O `campaign-launcher` chama `calcularSendId` direto porque é um serviço e já
+ * conhece os adaptadores. O caso de uso de resposta vive no núcleo, que não pode
+ * importar `node:crypto`; recebe esta classe injetada.
+ */
+export class Sha256SendIdDeriver implements SendIdDeriver {
+  derivar(campaignId: CampaignId, contactId: ContactId): SendId {
+    return novoSendId(calcularSendId(campaignId, contactId));
+  }
 }

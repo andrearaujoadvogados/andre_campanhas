@@ -33,6 +33,24 @@ export interface AmbienteConfig {
    * silêncio quando essa pessoa está de férias.
    */
   readonly emailsAlarmes: readonly string[];
+  /**
+   * Caixa do escritório que recebe as respostas dos contatos — §1.4.
+   *
+   * **Ausente desliga o recurso inteiro**, e isso é o mecanismo de implantação,
+   * não um descuido. Ligar o rastreamento troca o `Reply-To:` das campanhas por
+   * um endereço nosso; se o MX ainda não apontar para o SES, as respostas dos
+   * clientes iriam para um endereço que não recebe nada. Com a variável
+   * ausente, o código sobe e fica dormente até o DNS estar pronto.
+   *
+   * Também é o que evita conflito entre ambientes: o SES admite **um** conjunto
+   * de regras de recebimento ativo por região, e dev e prod dividem a mesma
+   * conta. Só um dos dois define a variável.
+   */
+  readonly caixaRespostas: string | undefined;
+  /** Subdomínio com MX apontando para o SES. Só vale com `caixaRespostas`. */
+  readonly dominioRespostas: string;
+  /** Identidade verificada que assina o encaminhamento das respostas. */
+  readonly remetenteRespostas: string;
 }
 
 const BASE = {
@@ -41,6 +59,11 @@ const BASE = {
   regiaoCertificado: 'us-east-1',
   dominioEnvio: 'mail.andrearaujoadvogados.com.br',
   mailFrom: 'bounce.mail.andrearaujoadvogados.com.br',
+  // Subdomínio próprio, e não o domínio de envio: o MX vai nele, e assim o
+  // recebimento não encosta no e-mail que o escritório já usa (§1.4).
+  dominioRespostas: 'respostas.mail.andrearaujoadvogados.com.br',
+  // Coberto pela identidade de domínio já verificada — nada novo a verificar.
+  remetenteRespostas: 'respostas@mail.andrearaujoadvogados.com.br',
   tenantPadrao: 'andrearaujo',
 } as const;
 
@@ -74,6 +97,9 @@ export function carregarConfig(ambiente: Ambiente): AmbienteConfig {
       .split(',')
       .map((e) => e.trim())
       .filter((e) => e !== ''),
+    // Sem `exigirEnv`: a ausência é um estado válido e significa "recebimento
+    // de respostas desligado".
+    caixaRespostas: process.env['EMAIL_RESPOSTAS']?.trim() || undefined,
   };
 
   if (ambiente === 'prod') {

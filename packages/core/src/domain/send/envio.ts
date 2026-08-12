@@ -20,6 +20,18 @@ export interface Envio {
   readonly sesMessageId?: string;
   readonly enviadoEm?: Date;
   readonly falhaMotivo?: string;
+  /**
+   * Quando o contato respondeu a este e-mail.
+   *
+   * Marca no próprio envio, e não só no contador agregado, porque a pergunta do
+   * relatório é "**quem** respondeu", não "quantos". Guardar apenas o número
+   * responderia metade da pergunta e obrigaria a varrer os eventos individuais
+   * para responder a outra metade.
+   *
+   * Só a **primeira** resposta carimba: quem responde três vezes respondeu a um
+   * e-mail, não a três.
+   */
+  readonly respondidoEm?: Date;
 }
 
 /**
@@ -28,6 +40,14 @@ export interface Envio {
  * Espelham os nomes do SES de propósito: o tradutor da borda (§5.10) converte a
  * forma aninhada do payload, mas manter o vocabulário reconhecível evita uma
  * camada de tradução mental na hora de investigar um incidente.
+ *
+ * `RESPOSTA` é a exceção, e é deliberada: **o SES não emite evento de
+ * resposta**. Os destinos de evento do Configuration Set cobrem só o que
+ * acontece com a mensagem que sai — entrega, abertura, clique, bounce. Uma
+ * resposta é um e-mail novo, que chega pela regra de recebimento (§1.4) e é
+ * correlacionada de volta ao envio. Fica no mesmo tipo porque, do ponto de
+ * vista do relatório, é mais um desfecho daquele envio; o nome em português
+ * marca que a origem não é o SES.
  */
 export type TipoEvento =
   | 'SEND'
@@ -38,7 +58,8 @@ export type TipoEvento =
   | 'COMPLAINT'
   | 'REJECT'
   | 'RENDERING_FAILURE'
-  | 'DELIVERY_DELAY';
+  | 'DELIVERY_DELAY'
+  | 'RESPOSTA';
 
 export type SubtipoBounce = 'Permanent' | 'Transient' | 'Undetermined';
 
@@ -71,7 +92,8 @@ export type CampoMetrica =
   | 'reclamacoes'
   | 'descadastros'
   | 'rejeitados'
-  | 'falhasRenderizacao';
+  | 'falhasRenderizacao'
+  | 'respostas';
 
 /**
  * Mapeia evento → contador.
@@ -82,7 +104,9 @@ export type CampoMetrica =
  * dado errado.
  *
  * Abertura e clique **únicos** não saem daqui: exigem saber se aquele contato já
- * abriu antes, o que é decisão de quem processa, não do mapa.
+ * abriu antes, o que é decisão de quem processa, não do mapa. `RESPOSTA` também
+ * não: o contador que interessa é "quantos e-mails foram respondidos", e quem
+ * responde três vezes respondeu a **um** e-mail. Contar aqui daria três.
  */
 export function metricaDoEvento(evento: EventoEnvio): CampoMetrica | null {
   switch (evento.tipo) {
@@ -105,6 +129,7 @@ export function metricaDoEvento(evento: EventoEnvio): CampoMetrica | null {
     case 'RENDERING_FAILURE':
       return 'falhasRenderizacao';
     case 'DELIVERY_DELAY':
+    case 'RESPOSTA':
       return null;
   }
 }

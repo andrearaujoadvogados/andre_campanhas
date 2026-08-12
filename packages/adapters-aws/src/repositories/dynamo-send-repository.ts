@@ -133,6 +133,40 @@ export class DynamoSendRepository implements SendRepository {
   }
 
   /**
+   * Só os envios que receberam resposta — "quem respondeu" no relatório.
+   *
+   * Mesma partição da listagem por campanha, com `FilterExpression`. O filtro do
+   * DynamoDB roda **depois** da leitura: não economiza capacidade, economiza
+   * tráfego e paginação na interface. Como resposta é rara, o `Limit` aqui é
+   * maior que o dos destinatários — o limite corta itens *lidos*, não itens
+   * *retornados*, então um `Limit` baixo devolveria páginas quase sempre vazias
+   * e a interface faria dezenas de idas ao servidor para montar uma lista curta.
+   *
+   * Uma página vazia com cursor é normal e não significa fim: quem chama segue
+   * o cursor até ele desaparecer.
+   */
+  async listarRespondentes(
+    tenantId: TenantId,
+    campaignId: CampaignId,
+    cursor?: string,
+  ): Promise<{ itens: readonly Envio[]; cursor?: string }> {
+    const chave = chaveEnvio(tenantId, campaignId, '' as SendId);
+    const r = await this.doc.send(
+      new QueryCommand({
+        TableName: this.tabela,
+        KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefixo)',
+        FilterExpression: 'attribute_exists(respondidoEm)',
+        ExpressionAttributeValues: { ':pk': chave.pk, ':prefixo': PREFIXO_ENVIO },
+        Limit: 500,
+        ExclusiveStartKey: decodificarCursor(cursor),
+      }),
+    );
+    const itens = (r.Items ?? []).map(paraEnvio);
+    const proximo = codificarCursor(r.LastEvaluatedKey);
+    return proximo === undefined ? { itens } : { itens, cursor: proximo };
+  }
+
+  /**
    * Envios feitos a um contato — o insumo do dossiê de portabilidade.
    *
    * Usa o GSI2, o mesmo índice das listas do contato: a partition key já é
@@ -187,6 +221,11 @@ export class DynamoSendRepository implements SendRepository {
           sesMessageId: envio.sesMessageId,
           enviadoEm: envio.enviadoEm?.toISOString(),
           falhaMotivo: envio.falhaMotivo,
+          // `undefined` some no PutCommand, e é exatamente o que o filtro
+          // `attribute_exists(respondidoEm)` precisa: só quem respondeu tem o
+          // atributo. Gravar `null` faria o atributo existir para todo mundo e
+          // a lista de respondentes viraria a lista inteira.
+          respondidoEm: envio.respondidoEm?.toISOString(),
           gsi2pk: g2.pk,
           gsi2sk: g2.sk,
           gsi4pk: g4?.pk,
@@ -207,6 +246,9 @@ function paraEnvio(item: Record<string, unknown>): Envio {
     ...(item['sesMessageId'] === undefined ? {} : { sesMessageId: String(item['sesMessageId']) }),
     ...(item['enviadoEm'] === undefined ? {} : { enviadoEm: new Date(String(item['enviadoEm'])) }),
     ...(item['falhaMotivo'] === undefined ? {} : { falhaMotivo: String(item['falhaMotivo']) }),
+    ...(item['respondidoEm'] === undefined
+      ? {}
+      : { respondidoEm: new Date(String(item['respondidoEm'])) }),
   };
 }
 

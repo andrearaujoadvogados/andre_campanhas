@@ -13,7 +13,18 @@ import type { EventoEnvio, SubtipoBounce, TenantId, TipoEvento } from '@emailmkt
  * lote inteiro.
  */
 
-const TIPOS: Readonly<Record<string, TipoEvento>> = {
+/**
+ * O que este tradutor pode produzir.
+ *
+ * `RESPOSTA` fica de fora, e o compilador passa a garantir isso: resposta não é
+ * evento de envio do SES, chega pela regra de recebimento e tem tradutor
+ * próprio (`ses-inbound-parser`). Sem a exclusão, o mapa de seções abaixo
+ * exigiria uma entrada `resposta` que nenhum payload do SES traz — código morto
+ * que pareceria vivo.
+ */
+type TipoEventoSes = Exclude<TipoEvento, 'RESPOSTA'>;
+
+const TIPOS: Readonly<Record<string, TipoEventoSes>> = {
   Send: 'SEND',
   Delivery: 'DELIVERY',
   Open: 'OPEN',
@@ -83,10 +94,10 @@ export function traduzirEventoSes(bruto: unknown, tenantId: TenantId): EventoEnv
  */
 function extrairInstante(
   bruto: Record<string, unknown>,
-  tipo: TipoEvento,
+  tipo: TipoEventoSes,
   mail: Record<string, unknown> | null,
 ): Date {
-  const secoes: Record<TipoEvento, string> = {
+  const secoes: Record<TipoEventoSes, string> = {
     SEND: 'send',
     DELIVERY: 'delivery',
     OPEN: 'open',
@@ -108,7 +119,7 @@ function extrairInstante(
 
 function extrairDestinatario(
   bruto: Record<string, unknown>,
-  tipo: TipoEvento,
+  tipo: TipoEventoSes,
   mail: Record<string, unknown> | null,
 ): string | null {
   // Bounce e reclamação trazem o destinatário na própria seção, e é esse que

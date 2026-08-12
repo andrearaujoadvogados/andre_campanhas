@@ -8,13 +8,21 @@ import {
   DynamoSuppressionRepository,
   SecretsProvider,
   Sha256EmailHasher,
+  Sha256SendIdDeriver,
   SystemClock,
   desembrulharMensagem,
   dynamoDoc,
   secrets,
   traduzirEventoSes,
+  traduzirRespostaRecebida,
 } from '@emailmkt/adapters-aws';
-import { TENANT_PADRAO, processarEvento, type DepsEvento } from '@emailmkt/core';
+import {
+  TENANT_PADRAO,
+  processarEvento,
+  registrarResposta,
+  type DepsEvento,
+  type DepsResposta,
+} from '@emailmkt/core';
 
 function env(nome: string): string {
   const v = process.env[nome];
@@ -31,10 +39,10 @@ const log = {
     ),
 };
 
-let cache: Promise<DepsEvento> | undefined;
+let cache: Promise<DepsEvento & DepsResposta> | undefined;
 
-function deps(): Promise<DepsEvento> {
-  cache ??= (async (): Promise<DepsEvento> => {
+function deps(): Promise<DepsEvento & DepsResposta> {
+  cache ??= (async (): Promise<DepsEvento & DepsResposta> => {
     const tabela = env('TABELA_PRINCIPAL');
     const doc = dynamoDoc();
     const segredo = await new SecretsProvider(secrets()).ler(env('SEGREDO_HMAC_ARN'));
@@ -48,6 +56,7 @@ function deps(): Promise<DepsEvento> {
       eventos: new DynamoEventRepository(doc, tabela),
       idempotencia: new DynamoIdempotencyStore(doc, env('TABELA_IDEMPOTENCIA')),
       hasher,
+      sendIds: new Sha256SendIdDeriver(),
       clock: new SystemClock(),
     };
   })();
@@ -70,6 +79,46 @@ export const handler = async (evento: SQSEvent): Promise<SQSBatchResponse> => {
   for (const registro of evento.Records) {
     try {
       const bruto = desembrulharMensagem(registro.body);
+
+      /**
+       * Resposta de contato antes do evento de envio — §1.4.
+       *
+       * As duas coisas chegam pela mesma fila porque exigem exatamente as
+       * mesmas dependências e a mesma disciplina de idempotência; uma fila
+       * separada seria uma Lambda a mais para carregar os mesmos repositórios.
+       * O tradutor devolve `null` de imediato quando a mensagem não traz a
+       * marca do `reply-receiver`, então o caminho de evento não paga nada.
+       */
+      const resposta = traduzirRespostaRecebida(bruto, TENANT_PADRAO);
+      if (resposta !== null) {
+        const r = await registrarResposta(d, resposta);
+
+        if (r.acao === 'NAO_CORRELACIONADA') {
+          /**
+           * Mesma corrida do evento órfão: a resposta pode chegar antes de o
+           * registro de envio terminar de gravar. Devolver como falha faz a
+           * fila reentregar com backoff.
+           *
+           * Se persistir até a DLQ, não se perdeu comunicação com o cliente: o
+           * `reply-receiver` já encaminhou a mensagem para a caixa do
+           * escritório antes de enfileirar. O que se perde é a linha no
+           * relatório.
+           */
+          log.info('resposta sem envio correspondente, será reentregue', {
+            messageId: registro.messageId,
+            motivo: r.motivo,
+          });
+          falhas.push({ itemIdentifier: registro.messageId });
+          continue;
+        }
+
+        log.info('resposta registrada', {
+          acao: r.acao,
+          primeira: r.acao === 'REGISTRADA' ? r.primeira : false,
+        });
+        continue;
+      }
+
       const traduzido = traduzirEventoSes(bruto, TENANT_PADRAO);
 
       if (traduzido === null) {

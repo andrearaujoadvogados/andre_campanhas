@@ -171,6 +171,15 @@ jobs:
         env:
           AWS_ACCOUNT_PROD: ${{ secrets.AWS_ACCOUNT_PROD }}
           EMAIL_ALARMES: ${{ secrets.EMAIL_ALARMES }}
+          # Caixa que recebe as respostas dos contatos (§1.4). Vazia desliga o
+          # recurso inteiro — nem a regra de recebimento é criada, nem o
+          # `Reply-To:` das campanhas muda.
+          #
+          # Só em produção, e de propósito: o SES admite **um** conjunto de
+          # regras de recebimento ativo por região, e dev e prod dividem a mesma
+          # conta em us-east-2. Definir aqui e em dev faria os dois brigarem
+          # pelo mesmo lugar, com o perdedor falhando em silêncio.
+          EMAIL_RESPOSTAS: ${{ secrets.EMAIL_RESPOSTAS }}
         # Stacks explícitas — ver o comentário no deploy de dev.
         run: |
           pnpm --filter @emailmkt/infra exec cdk deploy \

@@ -101,7 +101,22 @@ export function aplicarSupressoes(core: Stack, sending: Stack, web: Stack, oidc:
         reason:
           'A ponte de eventos escreve numa única fila nomeada em sa-east-1, declarada por ARN ' +
           'explícito. Os curingas remanescentes vêm dos grants do CDK sobre a fila de entrada ' +
-          'desta mesma região.',
+          'desta mesma região. O recebedor de respostas acrescenta um curinga sobre as ' +
+          'identidades do SES desta região: `ses:SendEmail` só admite o recurso `identity/*` ' +
+          'quando o remetente é um endereço coberto por identidade de domínio, e restringir a ' +
+          '`identity/mail.andrearaujoadvogados.com.br` faria o encaminhamento falhar com ' +
+          'AccessDenied — foi exatamente esse erro que derrubou o primeiro envio do sistema.',
+      },
+      {
+        id: 'AwsSolutions-S1',
+        reason:
+          'O bucket de respostas guarda correspondência de cliente — o dado mais sensível que ' +
+          'o sistema toca — e mesmo assim log de acesso ao S3 acrescentaria pouco aqui: quem ' +
+          'escreve é o próprio SES, quem lê é uma única Lambda nomeada, e o objeto expira em ' +
+          '30 dias porque a mensagem já foi encaminhada para a caixa do escritório. Um bucket ' +
+          'de log com a mesma retenção guardaria o rastro de acesso a um conteúdo que já não ' +
+          'existe. Eventos de dados do CloudTrail cobrem isto melhor e valem para os dois ' +
+          'buckets do sistema — segue como item de V2, junto com o bucket de uploads.',
       },
     ],
     true,
