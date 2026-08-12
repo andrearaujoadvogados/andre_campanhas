@@ -45,6 +45,7 @@ function deps(): DepsEvento {
       contarPorCampanha: async () => estado.enviosSalvos.length,
       listarPorCampanha: async () => ({ itens: [] }),
       listarPorContato: async () => estado.enviosSalvos,
+      listarRespondentes: async () => ({ itens: [] }),
     },
     contatos: {
       buscarPorId: async () => estado.contato,

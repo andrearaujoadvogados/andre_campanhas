@@ -99,6 +99,7 @@ const NOME_EVENTO: Readonly<Record<EventoEnvio['tipo'], string>> = {
   REJECT: 'Recusado antes do envio',
   RENDERING_FAILURE: 'Falha ao montar a mensagem',
   DELIVERY_DELAY: 'Entrega atrasada',
+  RESPOSTA: 'Você respondeu a este e-mail',
 };
 
 const DIREITOS = [

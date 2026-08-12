@@ -35,8 +35,14 @@ interface Risco {
 
 interface Resumo {
   campanhasAgregadas: number;
-  contadores: { enviados: number; entregues: number };
-  taxas: { entrega: number; abertura: number; clique: number; bounceHard: number };
+  contadores: { enviados: number; entregues: number; respostas: number };
+  taxas: {
+    entrega: number;
+    abertura: number;
+    clique: number;
+    bounceHard: number;
+    resposta: number;
+  };
   risco: Risco;
 }
 
@@ -177,7 +183,7 @@ export function Dashboard() {
           {resumo.isLoading && <Carregando />}
           <ErroCaixa erro={resumo.error} />
           {resumo.data !== undefined && (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
               <Metrica
                 rotulo="Entrega"
                 valor={percentual(resumo.data.taxas.entrega)}
@@ -185,6 +191,17 @@ export function Dashboard() {
               />
               <Metrica rotulo="Abertura" valor={percentual(resumo.data.taxas.abertura)} />
               <Metrica rotulo="Clique" valor={percentual(resumo.data.taxas.clique)} />
+              {/**
+               * Respondidos vem em número absoluto no detalhe, não só em
+               * percentual. Para um escritório de advocacia, "3 pessoas
+               * responderam" é a informação que move alguém a agir; "0,4%"
+               * é a mesma coisa dita de um jeito que ninguém age.
+               */}
+              <Metrica
+                rotulo="Respondidos"
+                valor={numero(resumo.data.contadores.respostas)}
+                detalhe={`${percentual(resumo.data.taxas.resposta)} de quem recebeu`}
+              />
               <Metrica
                 rotulo="Bounce permanente"
                 valor={percentual(resumo.data.taxas.bounceHard)}

@@ -173,6 +173,9 @@ function montarDeps(): Dependencias {
       contarPorCampanha: async () => 0,
       listarPorContato: async () => [],
       listarPorCampanha: async () => ({ itens: estado.enviosDaCampanha }),
+      listarRespondentes: async () => ({
+        itens: estado.enviosDaCampanha.filter((e) => e.respondidoEm !== undefined),
+      }),
     },
     eventos: {
       salvar: async () => undefined,
@@ -662,6 +665,42 @@ describe('relatórios', () => {
     expect(corpo.itens).toHaveLength(1);
     expect(corpo.itens[0]?.status).toBe('ENTREGUE');
     expect(corpo.itens[0]?.email).not.toBeNull();
+  });
+
+  it('lista quem respondeu — e só quem respondeu', async () => {
+    estado.contatoParaExportar = contatoFalso();
+    estado.enviosDaCampanha = [
+      { status: 'ENTREGUE', contactId: 'c-1' } as unknown as Envio,
+      {
+        status: 'ENTREGUE',
+        contactId: 'c-2',
+        enviadoEm: new Date('2026-08-08T10:00:00Z'),
+        respondidoEm: new Date('2026-08-09T14:30:00Z'),
+      } as unknown as Envio,
+    ];
+
+    const corpo = (await (await req('/relatorios/campanhas/k-1/respostas')).json()) as {
+      itens: { contactId: string; respondidoEm: string | null }[];
+    };
+
+    expect(corpo.itens).toHaveLength(1);
+    expect(corpo.itens[0]?.contactId).toBe('c-2');
+    expect(corpo.itens[0]?.respondidoEm).toBe('2026-08-09T14:30:00.000Z');
+  });
+
+  it('o relatório da campanha traz o contador de respondidos e a taxa', async () => {
+    estado.contadores = { enviados: 100, entregues: 90, respostas: 9 };
+
+    const corpo = (await (await req('/relatorios/campanhas/k-1')).json()) as {
+      contadores: Record<string, number>;
+      taxas: Record<string, number>;
+      baseDeCalculo: Record<string, string>;
+    };
+
+    expect(corpo.contadores['respostas']).toBe(9);
+    // Sobre entregues, como abertura: responder ao que não chegou é impossível.
+    expect(corpo.taxas['resposta']).toBeCloseTo(0.1);
+    expect(corpo.baseDeCalculo['resposta']).toBe('e-mails respondidos / entregues');
   });
 });
 

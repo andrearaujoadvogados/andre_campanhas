@@ -62,6 +62,7 @@ function deps(): DepsExportacao {
       contarPorCampanha: async () => estado.envios.length,
       listarPorCampanha: async () => ({ itens: [] }),
       listarPorContato: async () => estado.envios,
+      listarRespondentes: async () => ({ itens: [] }),
     },
     eventos: {
       salvar: async () => undefined,

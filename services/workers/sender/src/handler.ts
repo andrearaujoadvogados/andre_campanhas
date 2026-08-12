@@ -93,6 +93,7 @@ async function processarRegistro(
     limiteDiario: cotaDiaria,
     baseUrlDescadastro: cfg.baseUrlDescadastro,
     configurationSet: cfg.configurationSet,
+    dominioRespostas: cfg.dominioRespostas,
   });
 
   /**

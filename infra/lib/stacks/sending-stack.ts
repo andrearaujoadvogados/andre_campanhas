@@ -1,12 +1,16 @@
-import { CfnOutput, Duration, Stack, type StackProps } from 'aws-cdk-lib';
+import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import {
   ConfigurationSet,
   ConfigurationSetEventDestination,
   EmailSendingEvent,
   EventDestination,
   HttpsPolicy,
+  ReceiptRuleSet,
   SuppressionReasons,
+  TlsPolicy,
 } from 'aws-cdk-lib/aws-ses';
+import { Lambda as AcaoLambda, S3 as AcaoS3 } from 'aws-cdk-lib/aws-ses-actions';
+import { BlockPublicAccess, Bucket, BucketEncryption } from 'aws-cdk-lib/aws-s3';
 import { Topic } from 'aws-cdk-lib/aws-sns';
 import { SqsSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
 import { Queue, QueueEncryption } from 'aws-cdk-lib/aws-sqs';
@@ -140,6 +144,8 @@ export class SendingStack extends Stack {
       }),
     );
 
+    this.montarRecebimentoDeRespostas(cfg, props);
+
     /**
      * Os alarmes de reputação vivem aqui, não no núcleo.
      *
@@ -158,4 +164,113 @@ export class SendingStack extends Stack {
       description: 'Registro DNS pendente para o dominio de rastreamento (§9.1.2)',
     });
   }
+
+  /**
+   * Recebimento das respostas dos contatos — §1.4.
+   *
+   * **Só existe quando `caixaRespostas` está definida.** O SES aceita um único
+   * conjunto de regras de recebimento ativo por região, e dev e prod dividem a
+   * conta: dois conjuntos brigariam pelo mesmo lugar. Mais importante, ligar
+   * isto muda o `Reply-To:` das campanhas — sem o MX publicado, as respostas
+   * dos clientes iriam para um endereço que não recebe nada. A variável de
+   * ambiente é o interruptor, e ele começa desligado.
+   *
+   * O conjunto de regras **não é ativado** pelo CDK: a API de ativação é global
+   * na região e não tem recurso CloudFormation. Ativar exige um comando, que
+   * fica documentado no output.
+   */
+  private montarRecebimentoDeRespostas(cfg: AmbienteConfig, props: SendingStackProps): void {
+    const caixa = cfg.caixaRespostas;
+    if (caixa === undefined) return;
+
+    /**
+     * Onde a mensagem crua é gravada.
+     *
+     * A regra de recebimento precisa de um destino que guarde o e-mail inteiro:
+     * o evento que a Lambda recebe traz cabeçalhos, mas não o corpo nem os
+     * anexos — e é o corpo que o escritório precisa ler.
+     *
+     * Expira em 30 dias. É correspondência de cliente: manter cópia
+     * indefinidamente num bucket seria um acervo de dado pessoal sem
+     * finalidade, já que a mensagem foi encaminhada para a caixa do escritório
+     * no minuto em que chegou (§10.2).
+     */
+    const bucket = new Bucket(this, 'BucketRespostas', {
+      bucketName: `${nome(cfg, 'respostas')}-${this.account}`,
+      encryption: BucketEncryption.S3_MANAGED,
+      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+      lifecycleRules: [{ id: 'expirar-respostas', expiration: Duration.days(30) }],
+    });
+
+    const fnReceiver = funcaoNode(this, {
+      cfg,
+      nomeLogico: 'reply-receiver',
+      entry: join(RAIZ, 'services', 'workers', 'reply-receiver', 'src', 'handler.ts'),
+      timeout: Duration.seconds(60),
+      memorySize: 512,
+      environment: {
+        BUCKET_RESPOSTAS: bucket.bucketName,
+        PREFIXO_RESPOSTAS: PREFIXO_RESPOSTAS,
+        CAIXA_RESPOSTAS: caixa,
+        REMETENTE_ENCAMINHAMENTO: cfg.remetenteRespostas,
+        FILA_DESTINO_URL: props.filaEventosDestinoUrl,
+        REGIAO_DADOS: cfg.regiaoDados,
+      },
+    });
+
+    bucket.grantRead(fnReceiver);
+    fnReceiver.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['sqs:SendMessage'],
+        resources: [props.filaEventosDestinoArn],
+      }),
+    );
+    fnReceiver.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+        // Só a identidade do encaminhamento. Sem restrição, esta função poderia
+        // enviar em nome de qualquer identidade da conta — inclusive disparar
+        // campanha, que é trabalho de outra função.
+        resources: [`arn:aws:ses:${cfg.regiaoEnvio}:${this.account}:identity/*`],
+      }),
+    );
+
+    const conjunto = new ReceiptRuleSet(this, 'ConjuntoRegrasRespostas', {
+      receiptRuleSetName: nome(cfg, 'respostas'),
+    });
+
+    conjunto.addRule('RegraRespostas', {
+      // Só o subdomínio de respostas. Sem o recipiente explícito, a regra
+      // valeria para **todo** e-mail que chegasse a qualquer domínio verificado
+      // da conta — e o encaminhamento passaria a repassar o que não é resposta.
+      recipients: [cfg.dominioRespostas],
+      enabled: true,
+      scanEnabled: true,
+      // Exige TLS na entrega. Resposta de cliente é comunicação privilegiada;
+      // aceitar em texto claro seria uma escolha difícil de justificar.
+      tlsPolicy: TlsPolicy.REQUIRE,
+      actions: [
+        // Ordem importa: o S3 grava primeiro, a Lambda lê depois. Invertido, a
+        // função procuraria um objeto que ainda não existe.
+        new AcaoS3({ bucket, objectKeyPrefix: PREFIXO_RESPOSTAS }),
+        new AcaoLambda({ function: fnReceiver }),
+      ],
+    });
+
+    new CfnOutput(this, 'AvisoMxRespostas', {
+      value: `MX 10 inbound-smtp.${cfg.regiaoEnvio}.amazonaws.com em ${cfg.dominioRespostas}`,
+      description: 'Registro DNS pendente para o recebimento de respostas (§1.4)',
+    });
+    new CfnOutput(this, 'AtivarConjuntoRegras', {
+      value: `aws ses set-active-receipt-rule-set --rule-set-name ${nome(cfg, 'respostas')} --region ${cfg.regiaoEnvio}`,
+      description: 'O CDK cria o conjunto de regras, mas ativar exige este comando (uma vez)',
+    });
+  }
 }
+
+/** Prefixo das chaves no bucket. O worker monta a chave com ele + o messageId. */
+const PREFIXO_RESPOSTAS = 'respostas/';

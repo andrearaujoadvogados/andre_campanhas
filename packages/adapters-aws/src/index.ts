@@ -21,6 +21,8 @@ export * from './repositories/dynamo-event-repository.js';
 export * from './email/ses-email-provider.js';
 export * from './email/fake-email-provider.js';
 export * from './email/ses-event-parser.js';
+export * from './email/ses-inbound-parser.js';
+export * from './email/encaminhar-resposta.js';
 
 export * from './queue/sqs-send-queue-publisher.js';
 export * from './queue/sqs-import-queue-publisher.js';

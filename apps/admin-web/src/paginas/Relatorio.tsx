@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
@@ -33,6 +33,15 @@ interface DestinatarioRelatorio {
   status: string;
   enviadoEm: string | null;
   falhaMotivo: string | null;
+  respondidoEm: string | null;
+}
+
+interface RespostaRelatorio {
+  contactId: string;
+  nome: string | null;
+  email: string | null;
+  respondidoEm: string | null;
+  enviadoEm: string | null;
 }
 
 interface Relatorio {
@@ -136,7 +145,7 @@ export function Relatorio() {
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Numero rotulo="Enviados" valor={numero(r.contadores['enviados'] ?? 0)} />
         <Numero
           rotulo="Entregues"
@@ -152,6 +161,13 @@ export function Relatorio() {
           rotulo="Cliques únicos"
           valor={numero(r.contadores['cliquesUnicos'] ?? 0)}
           detalhe={percentual(r.taxas['clique'] ?? 0)}
+        />
+        {/* Conta e-mails respondidos, não mensagens recebidas: quem responde
+            três vezes respondeu a um e-mail. */}
+        <Numero
+          rotulo="Respondidos"
+          valor={numero(r.contadores['respostas'] ?? 0)}
+          detalhe={percentual(r.taxas['resposta'] ?? 0)}
         />
       </div>
 
@@ -193,9 +209,110 @@ export function Relatorio() {
         </dl>
       </Cartao>
 
+      <Cartao titulo="Quem respondeu">
+        <TabelaRespostas id={r.campaignId} />
+      </Cartao>
+
       <Cartao titulo="Por destinatário">
         <TabelaDestinatarios id={r.campaignId} />
       </Cartao>
+    </div>
+  );
+}
+
+/**
+ * Quem respondeu ao e-mail — §11, item 9.
+ *
+ * Sem busca nem filtro, ao contrário da tabela de destinatários: a lista de
+ * quem respondeu é curta por natureza, e um campo de busca sobre cinco linhas é
+ * ruído. Se um dia crescer a ponto de precisar, aí entra.
+ */
+function TabelaRespostas({ id }: { id: string }) {
+  const q = useInfiniteQuery({
+    queryKey: ['respostas', id],
+    initialPageParam: '',
+    queryFn: ({ pageParam }) =>
+      api.get<{ itens: RespostaRelatorio[]; cursor?: string }>(
+        `/relatorios/campanhas/${id}/respostas${pageParam === '' ? '' : `?cursor=${encodeURIComponent(pageParam)}`}`,
+      ),
+    getNextPageParam: (ultima) => ultima.cursor,
+  });
+
+  const itens = (q.data?.pages ?? []).flatMap((p) => p.itens ?? []);
+
+  /**
+   * Puxa a próxima página sozinho enquanto nada apareceu.
+   *
+   * O filtro de resposta roda no servidor **depois** da leitura do bloco: uma
+   * página pode voltar vazia e ainda haver respostas adiante. Sem isto, a tela
+   * diria "ninguém respondeu" numa campanha que teve respostas — o pior
+   * desfecho possível para esta tela em particular. Só continua enquanto está
+   * vazio; assim que a primeira resposta aparece, o resto fica no botão.
+   */
+  useEffect(() => {
+    if (itens.length === 0 && q.hasNextPage && !q.isFetchingNextPage) void q.fetchNextPage();
+  }, [itens.length, q.hasNextPage, q.isFetchingNextPage, q]);
+
+  if (q.isLoading) return <Carregando />;
+  if (q.error !== null) return <ErroCaixa erro={q.error} />;
+
+  if (itens.length === 0) {
+    return q.hasNextPage ? (
+      <Carregando />
+    ) : (
+      <Vazio mensagem="Nenhum contato respondeu a este e-mail até agora." />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <TabelaRolavel>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-line text-left text-ink-suave">
+              <th className="py-2 pr-3 font-medium">Contato</th>
+              <th className="py-2 pr-3 font-medium">Respondeu em</th>
+              <th className="py-2 pr-3 font-medium">Recebeu em</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {itens.map((d) => (
+              <tr key={d.contactId}>
+                <td className="py-2 pr-3">
+                  <Link
+                    to={`/contatos/${d.contactId}`}
+                    className="text-ink hover:underline"
+                    // A resposta em si está na caixa do escritório, não aqui: o
+                    // sistema registra que houve, não o que foi dito.
+                  >
+                    {d.nome ?? d.email ?? d.contactId}
+                  </Link>
+                  {d.nome !== null && d.email !== null && (
+                    <span className="block text-xs text-ink-suave">{d.email}</span>
+                  )}
+                </td>
+                <td className="py-2 pr-3 text-ink">{dataHora(d.respondidoEm)}</td>
+                <td className="py-2 pr-3 text-ink-suave">{dataHora(d.enviadoEm)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TabelaRolavel>
+
+      <p className="text-xs text-ink-suave">
+        O conteúdo das respostas não fica no sistema — cada uma é encaminhada para a caixa de e-mail
+        do escritório assim que chega.
+      </p>
+
+      {q.hasNextPage && (
+        <Botao
+          variante="secundario"
+          carregando={q.isFetchingNextPage}
+          onClick={() => void q.fetchNextPage()}
+        >
+          Carregar mais
+        </Botao>
+      )}
     </div>
   );
 }

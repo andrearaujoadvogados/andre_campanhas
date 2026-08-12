@@ -312,6 +312,15 @@ export class CoreStack extends Stack {
         SEGREDO_HMAC_ARN: segredoHmac.secretArn,
         CONFIGURATION_SET: nome(cfg, 'config-set'),
         DOMINIO_ENVIO: cfg.dominioEnvio,
+        /**
+         * Só entra quando o recebimento de respostas está ligado — §1.4.
+         *
+         * Presente, o `Reply-To:` das campanhas passa a ser o endereço marcado
+         * com a campanha. Definir antes de o MX existir mandaria as respostas
+         * dos clientes para um endereço que não recebe: é a mesma chave que
+         * governa a regra de recebimento, e as duas pontas ligam juntas.
+         */
+        ...(cfg.caixaRespostas === undefined ? {} : { DOMINIO_RESPOSTAS: cfg.dominioRespostas }),
         // Necessária para adiar a entrega quando a campanha está pausada ou o
         // SES devolve throttling (ADR-05).
         FILA_ENVIO: filaEnvio.queueUrl,

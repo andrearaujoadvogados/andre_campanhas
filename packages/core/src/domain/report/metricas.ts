@@ -22,6 +22,13 @@ export interface ContadoresCampanha {
   readonly descadastros: number;
   readonly rejeitados: number;
   readonly falhasRenderizacao: number;
+  /**
+   * E-mails **respondidos** — um por envio, não um por mensagem recebida.
+   *
+   * Não vem do SES: o SES não emite evento de resposta. Vem da regra de
+   * recebimento (§1.4), correlacionada de volta ao envio.
+   */
+  readonly respostas: number;
 }
 
 export type NivelRisco = 'OK' | 'ATENCAO' | 'CRITICO';
@@ -38,6 +45,13 @@ export interface TaxasCampanha {
   readonly bounceTotal: number;
   readonly reclamacao: number;
   readonly descadastro: number;
+  /**
+   * Respostas sobre **entregues** — responder ao que não chegou é impossível.
+   *
+   * Mesma base da abertura, de propósito: as duas medem reação de quem recebeu,
+   * e usar bases diferentes tornaria impossível compará-las na mesma tela.
+   */
+  readonly resposta: number;
 }
 
 export interface AvaliacaoRisco {
@@ -78,6 +92,7 @@ export const CONTADORES_ZERADOS: ContadoresCampanha = {
   descadastros: 0,
   rejeitados: 0,
   falhasRenderizacao: 0,
+  respostas: 0,
 };
 
 export function normalizarContadores(bruto: Readonly<Record<string, number>>): ContadoresCampanha {
@@ -104,6 +119,7 @@ export function calcularTaxas(c: ContadoresCampanha): TaxasCampanha {
     // Reclamação sobre entregues: só quem recebeu pode reclamar.
     reclamacao: dividir(c.reclamacoes, c.entregues),
     descadastro: dividir(c.descadastros, c.entregues),
+    resposta: dividir(c.respostas, c.entregues),
   };
 }
 
