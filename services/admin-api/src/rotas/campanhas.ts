@@ -49,21 +49,45 @@ const STATUS_VALIDOS: readonly Campaign['status'][] = [
   'FALHA',
 ];
 
+/**
+ * Versão vigente do modelo — o insumo de `templateVersao`.
+ *
+ * Existia um `templateVersao: 1` cravado aqui, e o efeito era grave: editar o
+ * modelo cria a versão 2, 3…, mas a campanha continuava apontando para a 1.
+ * O e-mail de teste mostrava o primeiro rascunho, e — pior — o `sender` lê o
+ * mesmo campo, então o **disparo real** também sairia com a versão velha. Quem
+ * montasse o e-mail, editasse e disparasse enviaria conteúdo que já havia
+ * descartado, sem nenhum aviso.
+ *
+ * Cai para 1 quando o modelo não é encontrado: é o que a campanha tinha antes,
+ * e recusar a criação por causa disso seria pior que seguir com o valor antigo.
+ */
+async function versaoVigente(
+  deps: Dependencias,
+  tenantId: Campaign['tenantId'],
+  templateId: Campaign['templateId'],
+): Promise<number> {
+  const meta = await deps.templates.buscarMeta(tenantId, templateId);
+  return meta?.versaoAtual ?? 1;
+}
+
 rotasCampanhas.post('/', validarCorpo(criarCampanhaSchema), async (c) => {
   const dados = c.req.valid('json');
   const deps = await obterDependencias();
   const usuario = c.get('usuario');
   const agora = deps.clock.agora();
 
+  const templateId = novoTemplateId(dados.templateId);
+
   const campanha: Campaign = {
     tenantId: usuario.tenantId,
     campaignId: novoCampaignId(deps.ids.gerar()),
     nome: dados.nome,
     ...(dados.tipoEmailId === undefined ? {} : { tipoEmailId: novoTipoEmailId(dados.tipoEmailId) }),
-    templateId: novoTemplateId(dados.templateId),
-    // Congelada no disparo (§6.2, nota 3): editar o template não pode alterar
-    // retroativamente o que já foi enviado.
-    templateVersao: 1,
+    templateId,
+    // Acompanha o modelo enquanto é rascunho; congela no disparo (§6.2, nota 3),
+    // que é onde `versaoVigente` é chamada de novo.
+    templateVersao: await versaoVigente(deps, usuario.tenantId, templateId),
     listId: novoListId(dados.listId),
     status: 'RASCUNHO',
     remetenteNome: dados.remetenteNome,
@@ -193,11 +217,23 @@ rotasCampanhas.patch('/:id', validarCorpo(editarCampanhaSchema), async (c) => {
     );
   }
 
+  const templateEditado =
+    dados.templateId === undefined ? campanha.templateId : novoTemplateId(dados.templateId);
+
   const editada: Campaign = {
     ...campanha,
     ...(dados.nome === undefined ? {} : { nome: dados.nome }),
     ...(dados.tipoEmailId === undefined ? {} : { tipoEmailId: novoTipoEmailId(dados.tipoEmailId) }),
-    ...(dados.templateId === undefined ? {} : { templateId: novoTemplateId(dados.templateId) }),
+    templateId: templateEditado,
+    /**
+     * O rascunho acompanha o modelo.
+     *
+     * Toda gravação reamarra a versão vigente. Sem isto, editar o conteúdo no
+     * assistente (que gera uma versão nova do modelo) deixava a campanha presa
+     * na versão anterior — e o teste, e o disparo, sairiam com o conteúdo velho.
+     * Congelar de vez só faz sentido no disparo, não aqui.
+     */
+    templateVersao: await versaoVigente(deps, campanha.tenantId, templateEditado),
     ...(dados.listId === undefined ? {} : { listId: novoListId(dados.listId) }),
     ...(dados.remetenteNome === undefined ? {} : { remetenteNome: dados.remetenteNome }),
     ...(dados.remetenteEmail === undefined ? {} : { remetenteEmail: dados.remetenteEmail }),
@@ -378,8 +414,14 @@ rotasCampanhas.post('/:id/agendamento', validarCorpo(agendarCampanhaSchema), asy
   const resultado = agendar(campanha, dados.agendadaPara, deps.clock.agora());
   if (!resultado.ok) return erroDominio(c, resultado.error);
 
-  const hash = deps.hasherConteudo.hash(conteudoParaHash(campanha));
-  const agendada = registrarDisparo(resultado.value, usuario.userId, hash);
+  // Congela aqui a versão vigente do modelo (§6.2, nota 3): o que o teste
+  // mostrou é o que fica marcado para sair no horário.
+  const congelada: Campaign = {
+    ...resultado.value,
+    templateVersao: await versaoVigente(deps, campanha.tenantId, campanha.templateId),
+  };
+  const hash = deps.hasherConteudo.hash(conteudoParaHash(congelada));
+  const agendada = registrarDisparo(congelada, usuario.userId, hash);
 
   await deps.agendador.agendar(campanha.tenantId, campanha.campaignId, dados.agendadaPara);
   await deps.campanhas.salvar(agendada);
@@ -417,10 +459,21 @@ rotasCampanhas.post('/:id/teste', validarCorpo(enviarTesteSchema), async (c) => 
   const campanha = await carregar(deps, c);
   if (campanha === null) return naoEncontrada(c);
 
+  /**
+   * O teste renderiza o que sairia **agora**, não o que estava salvo.
+   *
+   * É o ponto do teste: avaliar conteúdo e estética do e-mail que vai ser
+   * disparado. Usar a versão gravada na campanha faria o operador conferir um
+   * rascunho anterior — montar o e-mail, ajustar e mandar o teste devolveria a
+   * versão de antes do ajuste, e ele aprovaria algo diferente do que sai. Como
+   * o disparo também congela a versão vigente no momento em que acontece, o que
+   * o teste mostra é exatamente o que seria enviado.
+   */
+  const versao = await versaoVigente(deps, campanha.tenantId, campanha.templateId);
   const conteudo = await deps.templates.buscarVersao(
     campanha.tenantId,
     campanha.templateId,
-    campanha.templateVersao,
+    versao,
   );
   if (conteudo === null) {
     return c.json(
@@ -530,8 +583,14 @@ rotasCampanhas.post('/:id/disparo', async (c) => {
     );
   }
 
-  const hash = deps.hasherConteudo.hash(conteudoParaHash(campanha));
-  const marcada = registrarDisparo(campanha, usuario.userId, hash);
+  // Congela a versão vigente no instante do disparo (§6.2, nota 3) — é o que
+  // faz o e-mail enviado ser o mesmo que o teste mostrou.
+  const congelada: Campaign = {
+    ...campanha,
+    templateVersao: await versaoVigente(deps, campanha.tenantId, campanha.templateId),
+  };
+  const hash = deps.hasherConteudo.hash(conteudoParaHash(congelada));
+  const marcada = registrarDisparo(congelada, usuario.userId, hash);
   await deps.campanhas.salvar(marcada);
 
   const execucao = await deps.agendador.dispararAgora(
