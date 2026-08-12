@@ -513,6 +513,14 @@ export function AssistenteCampanha({ aoCancelar }: { aoCancelar: () => void }) {
                     key={`zero-${estruturaZero === '' ? 'novo' : 'salvo'}`}
                     estruturaInicial={estruturaZero}
                     htmlInicial={htmlZero}
+                    // O nome e o assunto da barra são os da própria campanha —
+                    // editá-los aqui é o mesmo que editá-los na Etapa 1, e
+                    // pouparia a ida e volta só para ajustar a linha de assunto
+                    // enquanto se olha o e-mail.
+                    nome={dados.nome}
+                    aoMudarNome={(v) => definir('nome', v)}
+                    assunto={dados.assunto}
+                    aoMudarAssunto={(v) => definir('assunto', v)}
                     aoMudar={({ estruturaVisual, corpoHtml }) => {
                       definirEstruturaZero(estruturaVisual);
                       definirHtmlZero(corpoHtml);
