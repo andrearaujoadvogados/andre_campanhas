@@ -431,10 +431,21 @@ export function TemplateEditor() {
               >
                 {tipo === 'VISUAL' ? (
                   <EditorVisual
+                    // `key` amarra o editor ao conteúdo de partida: sem ela,
+                    // alternar código→visual reaproveitaria a instância antiga e
+                    // o HTML herdado nunca entraria no canvas.
+                    key={`visual-${estruturaVisual === '' ? 'novo' : 'salvo'}`}
                     estruturaInicial={estruturaVisual}
+                    htmlInicial={corpoHtml}
                     aoMudar={({ estruturaVisual: ev, corpoHtml: ch }) => {
                       definirEstrutura(ev);
                       definirCorpo(ch);
+                    }}
+                    // "Editar como HTML" leva o compilado para o modo código.
+                    aoPedirHtml={(html) => {
+                      definirCorpo(html);
+                      definirEstrutura('');
+                      definirTipo('CODIGO');
                     }}
                   />
                 ) : (

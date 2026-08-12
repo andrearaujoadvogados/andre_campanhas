@@ -7,6 +7,33 @@ import { AssistenteCampanha } from '../src/componentes/AssistenteCampanha.tsx';
 
 const posts: { caminho: string; corpo: unknown }[] = [];
 
+/**
+ * Os editores entram simulados.
+ *
+ * O GrapesJS monta um iframe e mede layout de verdade; dentro do jsdom ele
+ * trava o teste em vez de falhar. O que estas asserções verificam é o
+ * assistente — qual editor ele oferece e quando libera o avanço —, não o
+ * editor em si, que tem os próprios testes.
+ */
+vi.mock('../src/componentes/EditorVisual.tsx', () => ({
+  EditorVisual: ({ aoMudar }: { aoMudar: (s: unknown) => void }) => (
+    <button
+      type="button"
+      onClick={() => aoMudar({ estruturaVisual: '{}', corpoHtml: '<p>oi</p>' })}
+    >
+      simular edição visual
+    </button>
+  ),
+}));
+
+vi.mock('../src/componentes/EditorEmail.tsx', () => ({
+  EditorEmail: ({ aoMudar }: { aoMudar: (v: string) => void }) => (
+    <button type="button" onClick={() => aoMudar('<p>html na mão</p>')}>
+      simular edição html
+    </button>
+  ),
+}));
+
 vi.mock('../src/lib/api.js', () => ({
   api: {
     get: async (caminho: string) =>
@@ -34,11 +61,16 @@ vi.mock('../src/lib/api.js', () => ({
           ],
         };
       }
+      if (caminho === '/templates') return { templateId: 't-novo' };
       return { campaignId: 'k-9' };
     },
     patch: async (caminho: string, corpo: unknown) => {
       posts.push({ caminho, corpo });
       return { campaignId: 'k-9' };
+    },
+    put: async (caminho: string, corpo: unknown) => {
+      posts.push({ caminho, corpo });
+      return { templateId: 't-novo' };
     },
   },
   FalhaApi: class extends Error {},
@@ -189,5 +221,77 @@ describe('seleção vazia trava o disparo', () => {
       const criacao = posts.find((p) => p.caminho === '/campanhas');
       expect(criacao?.corpo).toMatchObject({ destinatariosSelecionados: ['c-2'] });
     });
+  });
+});
+
+describe('criar o e-mail do zero na própria campanha', () => {
+  /** Leva o assistente até a Etapa 2 com o nome preenchido. */
+  async function ateOEmail() {
+    montar();
+    await userEvent.type(
+      screen.getByRole('textbox', { name: /nome da campanha/i }),
+      'Campanha de agosto',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /avançar/i }));
+    await screen.findByRole('button', { name: /começar do zero/i });
+  }
+
+  it('oferece começar do zero ou usar um modelo salvo', async () => {
+    await ateOEmail();
+
+    expect(screen.getByRole('button', { name: /começar do zero/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /usar um modelo salvo/i })).toBeInTheDocument();
+  });
+
+  it('do zero, deixa escolher entre criador visual e HTML', async () => {
+    await ateOEmail();
+    await userEvent.click(screen.getByRole('button', { name: /começar do zero/i }));
+
+    expect(screen.getByRole('button', { name: /criador visual/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /html personalizado/i })).toBeInTheDocument();
+  });
+
+  it('não avança do e-mail sem conteúdo montado', async () => {
+    // Sem isto, a campanha seguiria para os destinatários com corpo vazio e o
+    // problema só apareceria na gravação, longe da tela que o causou.
+    await ateOEmail();
+    await userEvent.click(screen.getByRole('button', { name: /começar do zero/i }));
+
+    expect(screen.getByRole('button', { name: /avançar/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /salvar rascunho/i })).toBeDisabled();
+  });
+});
+
+describe('o e-mail montado na campanha vira um modelo próprio', () => {
+  it('cria o modelo antes da campanha e amarra o id nela', async () => {
+    // O envio lê de um modelo com versão congelada. Guardar HTML solto na
+    // campanha criaria um segundo caminho de conteúdo, fora do versionamento e
+    // da auditoria — por isso o conteúdo montado aqui vira modelo.
+    montar();
+    await userEvent.type(
+      screen.getByRole('textbox', { name: /nome da campanha/i }),
+      'Campanha de agosto',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /avançar/i }));
+
+    await userEvent.click(await screen.findByRole('button', { name: /começar do zero/i }));
+    await userEvent.click(screen.getByRole('button', { name: /simular edição visual/i }));
+    await userEvent.click(screen.getByRole('button', { name: /avançar/i }));
+
+    await userEvent.selectOptions(await screen.findByRole('combobox'), 'l-1');
+    await userEvent.click(screen.getByRole('button', { name: /salvar rascunho/i }));
+
+    await waitFor(() => {
+      const modelo = posts.find((p) => p.caminho === '/templates');
+      expect(modelo?.corpo).toMatchObject({
+        nome: 'Campanha de agosto — e-mail',
+        corpoHtml: '<p>oi</p>',
+        tipo: 'VISUAL',
+      });
+    });
+
+    // A campanha aponta para o modelo recém-criado, não para um id vazio.
+    const campanha = posts.find((p) => p.caminho === '/campanhas');
+    expect(campanha?.corpo).toMatchObject({ templateId: 't-novo' });
   });
 });

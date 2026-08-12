@@ -1,0 +1,159 @@
+/**
+ * Tema do editor visual — as cores do escritório sobre o GrapesJS.
+ *
+ * O GrapesJS vem escuro por padrão, o que destoaria do resto do painel. Em vez
+ * de reescrever o CSS dele, redefinimos as quatro classes que ele usa para
+ * pintar tudo (`gjs-one-bg`, `gjs-two-color`, `gjs-three-bg`, `gjs-four-color`)
+ * — é o ponto de extensão previsto pela biblioteca, e sobrevive a atualização
+ * de versão melhor do que seletores internos.
+ *
+ * Os valores vêm do mesmo design system do painel (index.css), então o editor
+ * acompanha automaticamente qualquer ajuste de marca.
+ */
+
+.editor-visual .gjs-one-bg {
+  background-color: var(--color-paper-light);
+}
+
+.editor-visual .gjs-two-color {
+  color: var(--color-ink);
+}
+
+/* Cor de destaque: seleção, botão ativo, borda do componente sob o cursor. */
+.editor-visual .gjs-three-bg {
+  background-color: var(--color-gold);
+  color: var(--color-paper-light);
+}
+
+.editor-visual .gjs-four-color,
+.editor-visual .gjs-four-color-h:hover {
+  color: var(--color-gold);
+}
+
+/* ── Blocos (Estruturas / Blocos / Módulos) ──────────────────────────────── */
+
+.editor-visual .gjs-block {
+  border: 1px solid var(--color-line);
+  border-radius: 0.375rem;
+  background-color: var(--color-paper-light);
+  color: var(--color-ink);
+  min-height: auto;
+  padding: 0.75rem 0.5rem;
+  transition:
+    background-color 120ms,
+    border-color 120ms;
+}
+
+.editor-visual .gjs-block:hover {
+  background-color: var(--color-accent-mist);
+  border-color: var(--color-gold-claro);
+}
+
+.editor-visual .gjs-block__media svg {
+  fill: var(--color-ink-suave);
+}
+
+.editor-visual .gjs-block-label {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+/* Cabeçalho de categoria: é o que dá o recorte "Estruturas / Blocos". */
+.editor-visual .gjs-block-category .gjs-title,
+.editor-visual .gjs-sm-sector .gjs-sm-sector-title {
+  background-color: transparent;
+  border-bottom: 1px solid var(--color-line);
+  color: var(--color-ink);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  letter-spacing: 0.01em;
+  padding: 0.625rem 0.25rem;
+}
+
+/* ── Campos de configuração (estilo e propriedades do bloco) ─────────────── */
+
+.editor-visual .gjs-field {
+  background-color: var(--color-paper-light);
+  border: 1px solid var(--color-line);
+  border-radius: 0.375rem;
+  color: var(--color-ink);
+}
+
+.editor-visual .gjs-field input,
+.editor-visual .gjs-field select,
+.editor-visual .gjs-field textarea {
+  color: var(--color-ink);
+}
+
+.editor-visual .gjs-sm-label,
+.editor-visual .gjs-trt-trait__label,
+.editor-visual .gjs-label {
+  color: var(--color-ink-suave);
+  font-size: 0.75rem;
+}
+
+.editor-visual .gjs-clm-tags,
+.editor-visual .gjs-sm-sector,
+.editor-visual .gjs-trt-traits {
+  background-color: transparent;
+}
+
+/* ── Canvas ──────────────────────────────────────────────────────────────── */
+
+.editor-visual .gjs-cv-canvas {
+  background-color: var(--color-paper);
+  /* O padrão do GrapesJS reserva espaço para a barra dele; aqui a barra é
+     nossa, então o canvas ocupa a altura toda do contêiner. */
+  top: 0;
+  height: 100%;
+  width: 100%;
+}
+
+.editor-visual .gjs-cv-canvas__frames {
+  /* Centraliza a folha do e-mail, como numa caixa de entrada. */
+  display: flex;
+  justify-content: center;
+}
+
+.editor-visual .gjs-frame-wrapper {
+  max-width: 700px;
+}
+
+/* Realce do componente selecionado — dourado, não azul. */
+.editor-visual .gjs-selected {
+  outline: 2px solid var(--color-gold) !important;
+  outline-offset: -2px;
+}
+
+.editor-visual .gjs-hovered {
+  outline: 1px dashed var(--color-gold-claro) !important;
+  outline-offset: -1px;
+}
+
+/* Barra de ferramentas que aparece sobre o bloco selecionado. */
+.editor-visual .gjs-toolbar {
+  background-color: var(--color-gold);
+}
+
+.editor-visual .gjs-toolbar-item {
+  color: var(--color-paper-light);
+  fill: var(--color-paper-light);
+}
+
+/* ── Modal (Código do e-mail) ────────────────────────────────────────────── */
+
+.editor-visual-modal .gjs-mdl-dialog {
+  background-color: var(--color-paper-light);
+  border: 1px solid var(--color-line);
+  border-radius: 0.5rem;
+  color: var(--color-ink);
+}
+
+.editor-visual-modal .gjs-mdl-header {
+  border-bottom: 1px solid var(--color-line);
+}
+
+.editor-visual-modal .gjs-mdl-title {
+  color: var(--color-ink);
+  font-weight: 600;
+}
