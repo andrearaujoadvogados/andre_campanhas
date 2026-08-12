@@ -1,8 +1,16 @@
-import { useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { FalhaApi, api, type ComAviso } from '../lib/api.js';
 import { Aviso, Botao, Campo, ErroCaixa, classeEntrada } from './base.tsx';
+
+/** O criador visual é pesado; só carrega para quem escolhe montar do zero. */
+const EditorVisual = lazy(() =>
+  import('./EditorVisual.tsx').then((m) => ({ default: m.EditorVisual })),
+);
+const EditorEmail = lazy(() =>
+  import('./EditorEmail.tsx').then((m) => ({ default: m.EditorEmail })),
+);
 
 /**
  * Assistente de criação de campanha — §8 do briefing, versão desburocratizada.
@@ -75,6 +83,20 @@ export function AssistenteCampanha({ aoCancelar }: { aoCancelar: () => void }) {
    * ficava sem nenhuma pista do que corrigir.
    */
   const [falhasTeste, definirFalhasTeste] = useState<{ email: string; motivo: string }[]>([]);
+  /**
+   * De onde vem o conteúdo do e-mail — §8, Etapa 2.
+   *
+   * `MODELO` reaproveita um modelo salvo. `ZERO` abre o criador aqui mesmo: o
+   * conteúdo é montado na hora e vira um modelo próprio desta campanha ao
+   * salvar (ver `garantirTemplate`). O envio continua lendo de um modelo com
+   * versão congelada — é o que preserva a trilha do que saiu.
+   */
+  const [modoEmail, definirModoEmail] = useState<'MODELO' | 'ZERO'>('MODELO');
+  const [modoZero, definirModoZero] = useState<'VISUAL' | 'CODIGO'>('VISUAL');
+  const [htmlZero, definirHtmlZero] = useState('');
+  const [estruturaZero, definirEstruturaZero] = useState('');
+  /** Id do modelo criado por esta campanha — reusado nas gravações seguintes. */
+  const [templateProprioId, definirTemplateProprioId] = useState<string | null>(null);
   const [tagsFiltroTexto, definirTagsFiltro] = useState('');
   // Ids destravados da seleção (desmarcados). Vazio = todos os elegíveis entram.
   const [desmarcados, definirDesmarcados] = useState<Set<string>>(new Set());
@@ -146,18 +168,57 @@ export function AssistenteCampanha({ aoCancelar }: { aoCancelar: () => void }) {
     ...(desmarcados.size > 0 ? { destinatariosSelecionados: selecionadosIds } : {}),
   });
 
+  /**
+   * Garante que existe um modelo para a campanha apontar.
+   *
+   * No modo ZERO o conteúdo é montado aqui, mas o envio lê de um **modelo** com
+   * versão congelada — então o e-mail feito na hora vira um modelo próprio desta
+   * campanha. Criar um em vez de guardar HTML solto na campanha mantém um só
+   * caminho de conteúdo: mesma prévia, mesmo versionamento, mesma auditoria.
+   *
+   * Na primeira gravação cria; nas seguintes atualiza o mesmo modelo (o PUT
+   * gera uma versão nova, que é o comportamento certo para conteúdo editado).
+   */
+  const garantirTemplate = async (): Promise<string> => {
+    if (modoEmail === 'MODELO') return dados.templateId;
+
+    const corpoModelo = {
+      nome: `${dados.nome.trim() || 'Campanha sem nome'} — e-mail`,
+      // O modelo exige assunto; sem um próprio, o nome da campanha serve de
+      // ponto de partida e o assunto da campanha (Etapa 1) sobrepõe no envio.
+      assunto: dados.assunto.trim() === '' ? dados.nome.trim() : dados.assunto.trim(),
+      corpoHtml: htmlZero,
+      tipo: modoZero,
+      ...(modoZero === 'VISUAL' && estruturaZero !== '' ? { estruturaVisual: estruturaZero } : {}),
+    };
+
+    if (templateProprioId === null) {
+      const r = await api.post<{ templateId: string }>('/templates', corpoModelo);
+      definirTemplateProprioId(r.templateId);
+      return r.templateId;
+    }
+    await api.put<{ templateId: string }>(`/templates/${templateProprioId}`, corpoModelo);
+    return templateProprioId;
+  };
+
   /** Cria (ou atualiza) o rascunho e devolve o id — base para testar e disparar. */
   const salvarRascunho = useMutation({
     mutationFn: async (): Promise<string> => {
+      const templateId = await garantirTemplate();
+      const corpo = { ...corpoParaSalvar(), templateId };
+
       if (campaignId === null) {
-        const r = await api.post<RespostaCampanha>('/campanhas', corpoParaSalvar());
+        const r = await api.post<RespostaCampanha>('/campanhas', corpo);
         definirCampaignId(r.campaignId);
         return r.campaignId;
       }
-      await api.patch<RespostaCampanha>(`/campanhas/${campaignId}`, corpoParaSalvar());
+      await api.patch<RespostaCampanha>(`/campanhas/${campaignId}`, corpo);
       return campaignId;
     },
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['campanhas'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['campanhas'] });
+      void qc.invalidateQueries({ queryKey: ['templates'] });
+    },
   });
 
   const teste = useMutation({
@@ -194,7 +255,15 @@ export function AssistenteCampanha({ aoCancelar }: { aoCancelar: () => void }) {
     },
   });
 
-  const podeSalvar = dados.nome.trim() !== '' && dados.templateId !== '' && dados.listId !== '';
+  /**
+   * O conteúdo do e-mail está resolvido?
+   *
+   * No modo MODELO, quando há um escolhido; no modo ZERO, quando há corpo
+   * montado — o modelo em si só nasce na gravação (`garantirTemplate`).
+   */
+  const conteudoPronto = modoEmail === 'MODELO' ? dados.templateId !== '' : htmlZero.trim() !== '';
+
+  const podeSalvar = dados.nome.trim() !== '' && conteudoPronto && dados.listId !== '';
 
   /**
    * Desmarcou todo mundo — estado inválido, e não "envie para todos".
@@ -208,7 +277,7 @@ export function AssistenteCampanha({ aoCancelar }: { aoCancelar: () => void }) {
 
   const validoNoPasso = (p: number): boolean => {
     if (p === 0) return dados.nome.trim() !== '' && dados.remetenteEmail.trim() !== '';
-    if (p === 1) return dados.templateId !== '';
+    if (p === 1) return conteudoPronto;
     if (p === 2) return dados.listId !== '';
     return true;
   };
@@ -344,29 +413,121 @@ export function AssistenteCampanha({ aoCancelar }: { aoCancelar: () => void }) {
       )}
 
       {passo === 1 && (
-        <div className="space-y-3">
-          <p className="text-sm text-ink-suave">Escolha o modelo que esta campanha vai usar.</p>
-          <ErroCaixa erro={modelos.error} />
-          <ul className="space-y-2">
-            {modelos.data?.itens.map((m) => (
-              <li key={m.templateId}>
-                <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-line px-3 py-2">
-                  <input
-                    type="radio"
-                    name="modelo"
-                    checked={dados.templateId === m.templateId}
-                    onChange={() => definir('templateId', m.templateId)}
-                  />
-                  <span className="font-medium text-ink">{m.nome}</span>
-                  {m.categoria ? (
-                    <span className="text-xs text-ink-suave">· {m.categoria}</span>
-                  ) : null}
-                </label>
-              </li>
+        <div className="space-y-4">
+          <div role="group" aria-label="Origem do conteúdo" className="flex flex-wrap gap-2">
+            {(
+              [
+                ['ZERO', 'Começar do zero'],
+                ['MODELO', 'Usar um modelo salvo'],
+              ] as const
+            ).map(([valor, rotulo]) => (
+              <button
+                key={valor}
+                type="button"
+                aria-pressed={modoEmail === valor}
+                onClick={() => definirModoEmail(valor)}
+                className={`inline-flex min-h-11 items-center rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                  modoEmail === valor
+                    ? 'border-ink bg-ink text-paper-light'
+                    : 'border-line bg-paper-light text-ink-suave hover:bg-accent-mist hover:text-ink'
+                }`}
+              >
+                {rotulo}
+              </button>
             ))}
-          </ul>
-          {modelos.data?.itens.length === 0 && (
-            <Aviso tom="alerta" texto="Nenhum modelo cadastrado. Crie um em Modelos primeiro." />
+          </div>
+
+          {modoEmail === 'MODELO' ? (
+            <div className="space-y-3">
+              <p className="text-sm text-ink-suave">Escolha o modelo que esta campanha vai usar.</p>
+              <ErroCaixa erro={modelos.error} />
+              <ul className="space-y-2">
+                {modelos.data?.itens.map((m) => (
+                  <li key={m.templateId}>
+                    <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-line px-3 py-2">
+                      <input
+                        type="radio"
+                        name="modelo"
+                        checked={dados.templateId === m.templateId}
+                        onChange={() => definir('templateId', m.templateId)}
+                      />
+                      <span className="font-medium text-ink">{m.nome}</span>
+                      {m.categoria ? (
+                        <span className="text-xs text-ink-suave">· {m.categoria}</span>
+                      ) : null}
+                    </label>
+                  </li>
+                ))}
+              </ul>
+              {modelos.data?.itens.length === 0 && (
+                <Aviso
+                  tom="alerta"
+                  texto="Nenhum modelo salvo ainda. Use “Começar do zero” para montar o e-mail aqui mesmo."
+                />
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-ink-suave">Montar com:</span>
+                {(
+                  [
+                    ['VISUAL', 'Criador visual'],
+                    ['CODIGO', 'HTML personalizado'],
+                  ] as const
+                ).map(([valor, rotulo]) => (
+                  <button
+                    key={valor}
+                    type="button"
+                    aria-pressed={modoZero === valor}
+                    onClick={() => definirModoZero(valor)}
+                    className={`inline-flex min-h-11 items-center rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                      modoZero === valor
+                        ? 'border-gold bg-accent-mist text-ink'
+                        : 'border-line bg-paper-light text-ink-suave hover:bg-accent-mist hover:text-ink'
+                    }`}
+                  >
+                    {rotulo}
+                  </button>
+                ))}
+              </div>
+
+              <p className="text-xs text-ink-suave">
+                O e-mail montado aqui vira um modelo próprio desta campanha — fica salvo em Modelos
+                e pode ser reaproveitado depois.
+              </p>
+
+              <Suspense
+                fallback={
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="rounded-md border border-line bg-paper-light px-4 py-12 text-center text-sm text-ink-suave"
+                  >
+                    Carregando o editor…
+                  </div>
+                }
+              >
+                {modoZero === 'VISUAL' ? (
+                  <EditorVisual
+                    key={`zero-${estruturaZero === '' ? 'novo' : 'salvo'}`}
+                    estruturaInicial={estruturaZero}
+                    htmlInicial={htmlZero}
+                    aoMudar={({ estruturaVisual, corpoHtml }) => {
+                      definirEstruturaZero(estruturaVisual);
+                      definirHtmlZero(corpoHtml);
+                    }}
+                    aoPedirHtml={(html) => {
+                      definirHtmlZero(html);
+                      definirEstruturaZero('');
+                      definirModoZero('CODIGO');
+                    }}
+                  />
+                ) : (
+                  <EditorEmail valor={htmlZero} aoMudar={definirHtmlZero} />
+                )}
+              </Suspense>
+            </div>
           )}
         </div>
       )}
@@ -485,7 +646,14 @@ export function AssistenteCampanha({ aoCancelar }: { aoCancelar: () => void }) {
                 rotulo="Assunto"
                 valor={dados.assunto.trim() === '' ? '(do modelo)' : dados.assunto}
               />
-              <Resumo rotulo="Modelo" valor={modeloEscolhido?.nome ?? '—'} />
+              <Resumo
+                rotulo="Conteúdo"
+                valor={
+                  modoEmail === 'ZERO'
+                    ? `Montado nesta campanha (${modoZero === 'VISUAL' ? 'criador visual' : 'HTML'})`
+                    : (modeloEscolhido?.nome ?? '—')
+                }
+              />
               <Resumo rotulo="Lista" valor={listaEscolhida?.nome ?? '—'} />
               <Resumo
                 rotulo="Filtro por tags"
