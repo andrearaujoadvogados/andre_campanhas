@@ -1103,6 +1103,68 @@ export function RowView({
   );
 }
 
+/**
+ * Escala de visualização: 1 quando o e-mail cabe; a fração exata quando não.
+ *
+ * Pura e exportada para o teste — o jsdom não mede layout, então o cálculo
+ * precisa ser verificável sem navegador.
+ */
+export function escalaDeVisualizacao(disponivel: number, largura: number): number {
+  if (disponivel <= 0 || largura <= 0) return 1;
+  return Math.min(1, disponivel / largura);
+}
+
+/**
+ * Mede o espaço disponível e devolve a escala para a largura configurada.
+ *
+ * Um e-mail de 800px numa tela estreita não cabe ao lado do painel. Encolher o
+ * contêiner (max-width) faria o conteúdo REFLUIR — colunas quebrando, texto
+ * reajustando — e a tela deixaria de mostrar o que o e-mail é. Escalar a
+ * visualização inteira preserva o layout real, só menor: é zoom, não reflow.
+ *
+ * `zoom` (CSS) em vez de transform: ele participa do layout — a altura
+ * acompanha a escala sem compensação manual — e funciona com contentEditable
+ * e drag and drop, que continuam recebendo as coordenadas certas.
+ */
+function useEscalaDoCanvas(largura: number): {
+  ref: React.RefObject<HTMLDivElement | null>;
+  escala: number;
+} {
+  const ref = useRef<HTMLDivElement>(null);
+  const [escala, setEscala] = useState(1);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el === null) return;
+
+    /**
+     * Medição direta, não só via ResizeObserver: o callback do observador roda
+     * junto do pipeline de renderização, e a PRIMEIRA medida precisa acontecer
+     * antes do primeiro paint — senão um e-mail largo pisca no tamanho cheio
+     * antes de encolher. O observador entra como refinamento para mudanças de
+     * contêiner que não vêm da janela; o `resize` cobre o resto em qualquer
+     * ambiente (o jsdom dos testes não tem ResizeObserver).
+     */
+    const medir = () => {
+      const estilos = window.getComputedStyle(el);
+      const disponivel =
+        el.clientWidth - parseFloat(estilos.paddingLeft) - parseFloat(estilos.paddingRight);
+      setEscala(escalaDeVisualizacao(disponivel, largura));
+    };
+
+    medir();
+    window.addEventListener('resize', medir);
+    const observador = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(medir) : null;
+    observador?.observe(el);
+    return () => {
+      window.removeEventListener('resize', medir);
+      observador?.disconnect();
+    };
+  }, [largura]);
+
+  return { ref, escala };
+}
+
 export function Canvas({
   design,
   selection,
@@ -1130,13 +1192,28 @@ export function Canvas({
     else if (drag?.kind === 'new-structure') onInsertStructureAt(index, drag.widths);
   }
 
+  const largura = larguraDoConteudo(design.settings);
+  const { ref: medidorRef, escala } = useEscalaDoCanvas(largura);
+
   return (
     <div
-      className="rounded-xl border border-line p-4 sm:p-8"
+      ref={medidorRef}
+      // `min-w-0`: numa célula de grid, a largura mínima automática é o
+      // min-content — e um e-mail de 800px fixos forçaria a coluna a crescer,
+      // empurrando o painel lateral para fora da tela em vez de encolher.
+      // Sem isto o medidor nunca vê menos que a largura do e-mail, e a escala
+      // nunca dispara: era exatamente o estouro reportado.
+      className="min-w-0 rounded-xl border border-line p-4 sm:p-8"
       style={{ backgroundColor: design.settings.bodyBackground }}
       onClick={() => onSelect(null)}
     >
-      <div className="mx-auto max-w-full" style={{ width: larguraDoConteudo(design.settings) }}>
+      {escala < 1 && (
+        <p className="mb-3 text-center text-xs text-ink-suave">
+          Visualização a {String(Math.round(escala * 100))}% — o e-mail sai com {String(largura)}
+          px de largura.
+        </p>
+      )}
+      <div className="mx-auto" style={{ width: largura, zoom: escala }}>
         {design.rows.length === 0 ? (
           <div
             onDragOver={
