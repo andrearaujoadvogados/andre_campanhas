@@ -89,8 +89,12 @@ interface Estado {
   suprimidosExistentes: string[];
   /** Endereços que o provedor de e-mail efetivamente recebeu. */
   enviados: string[];
+  /** Corpo de cada e-mail que o provedor recebeu. */
+  corposEnviados: string[];
   /** Quantos registros de envio a campanha tem — a trava da exclusão. */
   enviosDaCampanha: number;
+  /** Versão vigente do modelo — o que `buscarMeta` devolve. */
+  versaoAtualDoModelo: number;
 }
 
 let estado: Estado;
@@ -131,7 +135,13 @@ function montarDeps(): Dependencias {
       },
     },
     templates: {
-      buscarVersao: async () => ({ assunto: 'Assunto do modelo', corpoHtml: '<p>Olá</p>' }),
+      // O conteúdo carrega a versão pedida: é o que deixa um teste provar
+      // QUAL versão a rota foi buscar.
+      buscarVersao: async (_t: unknown, _id: unknown, versao: number) => ({
+        assunto: `Assunto v${versao}`,
+        corpoHtml: `<p>conteudo-v${versao}</p>`,
+      }),
+      buscarMeta: async () => ({ versaoAtual: estado.versaoAtualDoModelo }),
     } as unknown as Dependencias['templates'],
     envios: {
       contarPorCampanha: async () => estado.enviosDaCampanha,
@@ -140,6 +150,9 @@ function montarDeps(): Dependencias {
     provedorEmail: {
       enviar: async (m) => {
         estado.enviados.push(m.para.value);
+        // Guarda o corpo: é o que permite afirmar QUAL versão do modelo saiu,
+        // em vez de só verificar que algo saiu.
+        estado.corposEnviados.push(m.corpoHtml);
         return { ok: true as const, value: { providerMessageId: 'ses-1' } };
       },
     },
@@ -175,7 +188,9 @@ beforeEach(() => {
     suprimidos: [],
     suprimidosExistentes: [],
     enviados: [],
+    corposEnviados: [],
     enviosDaCampanha: 0,
+    versaoAtualDoModelo: 1,
   };
   definirDependenciasParaTeste(montarDeps());
 });
@@ -693,5 +708,83 @@ describe('editar e excluir campanha', () => {
     expect(r.status).toBe(201);
     expect(corpo.status).toBe('RASCUNHO');
     expect(corpo.nome).toBe('Campanha de agosto (cópia)');
+  });
+});
+
+describe('o teste mostra o e-mail que vai sair', () => {
+  /**
+   * O bug que estes testes fecham: `templateVersao` nascia cravado em 1 e o
+   * PATCH nunca o atualizava. Editar o conteúdo cria a versão 2, 3… e a
+   * campanha continuava presa na 1 — o teste devolvia o primeiro rascunho e,
+   * pior, o `sender` lê o mesmo campo, então o **disparo real** sairia com o
+   * conteúdo velho. Quem montasse, ajustasse e disparasse enviaria algo que já
+   * tinha descartado, sem nenhum aviso na tela.
+   */
+  const enviarTeste = () =>
+    req(
+      '/campanhas/k-1/teste',
+      {
+        method: 'POST',
+        body: JSON.stringify({ destinatarios: ['operador@exemplo.com'] }),
+        headers: { 'content-type': 'application/json' },
+      },
+      evento(),
+    );
+
+  it('renderiza a versão vigente do modelo, não a que estava salva na campanha', async () => {
+    estado.campanha = campanhaFalsa({ status: 'RASCUNHO', templateVersao: 1 });
+    estado.versaoAtualDoModelo = 3;
+
+    const r = await enviarTeste();
+
+    expect(r.status).toBe(200);
+    // A prova: saiu o conteudo da versao 3, nao o da 1 gravada na campanha.
+    expect(estado.corposEnviados[0]).toContain('conteudo-v3');
+    expect(estado.corposEnviados[0]).not.toContain('conteudo-v1');
+  });
+
+  it('editar a campanha reamarra a versão vigente do modelo', async () => {
+    estado.campanha = campanhaFalsa({ status: 'RASCUNHO', templateVersao: 1 });
+    estado.versaoAtualDoModelo = 4;
+
+    const r = await req(
+      '/campanhas/k-1',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ nome: 'Nome novo' }),
+        headers: { 'content-type': 'application/json' },
+      },
+      evento(),
+    );
+
+    expect(r.status).toBe(200);
+    expect(estado.campanha?.templateVersao).toBe(4);
+  });
+
+  it('o disparo congela a versão vigente — o que o teste mostrou é o que sai', async () => {
+    estado.campanha = campanhaFalsa({ status: 'RASCUNHO', templateVersao: 1 });
+    estado.versaoAtualDoModelo = 5;
+
+    await req('/campanhas/k-1/disparo', { method: 'POST' }, evento());
+
+    expect(estado.disparos).toBe(1);
+    expect(estado.campanha?.templateVersao).toBe(5);
+  });
+
+  it('agendar também congela a versão vigente', async () => {
+    estado.campanha = campanhaFalsa({ status: 'RASCUNHO', templateVersao: 1 });
+    estado.versaoAtualDoModelo = 6;
+
+    await req(
+      '/campanhas/k-1/agendamento',
+      {
+        method: 'POST',
+        body: JSON.stringify({ agendadaPara: '2099-01-01T09:00:00Z' }),
+        headers: { 'content-type': 'application/json' },
+      },
+      evento(),
+    );
+
+    expect(estado.campanha?.templateVersao).toBe(6);
   });
 });
