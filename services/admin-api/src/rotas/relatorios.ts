@@ -76,11 +76,140 @@ rotasRelatorios.get('/campanhas/:id/destinatarios', async (c) => {
         enviadoEm: e.enviadoEm?.toISOString() ?? null,
         falhaMotivo: e.falhaMotivo ?? null,
         respondidoEm: e.respondidoEm?.toISOString() ?? null,
+        abertoEm: e.primeiraAberturaEm?.toISOString() ?? null,
+        clicadoEm: e.primeiroCliqueEm?.toISOString() ?? null,
       };
     }),
   );
 
   return c.json({ itens, cursor: pagina.cursor });
+});
+
+/**
+ * Série diária de engajamento de uma campanha — o gráfico do relatório.
+ *
+ * Pontos existem só para dias com atividade, e só a partir da implantação do
+ * agregado (eventos antigos não são re-processados). A tela preenche os
+ * buracos com zero — o servidor entrega o fato, não a estética.
+ */
+rotasRelatorios.get('/campanhas/:id/serie', async (c) => {
+  const { metricas } = await obterDependencias();
+  const usuario = c.get('usuario');
+
+  const pontos = await metricas.lerSerie(usuario.tenantId, novoCampaignId(c.req.param('id')));
+  return c.json({ pontos });
+});
+
+/**
+ * Série diária agregada de várias campanhas — o gráfico do painel inicial.
+ *
+ * Soma os pontos por dia no servidor: a alternativa (a interface buscar a
+ * série de cada campanha e somar) custaria N requisições para desenhar uma
+ * curva. Ids explícitos, como todo agregado deste módulo.
+ */
+rotasRelatorios.get('/serie', async (c) => {
+  const { metricas } = await obterDependencias();
+  const usuario = c.get('usuario');
+
+  const ids = (c.req.query('campanhas') ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s !== '')
+    .slice(0, 100);
+
+  if (ids.length === 0) {
+    return c.json(
+      { code: 'CAMPO_OBRIGATORIO', message: 'Informe as campanhas em ?campanhas=id1,id2.' },
+      400,
+    );
+  }
+
+  const porDia = new Map<
+    string,
+    {
+      dia: string;
+      enviados: number;
+      entregues: number;
+      aberturas: number;
+      cliques: number;
+      bounces: number;
+    }
+  >();
+
+  const series = await Promise.all(
+    ids.map((id) => metricas.lerSerie(usuario.tenantId, novoCampaignId(id))),
+  );
+  for (const serie of series) {
+    for (const p of serie) {
+      const atual = porDia.get(p.dia) ?? {
+        dia: p.dia,
+        enviados: 0,
+        entregues: 0,
+        aberturas: 0,
+        cliques: 0,
+        bounces: 0,
+      };
+      porDia.set(p.dia, {
+        dia: p.dia,
+        enviados: atual.enviados + p.enviados,
+        entregues: atual.entregues + p.entregues,
+        aberturas: atual.aberturas + p.aberturas,
+        cliques: atual.cliques + p.cliques,
+        bounces: atual.bounces + p.bounces,
+      });
+    }
+  }
+
+  const pontos = [...porDia.values()].sort((a, b) => a.dia.localeCompare(b.dia));
+  return c.json({ pontos });
+});
+
+/**
+ * Desempenho por campanha — a tabela do painel inicial.
+ *
+ * Uma linha por campanha com contadores E taxas, em uma chamada só: a
+ * alternativa seria a interface buscar `/relatorios/campanhas/:id` uma vez por
+ * linha, e uma tela inicial que dispara vinte requisições para montar uma
+ * tabela envelhece mal. Ids explícitos como no `/resumo`, e pelo mesmo motivo
+ * de custo: nada de Scan.
+ */
+rotasRelatorios.get('/desempenho', async (c) => {
+  const { metricas, campanhas } = await obterDependencias();
+  const usuario = c.get('usuario');
+
+  const ids = (c.req.query('campanhas') ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s !== '')
+    .slice(0, 100);
+
+  if (ids.length === 0) {
+    return c.json(
+      { code: 'CAMPO_OBRIGATORIO', message: 'Informe as campanhas em ?campanhas=id1,id2.' },
+      400,
+    );
+  }
+
+  const itens = await Promise.all(
+    ids.map(async (id) => {
+      const campaignId = novoCampaignId(id);
+      const [campanha, brutos] = await Promise.all([
+        campanhas.buscarPorId(usuario.tenantId, campaignId),
+        metricas.ler(usuario.tenantId, campaignId),
+      ]);
+      const contadores = normalizarContadores(brutos);
+      return {
+        campaignId: id,
+        nome: campanha?.nome ?? id,
+        status: campanha?.status ?? null,
+        disparadaEm: campanha?.disparadaEm?.toISOString() ?? null,
+        contadores,
+        taxas: calcularTaxas(contadores),
+      };
+    }),
+  );
+
+  return c.json({ itens });
 });
 
 /**

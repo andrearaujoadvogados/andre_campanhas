@@ -1,6 +1,12 @@
 import type { Contact } from '../../domain/contact/contact.js';
 import type { Campaign } from '../../domain/campaign/campaign.js';
-import type { CampoMetrica, Envio, EventoEnvio } from '../../domain/send/envio.js';
+import type {
+  CampoDaSerie,
+  CampoMetrica,
+  Envio,
+  EventoEnvio,
+  PontoDaSerie,
+} from '../../domain/send/envio.js';
 import type { Template, VersaoTemplate } from '../../domain/template/template.js';
 import type { Lista } from '../../domain/list/lista.js';
 import type { TipoEmail } from '../../domain/tipo-email/tipo-email.js';
@@ -344,6 +350,21 @@ export interface MetricsRepository {
     quantidade?: number,
   ): Promise<void>;
   ler(tenantId: TenantId, campaignId: CampaignId): Promise<Readonly<Record<string, number>>>;
+  /**
+   * Incremento do ponto diário da série de engajamento — o insumo do gráfico.
+   *
+   * Mora no mesmo repositório dos contadores porque É o mesmo modelo de
+   * leitura: agregado gravado no processamento do evento, atrás da mesma
+   * guarda de idempotência, lido pela tela sem varrer eventos.
+   */
+  incrementarSerie(
+    tenantId: TenantId,
+    campaignId: CampaignId,
+    campo: CampoDaSerie,
+    dia: string,
+  ): Promise<void>;
+  /** Série completa da campanha, em ordem de dia. Vazia se nada foi agregado. */
+  lerSerie(tenantId: TenantId, campaignId: CampaignId): Promise<readonly PontoDaSerie[]>;
 }
 
 /**

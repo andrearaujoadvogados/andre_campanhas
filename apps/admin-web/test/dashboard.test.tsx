@@ -8,6 +8,8 @@ const chamadas: string[] = [];
 let campanhas: Record<string, unknown>[] = [];
 let listas: Record<string, unknown>[] = [];
 let resumo: Record<string, unknown> = {};
+let serieGeral: Record<string, unknown>[] = [];
+let desempenho: Record<string, unknown>[] = [];
 
 vi.mock('../src/lib/api.js', () => ({
   api: {
@@ -15,6 +17,8 @@ vi.mock('../src/lib/api.js', () => ({
       chamadas.push(caminho);
       if (caminho.startsWith('/campanhas')) return { itens: campanhas, truncado: false };
       if (caminho.startsWith('/listas')) return { itens: listas };
+      if (caminho.startsWith('/relatorios/serie')) return { pontos: serieGeral };
+      if (caminho.startsWith('/relatorios/desempenho')) return { itens: desempenho };
       return resumo;
     },
   },
@@ -45,6 +49,8 @@ function montar() {
 beforeEach(() => {
   chamadas.length = 0;
   campanhas = [];
+  serieGeral = [];
+  desempenho = [];
   listas = [{ listId: 'l-1', nome: 'Clientes', totalContatosAproximado: 42 }];
   resumo = {
     campanhasAgregadas: 1,
@@ -161,7 +167,7 @@ describe('desempenho agregado', () => {
     ];
     montar();
 
-    await screen.findByText('Entrega');
+    await screen.findAllByText('Entrega');
     const pedido = chamadas.find((c) => c.startsWith('/relatorios/resumo'));
     expect(pedido).toContain('k-2');
     expect(pedido).toContain('k-3');
@@ -189,6 +195,50 @@ describe('desempenho agregado', () => {
     montar();
 
     expect(await screen.findByText(/acima do limiar/i)).toBeInTheDocument();
+  });
+});
+
+describe('desempenho por campanha — a tabela do modelo de referência', () => {
+  it('cada campanha vira uma linha com taxas e link para o relatório', async () => {
+    campanhas = [campanha({ campaignId: 'k-2', status: 'CONCLUIDA' })];
+    desempenho = [
+      {
+        campaignId: 'k-2',
+        nome: 'Boletim de agosto',
+        status: 'CONCLUIDA',
+        disparadaEm: '2026-08-10T12:00:00Z',
+        contadores: { enviados: 120, respostas: 4 },
+        taxas: { entrega: 0.95, abertura: 0.4, clique: 0.05, bounceHard: 0.01 },
+      },
+    ];
+    montar();
+
+    expect(await screen.findByText('Desempenho por campanha')).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Boletim de agosto' })).toHaveAttribute(
+      'href',
+      '/relatorios/k-2',
+    );
+    expect(screen.getByText('40,0%')).toBeInTheDocument();
+  });
+
+  it('a série agregada aparece quando há campanha disparada', async () => {
+    campanhas = [campanha({ campaignId: 'k-2', status: 'CONCLUIDA' })];
+    serieGeral = [{ dia: '2026-08-10', aberturas: 5, cliques: 1 }];
+    montar();
+
+    expect(
+      await screen.findByRole('img', { name: /aberturas e cliques por dia/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('sem campanha disparada, nem gráfico nem tabela — e nenhuma chamada à toa', async () => {
+    campanhas = [campanha({ status: 'RASCUNHO' })];
+    montar();
+
+    await screen.findByText('Rascunhos');
+    expect(screen.queryByText('Desempenho por campanha')).toBeNull();
+    expect(chamadas.some((c) => c.startsWith('/relatorios/serie'))).toBe(false);
+    expect(chamadas.some((c) => c.startsWith('/relatorios/desempenho'))).toBe(false);
   });
 });
 

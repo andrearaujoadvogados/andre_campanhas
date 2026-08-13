@@ -9,10 +9,12 @@ import {
   Cartao,
   ErroCaixa,
   Selo,
+  TabelaRolavel,
   TituloPagina,
   Vazio,
   tomDoStatusCampanha,
 } from '../componentes/base.tsx';
+import { GraficoEngajamento } from '../componentes/GraficoEngajamento.tsx';
 import type { Campanha } from './Campanhas.tsx';
 
 interface Listagem {
@@ -31,6 +33,15 @@ interface Risco {
   bounce: 'OK' | 'ATENCAO' | 'CRITICO';
   reclamacao: 'OK' | 'ATENCAO' | 'CRITICO';
   avisos: string[];
+}
+
+interface DesempenhoCampanha {
+  campaignId: string;
+  nome: string;
+  status: string | null;
+  disparadaEm: string | null;
+  contadores: Record<string, number>;
+  taxas: Record<string, number>;
 }
 
 interface Resumo {
@@ -79,6 +90,23 @@ export function Dashboard() {
     queryKey: ['resumo', ids.join(',')],
     enabled: ids.length > 0,
     queryFn: () => api.get<Resumo>(`/relatorios/resumo?campanhas=${ids.join(',')}`),
+  });
+
+  // Série agregada e desempenho por campanha — as duas seções que fazem a
+  // visão geral responder "como estamos indo" sem abrir campanha por campanha.
+  const serie = useQuery({
+    queryKey: ['serie-geral', ids.join(',')],
+    enabled: ids.length > 0,
+    queryFn: () =>
+      api.get<{ pontos: { dia: string; aberturas: number; cliques: number }[] }>(
+        `/relatorios/serie?campanhas=${ids.join(',')}`,
+      ),
+  });
+  const desempenho = useQuery({
+    queryKey: ['desempenho', ids.join(',')],
+    enabled: ids.length > 0,
+    queryFn: () =>
+      api.get<{ itens: DesempenhoCampanha[] }>(`/relatorios/desempenho?campanhas=${ids.join(',')}`),
   });
 
   if (campanhas.isLoading) return <Carregando />;
@@ -211,6 +239,76 @@ export function Dashboard() {
                 alerta={resumo.data.risco.bounce !== 'OK'}
               />
             </div>
+          )}
+        </Cartao>
+      )}
+
+      {ids.length > 0 && (
+        <Cartao titulo="Engajamento por dia — todas as campanhas">
+          {serie.isLoading && <Carregando />}
+          <ErroCaixa erro={serie.error} />
+          {serie.data !== undefined && <GraficoEngajamento pontos={serie.data.pontos} />}
+        </Cartao>
+      )}
+
+      {ids.length > 0 && (
+        <Cartao titulo="Desempenho por campanha">
+          {desempenho.isLoading && <Carregando />}
+          <ErroCaixa erro={desempenho.error} />
+          {desempenho.data !== undefined && (
+            <TabelaRolavel>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-line text-left text-ink-suave">
+                    <th className="py-2 pr-3 font-medium">Campanha</th>
+                    <th className="py-2 pr-3 font-medium">Disparada em</th>
+                    <th className="py-2 pr-3 text-right font-medium">Enviados</th>
+                    <th className="py-2 pr-3 text-right font-medium">Entrega</th>
+                    <th className="py-2 pr-3 text-right font-medium">Abertura</th>
+                    <th className="py-2 pr-3 text-right font-medium">Clique</th>
+                    <th className="py-2 pr-3 text-right font-medium">Respostas</th>
+                    <th className="py-2 pr-3 text-right font-medium">Bounce</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {[...desempenho.data.itens]
+                    .sort((a, b) => (b.disparadaEm ?? '').localeCompare(a.disparadaEm ?? ''))
+                    .map((d) => (
+                      <tr key={d.campaignId}>
+                        <td className="py-2 pr-3">
+                          <Link
+                            to={`/relatorios/${d.campaignId}`}
+                            className="font-medium text-ink hover:underline"
+                          >
+                            {d.nome}
+                          </Link>
+                        </td>
+                        <td className="py-2 pr-3 text-ink-suave">
+                          {d.disparadaEm === null ? '—' : dataHora(d.disparadaEm)}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-ink">
+                          {numero(d.contadores['enviados'] ?? 0)}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-ink">
+                          {percentual(d.taxas['entrega'] ?? 0)}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-ink">
+                          {percentual(d.taxas['abertura'] ?? 0)}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-ink">
+                          {percentual(d.taxas['clique'] ?? 0)}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-ink">
+                          {numero(d.contadores['respostas'] ?? 0)}
+                        </td>
+                        <td className="py-2 pr-3 text-right text-ink">
+                          {percentual(d.taxas['bounceHard'] ?? 0)}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </TabelaRolavel>
           )}
         </Cartao>
       )}

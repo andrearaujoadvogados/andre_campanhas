@@ -1,4 +1,9 @@
-import { metricaDoEvento, statusAposEvento, type EventoEnvio } from '../../domain/send/envio.js';
+import {
+  campoDaSerieDoEvento,
+  metricaDoEvento,
+  statusAposEvento,
+  type EventoEnvio,
+} from '../../domain/send/envio.js';
 import { motivoDeEventoBounce } from '../../domain/suppression/suppression.js';
 import { EmailAddress } from '../../domain/shared/email-address.js';
 import { aplicarHardBounce, aplicarReclamacao } from '../../domain/contact/contact.js';
@@ -87,6 +92,23 @@ export async function processarEvento(
   }
 
   /**
+   * Série diária — o insumo do gráfico de engajamento do relatório.
+   *
+   * O dia vem do instante do EVENTO, não do processamento: um lote reentregue
+   * horas depois precisa cair no dia em que a abertura aconteceu, senão a
+   * curva mostra o atraso da fila em vez do comportamento do leitor.
+   */
+  const campoSerie = campoDaSerieDoEvento(evento);
+  if (campoSerie !== null) {
+    await deps.metricas.incrementarSerie(
+      envio.tenantId,
+      envio.campaignId,
+      campoSerie,
+      evento.ocorridoEm.toISOString().slice(0, 10),
+    );
+  }
+
+  /**
    * Aberturas e cliques **únicos** — §11, item 8.
    *
    * O total é inflado por quem reabre a mensagem três vezes; a taxa que se
@@ -98,6 +120,10 @@ export async function processarEvento(
    * (messageId + tipo + instante); esta é por *envio* (sendId + tipo). É o que
    * separa "este evento já foi processado" de "esta pessoa já tinha aberto".
    */
+  // O carimbo pode acompanhar uma mudança de status no mesmo salvar — o
+  // objeto acumula e grava uma vez só no fim.
+  let envioAtualizado = envio;
+
   if (evento.tipo === 'OPEN' || evento.tipo === 'CLICK') {
     const chaveUnico = `unico:${evento.tipo}:${envio.sendId}`;
     if (await deps.idempotencia.registrarSeNovo(chaveUnico, TTL_DEDUPE_SEGUNDOS)) {
@@ -106,12 +132,25 @@ export async function processarEvento(
         envio.campaignId,
         evento.tipo === 'OPEN' ? 'aberturasUnicas' : 'cliquesUnicos',
       );
+      /**
+       * Carimba a primeira ocorrência no próprio envio — é daqui que a tabela
+       * por destinatário tira "aberto em" e "clicou em". A mesma guarda que
+       * conta o único garante que a segunda abertura não sobrescreve a data
+       * da primeira.
+       */
+      envioAtualizado =
+        evento.tipo === 'OPEN'
+          ? { ...envioAtualizado, primeiraAberturaEm: evento.ocorridoEm }
+          : { ...envioAtualizado, primeiroCliqueEm: evento.ocorridoEm };
     }
   }
 
   const novoStatus = statusAposEvento(evento);
   if (novoStatus !== null && novoStatus !== envio.status) {
-    await deps.envios.salvar({ ...envio, status: novoStatus });
+    envioAtualizado = { ...envioAtualizado, status: novoStatus };
+  }
+  if (envioAtualizado !== envio) {
+    await deps.envios.salvar(envioAtualizado);
   }
 
   const suprimiu = await talvezSuprimir(deps, evento, envio.tenantId, envio.contactId);
