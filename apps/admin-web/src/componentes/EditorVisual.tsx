@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { api } from '../lib/api.js';
-import { isValidDesign, larguraDoConteudo } from '../lib/criador/compile.js';
+import { isValidDesign, larguraDoConteudo } from '@emailmkt/criador';
 import { compilarParaHtml } from '../lib/criador/html.js';
-import { createDefaultDesign } from '../lib/criador/presets.js';
-import type { EmailDesign } from '../lib/criador/tipos.js';
+import { createDefaultDesign } from '@emailmkt/criador';
+import type { EmailDesign } from '@emailmkt/criador';
 import { Dialogo } from './criador/Dialogo.tsx';
 import { EditorDesign } from './criador/EditorDesign.tsx';
 

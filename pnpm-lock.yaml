@@ -37,6 +37,9 @@ importers:
       '@emailmkt/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@emailmkt/criador':
+        specifier: workspace:*
+        version: link:../../packages/criador
       '@fontsource-variable/fraunces':
         specifier: ^5.3.0
         version: 5.3.0
@@ -233,6 +236,12 @@ importers:
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.1)(jsdom@25.0.1(supports-color@7.2.0))(lightningcss@1.32.0)(supports-color@7.2.0)(terser@5.49.2)
+
+  packages/criador:
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
 
   packages/email-render:
     dependencies:

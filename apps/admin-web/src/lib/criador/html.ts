@@ -5,9 +5,9 @@
 // é o `corpoHtml` gravado no modelo — exatamente o que o envio usa.
 
 import mjml2html from 'mjml-browser';
-import { MARCA_FIM, MARCA_INICIO, compileDesignToMjml, type Marca } from './compile.js';
+import { MARCA_FIM, MARCA_INICIO, compileDesignToMjml, type Marca } from '@emailmkt/criador';
 import { pareceDocumentoHtml, recortarEntreMarcadores } from './codigo.js';
-import type { EmailDesign } from './tipos.js';
+import type { EmailDesign } from '@emailmkt/criador';
 
 export interface HtmlCompilado {
   readonly html: string;

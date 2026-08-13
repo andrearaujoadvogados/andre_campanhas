@@ -12,7 +12,7 @@ import {
   aplicarAttrsNaEstrutura,
   aplicarAttrsNoBloco,
 } from '../../lib/criador/absorver.js';
-import { isValidRow } from '../../lib/criador/compile.js';
+import { isValidRow } from '@emailmkt/criador';
 import {
   addBlock,
   addRow,
@@ -34,8 +34,8 @@ import {
   uid,
   updateBlock,
   updateRowAttrs,
-} from '../../lib/criador/ops.js';
-import { BLOCK_LABELS, createBlock } from '../../lib/criador/presets.js';
+} from '@emailmkt/criador';
+import { BLOCK_LABELS, createBlock } from '@emailmkt/criador';
 import type {
   Block,
   BlockType,
@@ -43,7 +43,7 @@ import type {
   EmailDesign,
   Row,
   SavedModule,
-} from '../../lib/criador/tipos.js';
+} from '@emailmkt/criador';
 import {
   Canvas,
   type BlockAction,

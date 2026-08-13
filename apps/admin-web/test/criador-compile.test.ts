@@ -5,11 +5,11 @@ import {
   compileDesignToMjml,
   isValidDesign,
   larguraDoConteudo,
-} from '../src/lib/criador/compile.js';
+} from '@emailmkt/criador';
 import { limparHtmlDoUsuario, recortarEntreMarcadores } from '../src/lib/criador/codigo.js';
-import { addBlock, addRow, createRow, setRowCustomHtml } from '../src/lib/criador/ops.js';
-import { createBlock, createDefaultDesign } from '../src/lib/criador/presets.js';
-import type { EmailDesign, Row, TextBlock } from '../src/lib/criador/tipos.js';
+import { addBlock, addRow, createRow, setRowCustomHtml } from '@emailmkt/criador';
+import { createBlock, createDefaultDesign } from '@emailmkt/criador';
+import type { EmailDesign, Row, TextBlock } from '@emailmkt/criador';
 
 function designCom(blocos: ReturnType<typeof createBlock>[]): {
   design: EmailDesign;

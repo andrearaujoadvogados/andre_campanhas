@@ -129,19 +129,23 @@ export function Aviso({
   tom = 'info',
 }: {
   texto?: string | undefined;
-  tom?: 'info' | 'alerta';
+  // 'sucesso' existe para confirmações ("Modelo criado."): com o tom de alerta,
+  // a confirmação chegaria com "!" âmbar e leria como problema.
+  tom?: 'info' | 'alerta' | 'sucesso';
 }) {
   if (texto === undefined || texto === '') return null;
 
   const estilo =
     tom === 'alerta'
       ? 'border-alerta/30 bg-alerta-fundo text-alerta'
-      : 'border-gold/30 bg-accent-mist text-gold';
+      : tom === 'sucesso'
+        ? 'border-sucesso/30 bg-sucesso-fundo text-sucesso'
+        : 'border-gold/30 bg-accent-mist text-gold';
 
   return (
     <div role="status" className={`flex gap-2.5 rounded-md border px-4 py-3 text-sm ${estilo}`}>
       <span aria-hidden="true" className="mt-px font-semibold">
-        {tom === 'alerta' ? '!' : 'i'}
+        {tom === 'alerta' ? '!' : tom === 'sucesso' ? '✓' : 'i'}
       </span>
       <p>{texto}</p>
     </div>

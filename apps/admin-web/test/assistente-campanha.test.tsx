@@ -7,6 +7,10 @@ import { AssistenteCampanha } from '../src/componentes/AssistenteCampanha.tsx';
 
 const posts: { caminho: string; corpo: unknown }[] = [];
 
+/** Mutáveis para os testes variarem o cenário sem duplicar o mock inteiro. */
+let modelosLista: { templateId: string; nome: string; categoria?: string | null }[] = [];
+let tiposLista: { tipoEmailId: string; nome: string }[] = [];
+
 /**
  * Os editores entram simulados.
  *
@@ -38,8 +42,10 @@ vi.mock('../src/lib/api.js', () => ({
   api: {
     get: async (caminho: string) =>
       caminho.startsWith('/templates')
-        ? { itens: [{ templateId: 't-1', nome: 'Campanha tributário', categoria: 'Novidade' }] }
-        : { itens: [{ listId: 'l-1', nome: 'Clientes', totalContatos: 42 }] },
+        ? { itens: modelosLista }
+        : caminho.startsWith('/tipos')
+          ? { itens: tiposLista }
+          : { itens: [{ listId: 'l-1', nome: 'Clientes', totalContatos: 42 }] },
     post: async (caminho: string, corpo: unknown) => {
       posts.push({ caminho, corpo });
       if (caminho.endsWith('/teste')) {
@@ -89,6 +95,8 @@ function montar() {
 
 beforeEach(() => {
   posts.length = 0;
+  modelosLista = [{ templateId: 't-1', nome: 'Campanha tributário', categoria: 'Novidade' }];
+  tiposLista = [{ tipoEmailId: 'tp-boletim', nome: 'Boletim' }];
 });
 
 describe('assistente de campanha — wizard de 4 etapas', () => {
@@ -132,6 +140,60 @@ describe('assistente de campanha — wizard de 4 etapas', () => {
         }),
       });
     });
+  });
+});
+
+describe('o tipo de campanha organiza a escolha do modelo', () => {
+  it('com o tipo escolhido, os modelos da categoria vêm primeiro, como recomendação', async () => {
+    modelosLista = [
+      { templateId: 't-1', nome: 'Campanha tributário', categoria: 'Novidade' },
+      { templateId: 't-2', nome: 'Boletim Tributário', categoria: 'Boletim' },
+    ];
+    montar();
+
+    await userEvent.type(screen.getByRole('textbox', { name: /nome da campanha/i }), 'Edição 34');
+    await userEvent.selectOptions(
+      await screen.findByRole('combobox', { name: /tipo de campanha/i }),
+      'tp-boletim',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /avançar/i }));
+
+    // O grupo recomendado nomeia o tipo e traz o modelo da categoria certa.
+    expect(await screen.findByText(/recomendados para boletim/i)).toBeInTheDocument();
+    expect(screen.getByText(/outros modelos/i)).toBeInTheDocument();
+
+    const radios = screen.getAllByRole('radio');
+    // O recomendado vem ANTES na ordem do documento — é a recomendação.
+    const rotulos = radios.map((r) => r.closest('label')?.textContent ?? '');
+    expect(rotulos[0]).toContain('Boletim Tributário');
+    expect(rotulos[1]).toContain('Campanha tributário');
+  });
+
+  it('tipo sem modelo da categoria avisa e aponta o caminho', async () => {
+    // A lista padrão só tem categoria "Novidade" — nada casa com Boletim.
+    montar();
+
+    await userEvent.type(screen.getByRole('textbox', { name: /nome da campanha/i }), 'Edição 35');
+    await userEvent.selectOptions(
+      await screen.findByRole('combobox', { name: /tipo de campanha/i }),
+      'tp-boletim',
+    );
+    await userEvent.click(screen.getByRole('button', { name: /avançar/i }));
+
+    expect(await screen.findByText(/nenhum modelo da categoria "boletim"/i)).toBeInTheDocument();
+    // Os demais modelos continuam disponíveis — o aviso orienta, não bloqueia.
+    expect(screen.getByRole('radio')).toBeInTheDocument();
+  });
+
+  it('sem tipo, a lista continua plana — sem grupo fantasma', async () => {
+    montar();
+
+    await userEvent.type(screen.getByRole('textbox', { name: /nome da campanha/i }), 'Edição 36');
+    await userEvent.click(screen.getByRole('button', { name: /avançar/i }));
+
+    await screen.findByRole('radio');
+    expect(screen.queryByText(/recomendados para/i)).toBeNull();
+    expect(screen.queryByText(/outros modelos/i)).toBeNull();
   });
 });
 

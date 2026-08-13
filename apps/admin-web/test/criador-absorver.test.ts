@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { absorverHtmlEmBlocoDeTexto } from '../src/lib/criador/absorver.js';
 import { limparHtmlColado, textoParaHtml } from '../src/lib/criador/paste.js';
-import { createBlock } from '../src/lib/criador/presets.js';
-import type { TextBlock } from '../src/lib/criador/tipos.js';
+import { createBlock } from '@emailmkt/criador';
+import type { TextBlock } from '@emailmkt/criador';
 
 function blocoDeTexto(): TextBlock {
   return createBlock('text') as TextBlock;

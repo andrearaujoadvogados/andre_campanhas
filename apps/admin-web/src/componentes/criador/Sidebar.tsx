@@ -25,8 +25,8 @@ import {
 } from 'lucide-react';
 
 import { cn } from '../../lib/criador/cn.js';
-import { findBlock } from '../../lib/criador/ops.js';
-import { BLOCK_LABELS, FONT_OPTIONS, STRUCTURES } from '../../lib/criador/presets.js';
+import { findBlock } from '@emailmkt/criador';
+import { BLOCK_LABELS, FONT_OPTIONS, STRUCTURES } from '@emailmkt/criador';
 import type {
   Block,
   BlockType,
@@ -34,7 +34,7 @@ import type {
   EmailDesign,
   Row,
   SavedModule,
-} from '../../lib/criador/tipos.js';
+} from '@emailmkt/criador';
 import { RowView, type DragState, type Selection } from './Canvas.tsx';
 
 // ─── Campos reutilizáveis ────────────────────────────────────────
