@@ -7,6 +7,7 @@ import { rotasCampanhas } from './rotas/campanhas.js';
 import { rotasTemplates } from './rotas/templates.js';
 import { rotasListas } from './rotas/listas.js';
 import { rotasTipos } from './rotas/tipos.js';
+import { rotasBoletim } from './rotas/boletim.js';
 import { rotasRelatorios } from './rotas/relatorios.js';
 import { rotasExportacao } from './rotas/exportacao.js';
 import { rotasImportacoes } from './rotas/importacoes.js';
@@ -84,6 +85,7 @@ export function criarApp() {
   app.route('/templates', rotasTemplates);
   app.route('/listas', rotasListas);
   app.route('/tipos', rotasTipos);
+  app.route('/boletim', rotasBoletim);
   app.route('/relatorios', rotasRelatorios);
   app.route('/usuarios', rotasUsuarios);
 

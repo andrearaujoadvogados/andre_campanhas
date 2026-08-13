@@ -234,6 +234,78 @@ export function criarLinhaAvisoLegal(aviso: { endereco: string; fontes: string }
  * acima com o conteúdo pesquisado e monta `{ header, abertura, ...notícias,
  * prazos, encerramento, avisoLegal, footer }` — a mesma sequência daqui.
  */
+/** Uma notícia vinda da coleta automática — texto NÃO confiável, será escapado. */
+export interface NoticiaDaColeta {
+  readonly titulo: string;
+  readonly resumo: string;
+  readonly url: string;
+  readonly tag: string;
+}
+
+/**
+ * Monta a edição do boletim a partir do conteúdo COLETADO — o caminho da
+ * automação (§11, item 12). Mesma sequência de linhas da edição de referência;
+ * o que muda é a origem do conteúdo, e isso muda uma coisa fundamental:
+ *
+ * **Tudo aqui é escapado.** As fábricas acima interpolam HTML porque servem
+ * conteúdo escrito pelo editor no painel. O que chega da coleta atravessou uma
+ * página de terceiros e uma IA — um título contendo `<script>` ou um `"` no
+ * lugar certo não pode virar marcação. O link "Leia mais" é o único HTML, e é
+ * montado por nós com a URL escapada.
+ */
+export function criarBoletimColetado(edicao: {
+  readonly titulo: string;
+  readonly periodo: string;
+  readonly introducao: string;
+  readonly noticias: readonly NoticiaDaColeta[];
+  readonly fontes: readonly string[];
+}): EmailDesign {
+  const noticias = edicao.noticias.map((n) =>
+    criarLinhaNoticia({
+      categoria: escapar(n.tag),
+      titulo: escapar(n.titulo),
+      corpo: `${escapar(n.resumo)} <a href="${escapar(n.url)}" style="color:#7d5e2c;">Leia mais</a>`,
+    }),
+  );
+
+  return {
+    version: 1,
+    settings: { ...DEFAULT_SETTINGS },
+    rows: [
+      createHeaderModuleRow(),
+      criarLinhaAbertura({
+        chapeu: 'Boletim Tributário',
+        titulo: escapar(edicao.titulo),
+        periodo: escapar(edicao.periodo),
+        introducao:
+          `Olá {{contato.primeiroNome}}, selecionamos os destaques do período a partir ` +
+          `das publicações de ${escapar(edicao.fontes.join(', '))}.`,
+      }),
+      ...noticias,
+      criarLinhaEncerramento({
+        mensagem:
+          'Nosso escritório permanece à disposição para analisar os impactos dessas mudanças na sua empresa.',
+        nome: 'André Augusto de Araújo',
+        registro: 'OAB/MG 142.853',
+      }),
+      criarLinhaAvisoLegal({
+        endereco: 'Rua João Vaz, nº 2, Salas 1 e 4 · Formiga/MG · Direito Tributário e Empresarial',
+        fontes: `Fontes: ${escapar(edicao.fontes.join(', '))}. Conteúdo selecionado automaticamente e revisado pelo escritório.`,
+      }),
+      createFooterModuleRow(),
+    ],
+  };
+}
+
+function escapar(texto: string): string {
+  return texto
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 export function createBoletimDesign(): EmailDesign {
   const noticias: Noticia[] = [
     {

@@ -197,6 +197,23 @@ export const salvarTipoEmailSchema = z.object({
 });
 export type SalvarTipoEmailInput = z.infer<typeof salvarTipoEmailSchema>;
 
+// ── Fonte do boletim automatizado ────────────────────────────────────────────
+
+export const salvarFonteBoletimSchema = z.object({
+  nome: z.string().trim().min(1).max(80),
+  // A validação de segurança da URL (https, sem IP, sem endereço interno) é
+  // regra de domínio e roda na rota via `validarUrlDeFonte` — aqui só a forma.
+  url: z.string().trim().url().max(500),
+  /**
+   * O que coletar, nas palavras do editor. Mínimo de 10 caracteres pelo mesmo
+   * motivo da origem declarada da importação: "notícias" não instrui ninguém —
+   * nem gente, nem IA.
+   */
+  instrucao: z.string().trim().min(10).max(1000),
+  ativa: z.boolean().default(true),
+});
+export type SalvarFonteBoletimInput = z.infer<typeof salvarFonteBoletimSchema>;
+
 // ── Campanha / Campanha ───────────────────────────────────────────────────────
 
 export const criarCampanhaSchema = z.object({

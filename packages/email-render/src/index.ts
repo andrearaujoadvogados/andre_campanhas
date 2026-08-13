@@ -177,3 +177,36 @@ function paraTexto(html: string): string {
     ],
   }).trim();
 }
+
+/**
+ * Reduz uma página da web ao texto que interessa a um leitor — o insumo do
+ * extrator de notícias do boletim (§11, item 12).
+ *
+ * Mora aqui, e não no worker, porque este pacote já carrega o html-to-text
+ * para a versão texto dos e-mails; o worker reusa a dependência em vez de
+ * duplicá-la. Script, estilo, navegação e rodapé caem fora: são o grosso do
+ * peso de uma página e zero do conteúdo — e o extrator de IA paga por token.
+ *
+ * O corte em `limite` é proteção dupla: contra página patológica (um portal
+ * com feed infinito renderizado no servidor) e contra o custo da chamada de
+ * IA. 30 mil caracteres cobrem qualquer página de notícias razoável.
+ */
+export function paginaParaTexto(html: string, limite = 30_000): string {
+  const texto = convert(html, {
+    wordwrap: false,
+    selectors: [
+      { selector: 'img', format: 'skip' },
+      { selector: 'script', format: 'skip' },
+      { selector: 'style', format: 'skip' },
+      { selector: 'nav', format: 'skip' },
+      { selector: 'footer', format: 'skip' },
+      { selector: 'aside', format: 'skip' },
+      // O href fica: é dele que o extrator tira o link da matéria.
+      { selector: 'a', options: { hideLinkHrefIfSameAsText: true } },
+    ],
+  })
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return texto.length > limite ? texto.slice(0, limite) : texto;
+}

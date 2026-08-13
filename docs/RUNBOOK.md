@@ -101,6 +101,30 @@ Duas portas, e ambas já funcionam:
 3. Entregue por canal seguro. **Não por e-mail**: o arquivo reúne num só lugar tudo que se sabe sobre a pessoa.
 4. Os arquivos somem do S3 em 7 dias, sozinhos.
 
+### Ligar o boletim automático (uma vez)
+
+O boletim coleta notícias com a API do Google Gemini, no nível gratuito. Sem a
+chave configurada, a coleta roda, não gera nada e explica isso no log — nada
+quebra, mas nada acontece.
+
+1. Crie a chave em <https://aistudio.google.com/apikey> (conta Google comum;
+   o nível gratuito cobre um boletim semanal com folga).
+2. Grave no Secrets Manager, em `sa-east-1`:
+
+```bash
+aws secretsmanager put-secret-value --secret-id emailmkt-prod-gemini-api-key --secret-string 'A_CHAVE_AQUI' --region sa-east-1
+```
+
+3. No painel, em **Boletim**, cadastre as fontes e clique em **Gerar boletim
+   agora** para testar. O modelo aparece em **Modelos**, categoria Boletim,
+   em um ou dois minutos.
+
+A coleta agendada roda toda segunda às 8h. **Atenção ao nível gratuito**: os
+dados enviados ao Gemini podem ser usados pelo Google para treinamento — por
+isso o worker só envia texto de páginas públicas de notícia, nunca dados de
+contatos. Se um dia isso mudar de figura, trocar para a versão paga é só
+trocar a chave.
+
 ### Quando a produção do SES for liberada
 
 Nada a implantar. O worker `quota-sync` lê a cota real do SES diariamente e atualiza o Parameter Store; o limitador de taxa passa a usar o novo valor sozinho (§1.3).

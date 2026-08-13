@@ -1,4 +1,13 @@
-import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
+import {
+  CfnOutput,
+  Duration,
+  RemovalPolicy,
+  SecretValue,
+  Stack,
+  type StackProps,
+} from 'aws-cdk-lib';
+import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
+import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
 import {
   AttributeType,
   BillingMode,
@@ -380,6 +389,49 @@ export class CoreStack extends Stack {
       },
     });
 
+    /**
+     * Chave do Gemini para a coleta do boletim — §11, item 12.
+     *
+     * Nasce com um marcador, não com valor: a chave é criada pelo usuário no
+     * AI Studio e colada aqui depois (RUNBOOK). O worker reconhece o marcador
+     * e explica o que falta em vez de falhar com um erro de autenticação
+     * críptico. Não é o Secrets Manager gerando segredo porque este segredo
+     * não é nosso — é uma credencial de serviço externo.
+     */
+    const segredoGemini = new Secret(this, 'SegredoGemini', {
+      secretName: nome(cfg, 'gemini-api-key'),
+      description: 'Chave da API do Google Gemini (AI Studio) para a coleta do boletim.',
+      secretStringValue: SecretValue.unsafePlainText('configure-me'),
+    });
+
+    const fnBoletimBuilder = funcaoNode(this, {
+      cfg,
+      nomeLogico: 'boletim-builder',
+      entry: svc('workers', 'boletim-builder'),
+      // O tempo é dominado por rede: meia dúzia de páginas + uma chamada de IA
+      // por fonte, em sequência (o nível gratuito tem limite por minuto).
+      timeout: Duration.minutes(5),
+      memorySize: 1024,
+      environment: {
+        ...ambienteComum,
+        SEGREDO_GEMINI_ARN: segredoGemini.secretArn,
+      },
+    });
+
+    /**
+     * Toda segunda às 8h (11h UTC), o boletim da semana aparece em Modelos.
+     *
+     * Gerar um RASCUNHO de modelo é inofensivo por definição — nada é enviado
+     * sem passar pelo assistente e pela aprovação. Por isso o agendamento nasce
+     * ligado, sem interruptor: o pior caso com fontes vazias ou chave ausente é
+     * um log explicando por que nada foi gerado.
+     */
+    new Rule(this, 'AgendaBoletim', {
+      ruleName: nome(cfg, 'boletim-semanal'),
+      schedule: Schedule.cron({ minute: '0', hour: '11', weekDay: 'MON' }),
+      targets: [new LambdaFunction(fnBoletimBuilder)],
+    });
+
     // ── Permissões — menor privilégio, §10.1 ─────────────────────────────────
 
     this.tabelaPrincipal.grantReadWriteData(fnAdminApi);
@@ -451,6 +503,13 @@ export class CoreStack extends Stack {
     paramCota.grantRead(fnSender);
     paramTaxa.grantWrite(fnQuotaSync);
     paramCota.grantWrite(fnQuotaSync);
+
+    // O construtor do boletim lê as fontes e grava o modelo gerado; a chave da
+    // IA é só dele. A API pode invocá-lo (o botão "Gerar agora"), nada além.
+    this.tabelaPrincipal.grantReadWriteData(fnBoletimBuilder);
+    segredoGemini.grantRead(fnBoletimBuilder);
+    fnBoletimBuilder.grantInvoke(fnAdminApi);
+    fnAdminApi.addEnvironment('FN_BOLETIM_BUILDER', fnBoletimBuilder.functionName);
 
     /**
      * SES vive em us-east-2 (ADR-01): a permissão atravessa a região, o recurso não.

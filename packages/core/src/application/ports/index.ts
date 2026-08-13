@@ -10,11 +10,13 @@ import type {
 import type { Template, VersaoTemplate } from '../../domain/template/template.js';
 import type { Lista } from '../../domain/list/lista.js';
 import type { TipoEmail } from '../../domain/tipo-email/tipo-email.js';
+import type { FonteBoletim } from '../../domain/boletim/fonte-boletim.js';
 import type { SuppressionEntry } from '../../domain/suppression/suppression.js';
 import type { EmailAddress } from '../../domain/shared/email-address.js';
 import type {
   CampaignId,
   ContactId,
+  FonteId,
   ListId,
   SendId,
   TemplateId,
@@ -444,6 +446,32 @@ export interface TipoEmailRepository {
   listar(tenantId: TenantId): Promise<readonly TipoEmail[]>;
   salvar(tipo: TipoEmail): Promise<void>;
   excluir(tenantId: TenantId, tipoEmailId: TipoEmailId): Promise<void>;
+}
+
+// ── Boletim automatizado — §11, item 12 ──────────────────────────────────────
+
+export interface FonteBoletimRepository {
+  buscarPorId(tenantId: TenantId, fonteId: FonteId): Promise<FonteBoletim | null>;
+  listar(tenantId: TenantId): Promise<readonly FonteBoletim[]>;
+  salvar(fonte: FonteBoletim): Promise<void>;
+  excluir(tenantId: TenantId, fonteId: FonteId): Promise<void>;
+}
+
+/** Busca uma página e devolve o TEXTO dela — sem tags, sem script, já podado. */
+export interface BuscadorDePagina {
+  buscarTexto(url: string): Promise<string>;
+}
+
+/**
+ * O extrator de IA, reduzido a uma função: prompt entra, texto sai.
+ *
+ * A interface não menciona Gemini, modelo nem chave — o prompt e a
+ * interpretação da resposta são regra de negócio e moram no domínio; o
+ * adaptador só carrega a chamada HTTP. Trocar de provedor de IA é trocar esta
+ * implementação, e nada mais.
+ */
+export interface ExtratorPorIa {
+  completar(prompt: string): Promise<string>;
 }
 
 export interface ListRepository {

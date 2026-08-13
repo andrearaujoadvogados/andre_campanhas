@@ -13,6 +13,7 @@ export * from './domain/send/rate-limiter.js';
 export * from './domain/template/template.js';
 export * from './domain/list/lista.js';
 export * from './domain/tipo-email/tipo-email.js';
+export * from './domain/boletim/fonte-boletim.js';
 export * from './domain/report/metricas.js';
 
 // Aplicação
@@ -22,4 +23,5 @@ export * from './application/use-cases/descadastrar.js';
 export * from './application/use-cases/enviar-mensagem.js';
 export * from './application/use-cases/processar-evento.js';
 export * from './application/use-cases/registrar-resposta.js';
+export * from './application/use-cases/coletar-noticias.js';
 export * from './application/use-cases/exportar-dados-titular.js';

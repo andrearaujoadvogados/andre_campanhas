@@ -110,3 +110,51 @@ describe('template do boletim de notícias', () => {
     expect(html).toContain('DCTFWeb');
   });
 });
+
+describe('boletim montado da coleta — conteúdo não confiável', () => {
+  it('escapa título, resumo e URL — HTML de página de terceiros não vira marcação', async () => {
+    const { criarBoletimColetado } = await import('@emailmkt/criador');
+    const design = criarBoletimColetado({
+      titulo: 'Destaques <script>alert(1)</script>',
+      periodo: '01 a 07/08',
+      introducao: '',
+      noticias: [
+        {
+          titulo: 'Notícia com <img src=x onerror=alert(1)>',
+          resumo: 'Resumo com "aspas" & <b>negrito</b>',
+          url: 'https://site.com.br/materia?a=1&b=2',
+          tag: '<STJ>',
+        },
+      ],
+      fontes: ['Fonte <script>'],
+    });
+
+    const html = JSON.stringify(design);
+    // Nenhuma tag sobrevive crua — tudo virou entidade.
+    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('<img src=x');
+    expect(html).not.toContain('<b>negrito');
+    expect(html).toContain('&lt;script&gt;');
+
+    // O link "Leia mais" existe e aponta para a URL da matéria (o & escapado
+    // em atributo é HTML correto).
+    expect(html).toContain('Leia mais');
+    expect(html).toContain('https://site.com.br/materia?a=1&amp;b=2');
+  });
+
+  it('compila para MJML válido com o conteúdo escapado', async () => {
+    const { criarBoletimColetado, compileDesignToMjml } = await import('@emailmkt/criador');
+    const design = criarBoletimColetado({
+      titulo: 'Edição da semana',
+      periodo: '01 a 07/08',
+      introducao: '',
+      noticias: [{ titulo: 'Título', resumo: 'Resumo.', url: 'https://x.com.br/m', tag: 'STJ' }],
+      fontes: ['Migalhas'],
+    });
+
+    const mjml = compileDesignToMjml(design);
+    expect(mjml).toContain('<mjml>');
+    expect(mjml).toContain('STJ');
+    expect(mjml).toContain('Leia mais');
+  });
+});
