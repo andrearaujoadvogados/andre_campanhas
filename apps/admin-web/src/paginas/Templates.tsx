@@ -2,7 +2,7 @@ import { Suspense, lazy, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
-import { createBoletimDesign } from '../lib/criador/boletim.js';
+import { createBoletimDesign } from '@emailmkt/criador';
 
 import { api, type ComAviso } from '../lib/api.js';
 import { dataHora } from '../lib/formato.js';
@@ -339,7 +339,9 @@ export function TemplateEditor() {
   );
   const [corpoHtml, definirCorpo] = useState('<p>Olá {{contato.primeiroNome}},</p>\n<p></p>');
   const [carregado, definirCarregado] = useState(ehNovo);
-  const [avisoSalvo, definirAvisoSalvo] = useState<string | undefined>(undefined);
+  const [avisoSalvo, definirAvisoSalvo] = useState<
+    { texto: string; tom: 'alerta' | 'sucesso' } | undefined
+  >(undefined);
 
   useQuery({
     queryKey: ['template', id],
@@ -374,9 +376,25 @@ export function TemplateEditor() {
     onSuccess: (t) => {
       // O aviso "uma nova versão foi criada" precisa chegar ao operador: sem
       // ele, ninguém entende por que a campanha aprovada continua na versão
-      // anterior (§6.2, nota 3).
-      definirAvisoSalvo(t.aviso);
+      // anterior (§6.2, nota 3). E salvar SEM confirmação visível viola a
+      // primeira heurística de Nielsen (visibilidade do estado): quem não vê
+      // resposta clica de novo — e criava um segundo modelo idêntico.
+      definirAvisoSalvo(
+        t.aviso !== undefined && t.aviso !== ''
+          ? { texto: t.aviso, tom: 'alerta' }
+          : { texto: ehNovo ? 'Modelo criado.' : 'Modelo salvo.', tom: 'sucesso' },
+      );
       void qc.invalidateQueries({ queryKey: ['templates'] });
+      if (ehNovo) {
+        /**
+         * Sai do estado "novo" imediatamente: a URL passa a ser a do modelo
+         * criado, então o próximo "Salvar" é uma atualização, não um segundo
+         * POST. É a correção estrutural do clique duplo — desabilitar o botão
+         * só cobriria o duplo-clique rápido, não o "será que salvou?" de dez
+         * segundos depois.
+         */
+        navegar(`/templates/${t.templateId}`, { replace: true });
+      }
     },
   });
 
@@ -397,7 +415,7 @@ export function TemplateEditor() {
   if (tipo === 'VISUAL') {
     return (
       <div className="space-y-4">
-        <Aviso texto={avisoSalvo} tom="alerta" />
+        <Aviso texto={avisoSalvo?.texto} tom={avisoSalvo?.tom ?? 'alerta'} />
         <ErroCaixa erro={salvar.error} />
 
         <Suspense
@@ -460,7 +478,7 @@ export function TemplateEditor() {
         ← Modelos
       </Link>
 
-      <Aviso texto={avisoSalvo} tom="alerta" />
+      <Aviso texto={avisoSalvo?.texto} tom={avisoSalvo?.tom ?? 'alerta'} />
       <ErroCaixa erro={salvar.error} />
 
       <div className="grid gap-6 lg:grid-cols-2">

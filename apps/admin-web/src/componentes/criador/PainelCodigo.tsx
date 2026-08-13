@@ -3,7 +3,7 @@ import { Code2, RotateCcw } from 'lucide-react';
 
 import { limparHtmlDoUsuario } from '../../lib/criador/codigo.js';
 import { gerarCodigoDoDocumento, gerarCodigoDoPedaco } from '../../lib/criador/html.js';
-import type { BlockType, EmailDesign } from '../../lib/criador/tipos.js';
+import type { BlockType, EmailDesign } from '@emailmkt/criador';
 import { Dialogo } from './Dialogo.tsx';
 import { EditorCodigo } from './EditorCodigo.tsx';
 

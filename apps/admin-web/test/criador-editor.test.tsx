@@ -4,8 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { EditorDesign } from '../src/componentes/criador/EditorDesign.tsx';
 import { escalaDeVisualizacao } from '../src/componentes/criador/Canvas.tsx';
-import { createDefaultDesign } from '../src/lib/criador/presets.js';
-import type { EmailDesign } from '../src/lib/criador/tipos.js';
+import { createDefaultDesign } from '@emailmkt/criador';
+import type { EmailDesign } from '@emailmkt/criador';
 
 /**
  * O mjml-browser não roda no jsdom (e compilar de verdade não é o que estes

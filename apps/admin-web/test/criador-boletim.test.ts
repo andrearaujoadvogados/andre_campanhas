@@ -6,14 +6,10 @@ import {
   criarLinhaEncerramento,
   criarLinhaNoticia,
   criarLinhaPrazos,
-} from '../src/lib/criador/boletim.js';
-import { compileDesignToMjml, isValidDesign } from '../src/lib/criador/compile.js';
-import {
-  createFooterModuleRow,
-  createHeaderModuleRow,
-  DEFAULT_SETTINGS,
-} from '../src/lib/criador/presets.js';
-import type { EmailDesign } from '../src/lib/criador/tipos.js';
+} from '@emailmkt/criador';
+import { compileDesignToMjml, isValidDesign } from '@emailmkt/criador';
+import { createFooterModuleRow, createHeaderModuleRow, DEFAULT_SETTINGS } from '@emailmkt/criador';
+import type { EmailDesign } from '@emailmkt/criador';
 
 describe('template do boletim de notícias', () => {
   it('o design pronto é válido e compila com a edição de exemplo', () => {

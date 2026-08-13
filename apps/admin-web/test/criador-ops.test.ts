@@ -11,9 +11,9 @@ import {
   moveRowTo,
   removeRow,
   updateBlock,
-} from '../src/lib/criador/ops.js';
-import { createBlock, createDefaultDesign } from '../src/lib/criador/presets.js';
-import type { EmailDesign, Row } from '../src/lib/criador/tipos.js';
+} from '@emailmkt/criador';
+import { createBlock, createDefaultDesign } from '@emailmkt/criador';
+import type { EmailDesign, Row } from '@emailmkt/criador';
 
 function designVazio(): EmailDesign {
   return { version: 1, settings: createDefaultDesign().settings, rows: [] };

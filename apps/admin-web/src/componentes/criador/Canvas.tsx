@@ -26,11 +26,11 @@ import {
 } from 'lucide-react';
 
 import { cn } from '../../lib/criador/cn.js';
-import { larguraDoConteudo } from '../../lib/criador/compile.js';
+import { larguraDoConteudo } from '@emailmkt/criador';
 import { limparHtmlDoUsuario } from '../../lib/criador/codigo.js';
 import { limparHtmlColado, textoParaHtml } from '../../lib/criador/paste.js';
-import { BLOCK_LABELS } from '../../lib/criador/presets.js';
-import type { Block, BlockType, Column, EmailDesign, Row } from '../../lib/criador/tipos.js';
+import { BLOCK_LABELS } from '@emailmkt/criador';
+import type { Block, BlockType, Column, EmailDesign, Row } from '@emailmkt/criador';
 
 const PICKER_ICONS: Record<BlockType, React.ElementType> = {
   text: Type,

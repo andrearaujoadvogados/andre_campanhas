@@ -287,6 +287,26 @@ export function AssistenteCampanha({ aoCancelar }: { aoCancelar: () => void }) {
   const modeloEscolhido = modelos.data?.itens.find((m) => m.templateId === dados.templateId);
   const listaEscolhida = listas.data?.itens.find((l) => l.listId === dados.listId);
 
+  /**
+   * O tipo escolhido no passo 1 organiza a escolha do modelo no passo 2.
+   *
+   * A ligação é a `categoria` do modelo casando com o NOME do tipo (sem
+   * distinguir caixa): "Boletim" no catálogo encontra os modelos de categoria
+   * "Boletim". É deliberadamente uma convenção, não uma chave estrangeira —
+   * categoria é texto livre no modelo, e uma FK exigiria migrar modelos
+   * existentes para responder a uma pergunta que a convenção já responde.
+   * Quem cria um tipo novo nomeia a categoria dos modelos igual e o
+   * agrupamento passa a valer.
+   */
+  const nomeTipoEscolhido = tipos.data?.itens.find(
+    (t) => t.tipoEmailId === dados.tipoEmailId,
+  )?.nome;
+  const casaComTipo = (categoria: string | null | undefined): boolean =>
+    nomeTipoEscolhido !== undefined &&
+    (categoria ?? '').trim().toLowerCase() === nomeTipoEscolhido.trim().toLowerCase();
+  const modelosRecomendados = (modelos.data?.itens ?? []).filter((m) => casaComTipo(m.categoria));
+  const modelosDemais = (modelos.data?.itens ?? []).filter((m) => !casaComTipo(m.categoria));
+
   return (
     <div className="space-y-6">
       {/* Trilha dos passos */}
@@ -328,7 +348,7 @@ export function AssistenteCampanha({ aoCancelar }: { aoCancelar: () => void }) {
 
           <Campo
             rotulo="Tipo de campanha"
-            ajuda="Campanha, Comunicado, Convite… Gerencie os tipos em Tipos."
+            ajuda="Boletim, Comunicado, Convite… O tipo organiza a listagem e recomenda os modelos certos no próximo passo. Gerencie os tipos em Tipos."
           >
             <select
               value={dados.tipoEmailId}
@@ -441,24 +461,73 @@ export function AssistenteCampanha({ aoCancelar }: { aoCancelar: () => void }) {
             <div className="space-y-3">
               <p className="text-sm text-ink-suave">Escolha o modelo que esta campanha vai usar.</p>
               <ErroCaixa erro={modelos.error} />
-              <ul className="space-y-2">
-                {modelos.data?.itens.map((m) => (
-                  <li key={m.templateId}>
-                    <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-line px-3 py-2">
-                      <input
-                        type="radio"
-                        name="modelo"
-                        checked={dados.templateId === m.templateId}
-                        onChange={() => definir('templateId', m.templateId)}
-                      />
-                      <span className="font-medium text-ink">{m.nome}</span>
-                      {m.categoria ? (
-                        <span className="text-xs text-ink-suave">· {m.categoria}</span>
-                      ) : null}
-                    </label>
-                  </li>
-                ))}
-              </ul>
+
+              {/**
+               * O tipo escolhido no passo anterior guia a escolha aqui: os
+               * modelos da categoria correspondente vêm primeiro, nomeados
+               * como recomendação. É o que responde "qual modelo eu uso para
+               * um boletim?" sem o operador precisar saber a convenção.
+               */}
+              {nomeTipoEscolhido !== undefined && modelosRecomendados.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium tracking-wide text-gold uppercase">
+                    Recomendados para {nomeTipoEscolhido}
+                  </p>
+                  <ul className="space-y-2">
+                    {modelosRecomendados.map((m) => (
+                      <li key={m.templateId}>
+                        <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-gold/40 bg-accent-mist/40 px-3 py-2">
+                          <input
+                            type="radio"
+                            name="modelo"
+                            checked={dados.templateId === m.templateId}
+                            onChange={() => definir('templateId', m.templateId)}
+                          />
+                          <span className="font-medium text-ink">{m.nome}</span>
+                          {m.categoria ? (
+                            <span className="text-xs text-ink-suave">· {m.categoria}</span>
+                          ) : null}
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {nomeTipoEscolhido !== undefined && modelosRecomendados.length === 0 && (
+                <Aviso
+                  texto={`Nenhum modelo da categoria "${nomeTipoEscolhido}" ainda. Crie um em Modelos com essa categoria — para boletins, o atalho "Novo boletim" já vem montado.`}
+                />
+              )}
+
+              {modelosDemais.length > 0 && (
+                <div className="space-y-2">
+                  {nomeTipoEscolhido !== undefined && modelosRecomendados.length > 0 && (
+                    <p className="text-xs font-medium tracking-wide text-ink-suave uppercase">
+                      Outros modelos
+                    </p>
+                  )}
+                  <ul className="space-y-2">
+                    {modelosDemais.map((m) => (
+                      <li key={m.templateId}>
+                        <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-line px-3 py-2">
+                          <input
+                            type="radio"
+                            name="modelo"
+                            checked={dados.templateId === m.templateId}
+                            onChange={() => definir('templateId', m.templateId)}
+                          />
+                          <span className="font-medium text-ink">{m.nome}</span>
+                          {m.categoria ? (
+                            <span className="text-xs text-ink-suave">· {m.categoria}</span>
+                          ) : null}
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {modelos.data?.itens.length === 0 && (
                 <Aviso
                   tom="alerta"

@@ -17,7 +17,7 @@
 // Roda só no navegador (DOMParser); o commit da edição inline e o painel de
 // código são ambos client-side.
 
-import type { Block, Row, TextBlock } from './tipos.js';
+import type { Block, Row, TextBlock } from '@emailmkt/criador';
 
 /**
  * Lê uma propriedade do ATRIBUTO style, sem passar pelo CSSOM — o CSSOM

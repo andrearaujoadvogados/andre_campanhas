@@ -1,6 +1,6 @@
 // Recorte e higiene do HTML editado à mão no Criador de email.
 
-import { MARCA_INICIO, MARCA_FIM } from './compile.js';
+import { MARCA_INICIO, MARCA_FIM } from '@emailmkt/criador';
 
 /**
  * Recorta o pedaço do HTML compilado que está entre os marcadores.
