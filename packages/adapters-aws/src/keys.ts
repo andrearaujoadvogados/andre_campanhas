@@ -1,4 +1,12 @@
-import type { CampaignId, ContactId, ListId, SendId, TenantId, TipoEmailId } from '@emailmkt/core';
+import type {
+  CampaignId,
+  ContactId,
+  FonteId,
+  ListId,
+  SendId,
+  TenantId,
+  TipoEmailId,
+} from '@emailmkt/core';
 
 /**
  * Chaves da tabela única — §6.3.
@@ -51,6 +59,11 @@ export const chaveLista = (tenantId: TenantId, listId: ListId): Chave => ({
 
 export const chaveTipoEmail = (tenantId: TenantId, tipoEmailId: TipoEmailId): Chave => ({
   pk: `${t(tenantId)}#TIPO#${tipoEmailId}`,
+  sk: 'META',
+});
+
+export const chaveFonteBoletim = (tenantId: TenantId, fonteId: FonteId): Chave => ({
+  pk: `${t(tenantId)}#FONTE#${fonteId}`,
   sk: 'META',
 });
 

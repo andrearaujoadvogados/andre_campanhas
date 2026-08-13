@@ -11,6 +11,7 @@ import {
   type Campaign,
   type Contact,
   type Envio,
+  type FonteBoletim,
   type Lista,
   type Template,
   type TipoEmail,
@@ -79,6 +80,9 @@ interface Estado {
   papeisDefinidos: { id: string; papel: string }[];
   convitesReenviados: string[];
   desabilitados: string[];
+  fontes: FonteBoletim[];
+  fontesSalvas: FonteBoletim[];
+  geracoesDisparadas: number;
 }
 
 let estado: Estado;
@@ -225,6 +229,19 @@ function montarDeps(): Dependencias {
     hasherConteudo: new CanonicalContentHasher(),
     clock: { agora: () => AGORA },
     ids: { gerar: () => 'id-novo' },
+    fontesBoletim: {
+      buscarPorId: async (_t, id) => estado.fontes.find((f) => f.fonteId === id) ?? null,
+      listar: async () => estado.fontes,
+      salvar: async (f) => void estado.fontesSalvas.push(f),
+      excluir: async (_t, id) => {
+        estado.fontes = estado.fontes.filter((f) => f.fonteId !== id);
+      },
+    },
+    geradorBoletim: {
+      gerarAgora: async () => {
+        estado.geracoesDisparadas += 1;
+      },
+    },
   };
 }
 
@@ -252,6 +269,9 @@ beforeEach(() => {
     papeisDefinidos: [],
     convitesReenviados: [] as string[],
     desabilitados: [] as string[],
+    fontes: [],
+    fontesSalvas: [],
+    geracoesDisparadas: 0,
   };
   definirDependenciasParaTeste(montarDeps());
 });
@@ -996,5 +1016,83 @@ describe('usuários do painel', () => {
 
     expect(r.status).toBe(200);
     expect(estado.convitesReenviados).toEqual(['alguem@exemplo.com']);
+  });
+});
+
+describe('fontes do boletim automatizado — §11, item 12', () => {
+  const fonteValida = {
+    nome: 'Migalhas',
+    url: 'https://www.migalhas.com.br/quentes',
+    instrucao: 'Decisões tributárias do STJ e do STF, resumo de duas frases.',
+    ativa: true,
+  };
+
+  function fonteFalsa(): FonteBoletim {
+    return {
+      tenantId: TENANT_PADRAO,
+      fonteId: 'f-1',
+      criadoPor: userId('u-1'),
+      criadoEm: AGORA,
+      atualizadoEm: AGORA,
+      ...fonteValida,
+    } as unknown as FonteBoletim;
+  }
+
+  it('cadastra uma fonte com instrução do que coletar', async () => {
+    const r = await req('/boletim/fontes', json(fonteValida));
+
+    expect(r.status).toBe(201);
+    expect(estado.fontesSalvas[0]?.nome).toBe('Migalhas');
+    expect(estado.fontesSalvas[0]?.instrucao).toContain('STJ');
+    expect(estado.auditados.some((a) => a.recursoTipo === 'FonteBoletim')).toBe(true);
+  });
+
+  it('recusa URL de endereço interno — a guarda de SSRF roda no cadastro', async () => {
+    // O worker faz requisições para onde a URL mandar; sem a guarda, cadastrar
+    // o endpoint de metadados da nuvem viraria leitura de credenciais.
+    const r = await req(
+      '/boletim/fontes',
+      json({ ...fonteValida, url: 'https://169.254.169.254/latest' }),
+    );
+
+    expect(r.status).toBe(400);
+    const corpo = (await r.json()) as { code: string };
+    expect(corpo.code).toBe('URL_INVALIDA');
+    expect(estado.fontesSalvas).toHaveLength(0);
+  });
+
+  it('instrução curta demais é recusada — "notícias" não instrui ninguém', async () => {
+    const r = await req('/boletim/fontes', json({ ...fonteValida, instrucao: 'notícias' }));
+
+    expect(r.status).toBe(400);
+  });
+
+  it('gerar sem fonte ativa explica em vez de disparar à toa', async () => {
+    estado.fontes = [];
+    const r = await req('/boletim/gerar', json({}));
+
+    expect(r.status).toBe(400);
+    expect(estado.geracoesDisparadas).toBe(0);
+  });
+
+  it('gerar com fonte ativa dispara em segundo plano e devolve 202', async () => {
+    estado.fontes = [fonteFalsa()];
+    const r = await req('/boletim/gerar', json({}));
+
+    expect(r.status).toBe(202);
+    expect(estado.geracoesDisparadas).toBe(1);
+    // A mensagem diz ONDE o resultado aparece — sem isso o operador clica e
+    // fica olhando para a tela esperando algo acontecer nela.
+    const corpo = (await r.json()) as { message: string };
+    expect(corpo.message).toContain('Modelos');
+  });
+
+  it('excluir remove e audita', async () => {
+    estado.fontes = [fonteFalsa()];
+    const r = await req('/boletim/fontes/f-1', { method: 'DELETE' });
+
+    expect(r.status).toBe(200);
+    expect(estado.fontes).toHaveLength(0);
+    expect(estado.auditados.some((a) => a.acao === 'EXCLUIU')).toBe(true);
   });
 });

@@ -1,27 +1,23 @@
 {
-  "name": "@emailmkt/admin-api",
+  "name": "@emailmkt/worker-boletim-builder",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "exit 0"
   },
   "dependencies": {
-    "@aws-sdk/client-lambda": "^3.700.0",
-    "@aws-sdk/client-scheduler": "^3.700.0",
-    "@aws-sdk/client-sfn": "^3.700.0",
     "@emailmkt/adapters-aws": "workspace:*",
-    "@emailmkt/contracts": "workspace:*",
     "@emailmkt/core": "workspace:*",
+    "@emailmkt/criador": "workspace:*",
     "@emailmkt/email-render": "workspace:*",
-    "hono": "^4.6.0",
-    "zod": "^3.24.0"
+    "@aws-sdk/lib-dynamodb": "^3.700.0",
+    "mjml": "^5.4.0"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.0",
-    "typescript": "^5.7.0",
-    "vitest": "^2.1.0"
+    "typescript": "^5.7.0"
   }
 }

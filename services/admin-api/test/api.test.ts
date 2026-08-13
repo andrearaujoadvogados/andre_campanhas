@@ -171,6 +171,13 @@ function montarDeps(): Dependencias {
     hasherConteudo,
     clock: { agora: () => AGORA },
     ids: { gerar: () => 'id-gerado' },
+    fontesBoletim: {
+      buscarPorId: async () => null,
+      listar: async () => [],
+      salvar: async () => undefined,
+      excluir: async () => undefined,
+    },
+    geradorBoletim: { gerarAgora: async () => undefined },
   };
 }
 

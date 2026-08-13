@@ -1,6 +1,7 @@
 import {
   CanonicalContentHasher,
   DynamoAuditLogger,
+  DynamoFonteBoletimRepository,
   DynamoListRepository,
   DynamoMetricsRepository,
   DynamoTemplateRepository,
@@ -27,6 +28,7 @@ import {
   secrets,
   sqs,
 } from '@emailmkt/adapters-aws';
+import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
 import { SchedulerClient } from '@aws-sdk/client-scheduler';
 import { SFNClient } from '@aws-sdk/client-sfn';
 import { LiquidEmailRenderer } from '@emailmkt/email-render';
@@ -47,6 +49,7 @@ import type {
   ContactRepository,
   ContentHasher,
   EmailHasher,
+  FonteBoletimRepository,
   IdGenerator,
   SuppressionRepository,
 } from '@emailmkt/core';
@@ -79,6 +82,15 @@ export interface Dependencias {
   readonly hasherConteudo: ContentHasher;
   readonly clock: Clock;
   readonly ids: IdGenerator;
+  readonly fontesBoletim: FonteBoletimRepository;
+  /**
+   * Dispara a geração do boletim em segundo plano.
+   *
+   * É uma invocação assíncrona da Lambda `boletim-builder` — a coleta leva
+   * dezenas de segundos (páginas + IA) e estouraria o timeout do API Gateway
+   * se fosse síncrona. A rota devolve 202 e o modelo aparece em Modelos.
+   */
+  readonly geradorBoletim: { gerarAgora(): Promise<void> };
 }
 
 function exigirEnv(nome: string): string {
@@ -155,6 +167,21 @@ async function montar(): Promise<Dependencias> {
     hasherConteudo: new CanonicalContentHasher(),
     clock: new SystemClock(),
     ids,
+    fontesBoletim: new DynamoFonteBoletimRepository(doc, tabela),
+    geradorBoletim: {
+      async gerarAgora() {
+        // `Event` = fire-and-forget: a coleta demora mais que o timeout do API
+        // Gateway. O resultado aparece como modelo novo; o log da Lambda conta o resto.
+        const lambda = new LambdaClient({});
+        await lambda.send(
+          new InvokeCommand({
+            FunctionName: exigirEnv('FN_BOLETIM_BUILDER'),
+            InvocationType: 'Event',
+            Payload: Buffer.from(JSON.stringify({ origem: 'manual' })),
+          }),
+        );
+      },
+    },
   };
 }
 
