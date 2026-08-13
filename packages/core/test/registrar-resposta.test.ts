@@ -95,6 +95,8 @@ function montar(estadoInicial: Partial<Estado> = {}): { deps: DepsResposta; esta
         estado.metricas.push(campo);
       },
       ler: async () => ({}),
+      incrementarSerie: async () => undefined,
+      lerSerie: async () => [],
     },
     eventos: {
       salvar: async (e) => {

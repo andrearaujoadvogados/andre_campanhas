@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { Relatorio } from '../src/paginas/Relatorio.tsx';
@@ -7,12 +8,15 @@ import { Relatorio } from '../src/paginas/Relatorio.tsx';
 let relatorio: Record<string, unknown>;
 /** Páginas de `/respostas`, na ordem em que a tela as pedir. */
 let paginasDeResposta: { itens: unknown[]; cursor?: string }[];
+let serie: Record<string, unknown>[];
+let destinatarios: Record<string, unknown>[];
 
 vi.mock('../src/lib/api.js', () => ({
   api: {
     get: async (url: string) => {
       if (url.includes('/respostas')) return paginasDeResposta.shift() ?? { itens: [] };
-      if (url.includes('/destinatarios')) return { itens: [] };
+      if (url.includes('/destinatarios')) return { itens: destinatarios };
+      if (url.includes('/serie')) return { pontos: serie };
       return relatorio;
     },
   },
@@ -62,6 +66,104 @@ function montar() {
 beforeEach(() => {
   relatorio = base();
   paginasDeResposta = [{ itens: [] }];
+  serie = [];
+  destinatarios = [];
+});
+
+describe('relatório completo — série e carimbos por destinatário', () => {
+  it('a segunda fileira traz os desfechos negativos com o detalhe hard/soft', async () => {
+    relatorio = base({
+      contadores: {
+        enviados: 1000,
+        entregues: 950,
+        aberturasUnicas: 380,
+        cliquesUnicos: 40,
+        respostas: 19,
+        bouncesHard: 7,
+        bouncesSoft: 3,
+        reclamacoes: 1,
+        descadastros: 2,
+        rejeitados: 1,
+        falhasRenderizacao: 1,
+      },
+    });
+    montar();
+
+    expect(await screen.findByText('Devolvidos')).toBeInTheDocument();
+    expect(screen.getByText('7 inválido(s) · 3 temporário(s)')).toBeInTheDocument();
+    expect(screen.getByText('Falhas técnicas')).toBeInTheDocument();
+  });
+
+  it('o gráfico de engajamento aparece com a série da campanha', async () => {
+    serie = [
+      { dia: '2026-08-10', aberturas: 5, cliques: 1 },
+      { dia: '2026-08-11', aberturas: 3, cliques: 2 },
+    ];
+    montar();
+
+    expect(
+      await screen.findByRole('img', { name: /aberturas e cliques por dia/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('a tabela mostra aberto/clicou/respondeu por destinatário — e traço onde não houve', async () => {
+    destinatarios = [
+      {
+        contactId: 'c-1',
+        nome: 'Maria',
+        email: 'm@x.com',
+        status: 'ENTREGUE',
+        enviadoEm: '2026-08-10T10:00:00Z',
+        falhaMotivo: null,
+        respondidoEm: null,
+        abertoEm: '2026-08-10T11:00:00Z',
+        clicadoEm: null,
+      },
+    ];
+    montar();
+
+    expect(await screen.findByText('Aberto em')).toBeInTheDocument();
+    const linha = screen.getByText('Maria').closest('tr') as HTMLElement;
+    expect(linha).toHaveTextContent('—'); // clique e resposta não aconteceram
+  });
+
+  it('ordenar por abertura põe quem abriu primeiro no topo', async () => {
+    destinatarios = [
+      {
+        contactId: 'c-1',
+        nome: 'Sem abertura',
+        email: 'a@x.com',
+        status: 'ENTREGUE',
+        enviadoEm: '2026-08-10T10:00:00Z',
+        falhaMotivo: null,
+        respondidoEm: null,
+        abertoEm: null,
+        clicadoEm: null,
+      },
+      {
+        contactId: 'c-2',
+        nome: 'Abriu ontem',
+        email: 'b@x.com',
+        status: 'ENTREGUE',
+        enviadoEm: '2026-08-10T10:00:00Z',
+        falhaMotivo: null,
+        respondidoEm: null,
+        abertoEm: '2026-08-11T09:00:00Z',
+        clicadoEm: null,
+      },
+    ];
+    montar();
+
+    await screen.findByText('Abriu ontem');
+    await userEvent.selectOptions(screen.getByLabelText(/ordenar por/i), 'abertura');
+
+    const nomes = screen.getAllByRole('row').map((r) => r.textContent ?? '');
+    const iAbriu = nomes.findIndex((t) => t.includes('Abriu ontem'));
+    const iSem = nomes.findIndex((t) => t.includes('Sem abertura'));
+    // Quem não abriu vai para o FIM — quem ordena por engajamento quer ver
+    // quem se engajou.
+    expect(iAbriu).toBeLessThan(iSem);
+  });
 });
 
 describe('relatório', () => {

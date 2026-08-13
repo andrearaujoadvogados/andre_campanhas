@@ -11,9 +11,11 @@ import {
   sendId as novoSendId,
   tenantId as novoTenantId,
   type CampaignId,
+  type CampoDaSerie,
   type CampoMetrica,
   type Envio,
   type MetricsRepository,
+  type PontoDaSerie,
   type ContactId,
   type SendId,
   type SendRepository,
@@ -22,8 +24,10 @@ import {
 import {
   PREFIXO_ENVIO,
   PREFIXO_ENVIO_DO_CONTATO,
+  PREFIXO_SERIE,
   chaveEnvio,
   chaveMetricas,
+  chaveSerie,
   codificarCursor,
   decodificarCursor,
   gsi2EnviosDoContato,
@@ -226,6 +230,8 @@ export class DynamoSendRepository implements SendRepository {
           // atributo. Gravar `null` faria o atributo existir para todo mundo e
           // a lista de respondentes viraria a lista inteira.
           respondidoEm: envio.respondidoEm?.toISOString(),
+          primeiraAberturaEm: envio.primeiraAberturaEm?.toISOString(),
+          primeiroCliqueEm: envio.primeiroCliqueEm?.toISOString(),
           gsi2pk: g2.pk,
           gsi2sk: g2.sk,
           gsi4pk: g4?.pk,
@@ -249,6 +255,12 @@ function paraEnvio(item: Record<string, unknown>): Envio {
     ...(item['respondidoEm'] === undefined
       ? {}
       : { respondidoEm: new Date(String(item['respondidoEm'])) }),
+    ...(item['primeiraAberturaEm'] === undefined
+      ? {}
+      : { primeiraAberturaEm: new Date(String(item['primeiraAberturaEm'])) }),
+    ...(item['primeiroCliqueEm'] === undefined
+      ? {}
+      : { primeiroCliqueEm: new Date(String(item['primeiroCliqueEm'])) }),
   };
 }
 
@@ -302,4 +314,64 @@ export class DynamoMetricsRepository implements MetricsRepository {
     }
     return saida;
   }
+
+  async incrementarSerie(
+    tenantId: TenantId,
+    campaignId: CampaignId,
+    campo: CampoDaSerie,
+    dia: string,
+  ): Promise<void> {
+    await this.doc.send(
+      new UpdateCommand({
+        TableName: this.tabela,
+        Key: chaveSerie(tenantId, campaignId, dia),
+        UpdateExpression: 'ADD #campo :um SET #tipo = :tipo, #dia = :dia',
+        ExpressionAttributeNames: { '#campo': campo, '#tipo': 'tipo', '#dia': 'dia' },
+        ExpressionAttributeValues: { ':um': 1, ':tipo': 'SERIE', ':dia': dia },
+      }),
+    );
+  }
+
+  /**
+   * Série completa, em ordem cronológica — a sort key `SERIE#<dia>` ordena
+   * sozinha. Uma campanha acumula pontos apenas nos dias com atividade, então
+   * a partição é pequena (semanas, não milhares); os buracos entre dias são
+   * problema da tela, que conhece o intervalo que quer exibir.
+   */
+  async lerSerie(tenantId: TenantId, campaignId: CampaignId): Promise<readonly PontoDaSerie[]> {
+    const chave = chaveSerie(tenantId, campaignId, '');
+    const pontos: PontoDaSerie[] = [];
+    let cursor: Record<string, unknown> | undefined;
+
+    do {
+      const r: {
+        Items?: Record<string, unknown>[] | undefined;
+        LastEvaluatedKey?: Record<string, unknown> | undefined;
+      } = await this.doc.send(
+        new QueryCommand({
+          TableName: this.tabela,
+          KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefixo)',
+          ExpressionAttributeValues: { ':pk': chave.pk, ':prefixo': PREFIXO_SERIE },
+          ExclusiveStartKey: cursor,
+        }),
+      );
+      for (const item of r.Items ?? []) {
+        pontos.push({
+          dia: String(item['dia'] ?? ''),
+          enviados: numero(item['enviados']),
+          entregues: numero(item['entregues']),
+          aberturas: numero(item['aberturas']),
+          cliques: numero(item['cliques']),
+          bounces: numero(item['bounces']),
+        });
+      }
+      cursor = r.LastEvaluatedKey;
+    } while (cursor !== undefined);
+
+    return pontos;
+  }
+}
+
+function numero(v: unknown): number {
+  return typeof v === 'number' && v > 0 ? v : 0;
 }
