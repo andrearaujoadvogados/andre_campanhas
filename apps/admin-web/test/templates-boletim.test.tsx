@@ -106,15 +106,19 @@ describe('novo boletim — o atalho que abre o criador montado', () => {
     await userEvent.click(screen.getByRole('button', { name: /criar modelo/i }));
 
     // Confirmação visível, com tom de sucesso (não de alerta).
-    expect(await screen.findByText('Modelo criado.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Modelo criado.', undefined, { timeout: 5000 }),
+    ).toBeInTheDocument();
 
     // A URL passou a ser a do modelo criado: o botão agora fala em salvar.
-    const salvar = await screen.findByRole('button', { name: /salvar modelo/i });
+    // Timeout largo: a navegação re-renderiza o canvas inteiro do boletim, e
+    // no runner do CI isso passa do 1s padrão — não é condição de corrida.
+    const salvar = await screen.findByRole('button', { name: /salvar modelo/i }, { timeout: 5000 });
     expect(chamadas.filter((c) => c.metodo === 'POST')).toHaveLength(1);
 
     // O clique repetido vira ATUALIZAÇÃO do modelo existente, nunca um segundo.
     await userEvent.click(salvar);
-    await screen.findByText('Modelo salvo.');
+    await screen.findByText('Modelo salvo.', undefined, { timeout: 5000 });
     expect(chamadas.filter((c) => c.metodo === 'POST')).toHaveLength(1);
     expect(
       chamadas.filter((c) => c.metodo === 'PUT' && c.caminho === '/templates/t-9'),
