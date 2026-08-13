@@ -75,6 +75,17 @@ const buscador: BuscadorDePagina = {
 };
 
 /**
+ * Modelos tentados nesta ordem quando `MODELO_GEMINI` não está definido.
+ *
+ * O primeiro é um **alias** que o Google mantém apontando para o flash atual —
+ * a lição veio de produção: o nome fixo `gemini-2.0-flash` devolveu 404 no
+ * primeiro uso real, porque o Google aposenta modelos nomeados e o boletim
+ * não pode quebrar a cada aposentadoria. Os demais são a rede para o caso de
+ * o próprio alias mudar de forma.
+ */
+const MODELOS_CANDIDATOS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+
+/**
  * Gemini via REST — o único trecho que conhece o provedor.
  *
  * O nível gratuito do AI Studio cobre um boletim semanal com folga (o limite
@@ -82,36 +93,55 @@ const buscador: BuscadorDePagina = {
  * provedor é reescrever esta função e nada mais: o prompt e a interpretação
  * da resposta são regra de domínio e moram no core.
  */
-function criarExtrator(chave: string, modelo: string): ExtratorPorIa {
+function criarExtrator(chave: string, modelos: readonly string[]): ExtratorPorIa {
+  // O modelo que respondeu fica valendo para as próximas fontes do mesmo
+  // lote — sem isso, cada fonte repetiria os 404 dos candidatos anteriores.
+  let indice = 0;
+
   return {
     async completar(prompt: string): Promise<string> {
-      const r = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
-        {
-          method: 'POST',
-          signal: AbortSignal.timeout(60_000),
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
-          }),
-        },
-      );
+      while (indice < modelos.length) {
+        const modelo = modelos[indice] ?? '';
+        const r = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
+          {
+            method: 'POST',
+            signal: AbortSignal.timeout(60_000),
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
+            }),
+          },
+        );
 
-      if (!r.ok) {
-        // 429 é o limite do nível gratuito — a mensagem diz isso em vez de
-        // deixar um "HTTP 429" críptico no aviso da fonte.
-        if (r.status === 429)
-          throw new Error('limite do nível gratuito atingido; tente mais tarde');
-        throw new Error(`Gemini HTTP ${r.status}`);
+        // 404 = este modelo não existe mais nesta API. Não é falha da fonte
+        // nem da chave: passa ao próximo candidato.
+        if (r.status === 404) {
+          log.info('modelo indisponível, tentando o próximo', { modelo });
+          indice += 1;
+          continue;
+        }
+
+        if (!r.ok) {
+          // 429 é o limite do nível gratuito — a mensagem diz isso em vez de
+          // deixar um "HTTP 429" críptico no aviso da fonte.
+          if (r.status === 429)
+            throw new Error('limite do nível gratuito atingido; tente mais tarde');
+          throw new Error(`Gemini HTTP ${r.status} (modelo ${modelo})`);
+        }
+
+        const corpo = (await r.json()) as {
+          candidates?: { content?: { parts?: { text?: string }[] } }[];
+        };
+        const texto = corpo.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('');
+        if (texto === undefined || texto === '') throw new Error('resposta vazia do modelo');
+        return texto;
       }
 
-      const corpo = (await r.json()) as {
-        candidates?: { content?: { parts?: { text?: string }[] } }[];
-      };
-      const texto = corpo.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('');
-      if (texto === undefined || texto === '') throw new Error('resposta vazia do modelo');
-      return texto;
+      throw new Error(
+        `nenhum dos modelos respondeu (${modelos.join(', ')}) — defina MODELO_GEMINI com um modelo atual`,
+      );
     },
   };
 }
@@ -138,7 +168,13 @@ export const handler = async (evento: { origem?: string } = {}): Promise<Resulta
     return { gerado: false, totalNoticias: 0, avisos: [aviso] };
   }
 
-  const extrator = criarExtrator(chave, process.env['MODELO_GEMINI'] ?? 'gemini-2.0-flash');
+  const modeloFixo = process.env['MODELO_GEMINI'];
+  const extrator = criarExtrator(
+    chave,
+    // MODELO_GEMINI definido vale sozinho — quem fixa um modelo não quer
+    // fallback silencioso para outro.
+    modeloFixo === undefined || modeloFixo === '' ? MODELOS_CANDIDATOS : [modeloFixo],
+  );
 
   const coleta = await coletarNoticias({ fontes, paginas: buscador, extrator }, TENANT_PADRAO);
 
