@@ -1,6 +1,8 @@
 import { Suspense, lazy, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+
+import { createBoletimDesign } from '../lib/criador/boletim.js';
 
 import { api, type ComAviso } from '../lib/api.js';
 import { dataHora } from '../lib/formato.js';
@@ -143,12 +145,22 @@ export function Templates() {
     <div className="space-y-6">
       <TituloPagina
         acao={
-          <Link
-            to="/templates/novo"
-            className="inline-flex min-h-11 items-center justify-center rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper-light transition-colors hover:bg-ink/90"
-          >
-            Novo modelo
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            {/* O boletim é O e-mail periódico do escritório — merece o atalho
+                que abre o criador já montado, notícia por notícia. */}
+            <Link
+              to="/templates/novo?inicio=boletim"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-gold px-4 py-2 text-sm font-medium text-gold transition-colors hover:bg-accent-mist"
+            >
+              Novo boletim
+            </Link>
+            <Link
+              to="/templates/novo"
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper-light transition-colors hover:bg-ink/90"
+            >
+              Novo modelo
+            </Link>
+          </div>
         }
       >
         Modelos de e-mail
@@ -305,11 +317,26 @@ export function TemplateEditor() {
   const navegar = useNavigate();
   const qc = useQueryClient();
 
-  const [nome, definirNome] = useState('');
-  const [assunto, definirAssunto] = useState('');
-  const [tipo, definirTipo] = useState<'VISUAL' | 'CODIGO'>('CODIGO');
-  const [categoria, definirCategoria] = useState('');
-  const [estruturaVisual, definirEstrutura] = useState('');
+  /**
+   * Ponto de partida do modelo novo — `?inicio=boletim` abre o criador com o
+   * boletim de notícias montado, em vez do e-mail em branco.
+   *
+   * O design é gerado AQUI, no clique, e não gravado em algum lugar: um
+   * template pré-cadastrado no banco envelheceria a cada mudança de preset,
+   * enquanto a fábrica produz sempre a versão atual do desenho.
+   */
+  const [busca] = useSearchParams();
+  const inicioBoletim = ehNovo && busca.get('inicio') === 'boletim';
+
+  const [nome, definirNome] = useState(inicioBoletim ? 'Boletim Tributário' : '');
+  const [assunto, definirAssunto] = useState(
+    inicioBoletim ? 'Boletim Tributário — os destaques da semana' : '',
+  );
+  const [tipo, definirTipo] = useState<'VISUAL' | 'CODIGO'>(inicioBoletim ? 'VISUAL' : 'CODIGO');
+  const [categoria, definirCategoria] = useState(inicioBoletim ? 'Boletim' : '');
+  const [estruturaVisual, definirEstrutura] = useState(() =>
+    inicioBoletim ? JSON.stringify(createBoletimDesign()) : '',
+  );
   const [corpoHtml, definirCorpo] = useState('<p>Olá {{contato.primeiroNome}},</p>\n<p></p>');
   const [carregado, definirCarregado] = useState(ehNovo);
   const [avisoSalvo, definirAvisoSalvo] = useState<string | undefined>(undefined);

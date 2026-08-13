@@ -1110,7 +1110,10 @@ export function RowView({
  * precisa ser verificável sem navegador.
  */
 export function escalaDeVisualizacao(disponivel: number, largura: number): number {
-  if (disponivel <= 0 || largura <= 0) return 1;
+  // `NaN` entra quando o padding computado não é mensurável (jsdom, render
+  // fora da árvore). `zoom: NaN` é inválido e o navegador reclama — medida
+  // indisponível se trata como "não escale", igual à medida ainda não feita.
+  if (!Number.isFinite(disponivel) || disponivel <= 0 || largura <= 0) return 1;
   return Math.min(1, disponivel / largura);
 }
 
