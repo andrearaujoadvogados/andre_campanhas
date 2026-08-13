@@ -126,6 +126,18 @@ export const chaveMetricas = (tenantId: TenantId, campaignId: CampaignId): Chave
   sk: 'METRICS',
 });
 
+/**
+ * Ponto diário da série de engajamento — mesmo item group da campanha, como as
+ * métricas. `SERIE#<AAAA-MM-DD>` ordena lexicograficamente = cronologicamente,
+ * então a leitura da série é uma Query por prefixo, já em ordem.
+ */
+export const chaveSerie = (tenantId: TenantId, campaignId: CampaignId, dia: string): Chave => ({
+  pk: `${t(tenantId)}#CAMPAIGN#${campaignId}`,
+  sk: `SERIE#${dia}`,
+});
+
+export const PREFIXO_SERIE = 'SERIE#';
+
 export const chaveEnvio = (tenantId: TenantId, campaignId: CampaignId, sendId: SendId): Chave => ({
   pk: `${t(tenantId)}#CAMPAIGN#${campaignId}`,
   sk: `SEND#${sendId}`,

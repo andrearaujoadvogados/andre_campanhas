@@ -28,6 +28,7 @@ interface Estado {
   contato: Contact | null;
   marcas: Set<string>;
   metricas: { campo: string; qtd: number }[];
+  serie: { campo: string; dia: string }[];
   eventosSalvos: EventoEnvio[];
   suprimidos: { motivo: string; hash: string }[];
   enviosSalvos: Envio[];
@@ -69,6 +70,8 @@ function deps(): DepsEvento {
       incrementar: async (_t, _k, campo, qtd) =>
         void estado.metricas.push({ campo, qtd: qtd ?? 1 }),
       ler: async () => ({}),
+      incrementarSerie: async (_t, _k, campo, dia) => void estado.serie.push({ campo, dia }),
+      lerSerie: async () => [],
     },
     idempotencia: {
       registrarSeNovo: async (chave) => {
@@ -106,6 +109,7 @@ beforeEach(() => {
     },
     marcas: new Set(),
     metricas: [],
+    serie: [],
     eventosSalvos: [],
     suprimidos: [],
     enviosSalvos: [],
@@ -183,6 +187,64 @@ describe('supressão automática — §11, item 6', () => {
 
     expect(r).toEqual({ acao: 'PROCESSADO', suprimiu: true });
     expect(estado.suprimidos[0]?.hash).toBe('h:sumiu@exemplo.com');
+  });
+});
+
+describe('série diária e carimbos por destinatário', () => {
+  it('cada evento cai no ponto do DIA em que ocorreu, não no do processamento', async () => {
+    // Lote reentregue horas depois precisa cair no dia da abertura — senão a
+    // curva mostra o atraso da fila em vez do comportamento do leitor.
+    await processarEvento(
+      deps(),
+      evento({ tipo: 'OPEN', ocorridoEm: new Date('2026-08-05T23:59:00Z') }),
+    );
+
+    expect(estado.serie).toEqual([{ campo: 'aberturas', dia: '2026-08-05' }]);
+  });
+
+  it('a série conta TOTAIS — a releitura de outro dia é atividade daquele dia', async () => {
+    const d = deps();
+    await processarEvento(
+      d,
+      evento({ tipo: 'OPEN', ocorridoEm: new Date('2026-08-05T10:00:00Z') }),
+    );
+    await processarEvento(
+      d,
+      evento({ tipo: 'OPEN', ocorridoEm: new Date('2026-08-06T10:00:00Z') }),
+    );
+
+    expect(estado.serie.map((p) => p.dia)).toEqual(['2026-08-05', '2026-08-06']);
+  });
+
+  it('DELIVERY_DELAY e RESPOSTA não entram na série', async () => {
+    await processarEvento(deps(), evento({ tipo: 'DELIVERY_DELAY' }));
+    expect(estado.serie).toHaveLength(0);
+  });
+
+  it('a primeira abertura carimba o envio; a segunda não sobrescreve a data', async () => {
+    const d = deps();
+    await processarEvento(
+      d,
+      evento({ tipo: 'OPEN', ocorridoEm: new Date('2026-08-05T10:00:00Z') }),
+    );
+    await processarEvento(
+      d,
+      evento({ tipo: 'OPEN', ocorridoEm: new Date('2026-08-06T10:00:00Z') }),
+    );
+
+    const carimbados = estado.enviosSalvos.filter((e) => e.primeiraAberturaEm !== undefined);
+    expect(carimbados).toHaveLength(1);
+    expect(carimbados[0]?.primeiraAberturaEm).toEqual(new Date('2026-08-05T10:00:00Z'));
+  });
+
+  it('clique carimba primeiroCliqueEm sem tocar na abertura', async () => {
+    await processarEvento(
+      deps(),
+      evento({ tipo: 'CLICK', ocorridoEm: new Date('2026-08-05T11:00:00Z') }),
+    );
+
+    expect(estado.enviosSalvos[0]?.primeiroCliqueEm).toEqual(new Date('2026-08-05T11:00:00Z'));
+    expect(estado.enviosSalvos[0]?.primeiraAberturaEm).toBeUndefined();
   });
 });
 

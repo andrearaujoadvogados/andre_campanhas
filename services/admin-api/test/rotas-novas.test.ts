@@ -72,6 +72,14 @@ interface Estado {
   contatosSalvos: Contact[];
   idsAdicionados: string[];
   contadores: Record<string, number>;
+  serie: {
+    dia: string;
+    enviados: number;
+    entregues: number;
+    aberturas: number;
+    cliques: number;
+    bounces: number;
+  }[];
   auditados: { acao: string; recursoTipo: string }[];
   gravados: string[];
   adicionados: number;
@@ -169,6 +177,8 @@ function montarDeps(): Dependencias {
     metricas: {
       incrementar: async () => undefined,
       ler: async () => estado.contadores,
+      incrementarSerie: async () => undefined,
+      lerSerie: async () => estado.serie,
     },
     envios: {
       buscarPorId: async () => null,
@@ -248,6 +258,7 @@ function montarDeps(): Dependencias {
 beforeEach(() => {
   estado = {
     template: templateFalso(),
+    serie: [],
     versoesGravadas: [],
     metaGravada: [],
     lista: listaFalsa(),
@@ -706,6 +717,57 @@ describe('relatórios', () => {
     expect(corpo.itens).toHaveLength(1);
     expect(corpo.itens[0]?.contactId).toBe('c-2');
     expect(corpo.itens[0]?.respondidoEm).toBe('2026-08-09T14:30:00.000Z');
+  });
+
+  it('a série diária sai em ordem, pronta para o gráfico', async () => {
+    estado.serie = [
+      { dia: '2026-08-10', enviados: 50, entregues: 48, aberturas: 20, cliques: 3, bounces: 1 },
+      { dia: '2026-08-11', enviados: 0, entregues: 2, aberturas: 12, cliques: 5, bounces: 0 },
+    ];
+
+    const corpo = (await (await req('/relatorios/campanhas/k-1/serie')).json()) as {
+      pontos: { dia: string; aberturas: number }[];
+    };
+
+    expect(corpo.pontos).toHaveLength(2);
+    expect(corpo.pontos[0]?.dia).toBe('2026-08-10');
+    expect(corpo.pontos[1]?.aberturas).toBe(12);
+  });
+
+  it('o desempenho por campanha devolve contadores E taxas numa chamada só', async () => {
+    estado.contadores = { enviados: 100, entregues: 90, aberturasUnicas: 30, respostas: 3 };
+
+    const corpo = (await (await req('/relatorios/desempenho?campanhas=k-1')).json()) as {
+      itens: { campaignId: string; nome: string; taxas: Record<string, number> }[];
+    };
+
+    expect(corpo.itens).toHaveLength(1);
+    expect(corpo.itens[0]?.nome).toBe('Campanha');
+    expect(corpo.itens[0]?.taxas['abertura']).toBeCloseTo(30 / 90);
+  });
+
+  it('desempenho sem ids é recusado — nada de Scan para montar dashboard', async () => {
+    expect((await req('/relatorios/desempenho')).status).toBe(400);
+  });
+
+  it('a tabela de destinatários traz os carimbos de abertura e clique', async () => {
+    estado.contatoParaExportar = contatoFalso();
+    estado.enviosDaCampanha = [
+      {
+        status: 'ENTREGUE',
+        contactId: 'c-1',
+        enviadoEm: new Date('2026-08-08T10:00:00Z'),
+        primeiraAberturaEm: new Date('2026-08-08T11:00:00Z'),
+        primeiroCliqueEm: new Date('2026-08-08T11:05:00Z'),
+      } as unknown as Envio,
+    ];
+
+    const corpo = (await (await req('/relatorios/campanhas/k-1/destinatarios')).json()) as {
+      itens: { abertoEm: string | null; clicadoEm: string | null }[];
+    };
+
+    expect(corpo.itens[0]?.abertoEm).toBe('2026-08-08T11:00:00.000Z');
+    expect(corpo.itens[0]?.clicadoEm).toBe('2026-08-08T11:05:00.000Z');
   });
 
   it('o relatório da campanha traz o contador de respondidos e a taxa', async () => {

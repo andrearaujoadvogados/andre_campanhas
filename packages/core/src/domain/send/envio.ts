@@ -21,6 +21,14 @@ export interface Envio {
   readonly enviadoEm?: Date;
   readonly falhaMotivo?: string;
   /**
+   * Primeira abertura e primeiro clique — os carimbos do relatório por
+   * destinatário ("aberto em", "clicou em"). Só a primeira ocorrência grava,
+   * pela mesma razão do contador único: reabrir três vezes é um leitor, não
+   * três. A mesma guarda de idempotência que conta o único carimba aqui.
+   */
+  readonly primeiraAberturaEm?: Date;
+  readonly primeiroCliqueEm?: Date;
+  /**
    * Quando o contato respondeu a este e-mail.
    *
    * Marca no próprio envio, e não só no contador agregado, porque a pergunta do
@@ -130,6 +138,49 @@ export function metricaDoEvento(evento: EventoEnvio): CampoMetrica | null {
       return 'falhasRenderizacao';
     case 'DELIVERY_DELAY':
     case 'RESPOSTA':
+      return null;
+  }
+}
+
+/**
+ * Ponto da série diária de uma campanha — o insumo do gráfico de engajamento.
+ *
+ * Agregado por DIA no processamento do evento (CQRS-lite, como os contadores):
+ * o gráfico consulta uma partição pequena em vez de varrer eventos individuais.
+ * Dia em `AAAA-MM-DD` UTC — o fuso de exibição é decisão da tela, e gravar em
+ * hora local congelaria um fuso no banco.
+ */
+export interface PontoDaSerie {
+  readonly dia: string;
+  readonly enviados: number;
+  readonly entregues: number;
+  readonly aberturas: number;
+  readonly cliques: number;
+  readonly bounces: number;
+}
+
+export type CampoDaSerie = Exclude<keyof PontoDaSerie, 'dia'>;
+
+/**
+ * Mapeia evento → campo da série diária, ou `null` para o que não entra.
+ *
+ * Aberturas e cliques TOTAIS de propósito, ao contrário dos cartões (únicos):
+ * a série mede atividade ao longo do tempo, e a releitura de terça é atividade
+ * de terça — o único atribuiria tudo ao primeiro dia e achataria a curva.
+ */
+export function campoDaSerieDoEvento(evento: EventoEnvio): CampoDaSerie | null {
+  switch (evento.tipo) {
+    case 'SEND':
+      return 'enviados';
+    case 'DELIVERY':
+      return 'entregues';
+    case 'OPEN':
+      return 'aberturas';
+    case 'CLICK':
+      return 'cliques';
+    case 'BOUNCE':
+      return 'bounces';
+    default:
       return null;
   }
 }

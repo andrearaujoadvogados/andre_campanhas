@@ -15,6 +15,7 @@ import {
   classeEntrada,
   tomDoStatusCampanha,
 } from '../componentes/base.tsx';
+import { GraficoEngajamento } from '../componentes/GraficoEngajamento.tsx';
 
 /** Rótulos de status de envio (StatusEnvio do domínio). */
 const ROTULO_STATUS_ENVIO: Readonly<Record<string, string>> = {
@@ -34,6 +35,8 @@ interface DestinatarioRelatorio {
   enviadoEm: string | null;
   falhaMotivo: string | null;
   respondidoEm: string | null;
+  abertoEm: string | null;
+  clicadoEm: string | null;
 }
 
 interface RespostaRelatorio {
@@ -171,6 +174,35 @@ export function Relatorio() {
         />
       </div>
 
+      {/* Segunda fileira: os desfechos negativos, no modelo da referência —
+          visíveis sem rolar, porque são os números que pedem ação. */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Numero
+          rotulo="Devolvidos"
+          valor={numero((r.contadores['bouncesHard'] ?? 0) + (r.contadores['bouncesSoft'] ?? 0))}
+          detalhe={`${numero(r.contadores['bouncesHard'] ?? 0)} inválido(s) · ${numero(r.contadores['bouncesSoft'] ?? 0)} temporário(s)`}
+        />
+        <Numero
+          rotulo="Marcados como spam"
+          valor={numero(r.contadores['reclamacoes'] ?? 0)}
+          detalhe={
+            (r.contadores['reclamacoes'] ?? 0) > 0 ? 'suprimidos automaticamente' : undefined
+          }
+        />
+        <Numero rotulo="Descadastros" valor={numero(r.contadores['descadastros'] ?? 0)} />
+        <Numero
+          rotulo="Falhas técnicas"
+          valor={numero(
+            (r.contadores['rejeitados'] ?? 0) + (r.contadores['falhasRenderizacao'] ?? 0),
+          )}
+          detalhe="rejeitados + falha ao montar"
+        />
+      </div>
+
+      <Cartao titulo="Engajamento por dia">
+        <SerieDaCampanha id={r.campaignId} />
+      </Cartao>
+
       <Cartao titulo="Saúde do envio">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Indicador
@@ -218,6 +250,23 @@ export function Relatorio() {
       </Cartao>
     </div>
   );
+}
+
+/** Série diária da campanha — aberturas × cliques, direto do agregado. */
+function SerieDaCampanha({ id }: { id: string }) {
+  const q = useQuery({
+    queryKey: ['serie', id],
+    queryFn: () =>
+      api.get<{ pontos: { dia: string; aberturas: number; cliques: number }[] }>(
+        `/relatorios/campanhas/${id}/serie`,
+      ),
+    refetchInterval: 60_000,
+  });
+
+  if (q.isLoading) return <Carregando />;
+  if (q.error !== null) return <ErroCaixa erro={q.error} />;
+
+  return <GraficoEngajamento pontos={q.data?.pontos ?? []} />;
 }
 
 /**
@@ -328,6 +377,7 @@ function TabelaRespostas({ id }: { id: string }) {
 function TabelaDestinatarios({ id }: { id: string }) {
   const [busca, definirBusca] = useState('');
   const [filtroStatus, definirFiltroStatus] = useState('');
+  const [ordem, definirOrdem] = useState('nome');
 
   const q = useInfiniteQuery({
     queryKey: ['destinatarios', id],
@@ -344,13 +394,32 @@ function TabelaDestinatarios({ id }: { id: string }) {
 
   const todos = (q.data?.pages ?? []).flatMap((p) => p.itens ?? []);
   const buscaNorm = busca.trim().toLowerCase();
-  const itens = todos.filter(
+  const filtrados = todos.filter(
     (d) =>
       (filtroStatus === '' || d.status === filtroStatus) &&
       (buscaNorm === '' ||
         (d.nome ?? '').toLowerCase().includes(buscaNorm) ||
         (d.email ?? '').toLowerCase().includes(buscaNorm)),
   );
+
+  // Ordenação sobre o que já carregou — igual à referência. Sem
+  // abertura/clique vai para o FIM, não para o topo: quem ordena por
+  // engajamento quer ver quem se engajou.
+  const instante = (v: string | null) => (v === null ? 0 : new Date(v).getTime());
+  const porNome = (a: DestinatarioRelatorio, b: DestinatarioRelatorio) =>
+    (a.nome ?? a.email ?? '').localeCompare(b.nome ?? b.email ?? '', 'pt-BR');
+  const itens = [...filtrados].sort((a, b) => {
+    switch (ordem) {
+      case 'abertura':
+        return instante(b.abertoEm) - instante(a.abertoEm) || porNome(a, b);
+      case 'clique':
+        return instante(b.clicadoEm) - instante(a.clicadoEm) || porNome(a, b);
+      case 'envio':
+        return instante(b.enviadoEm) - instante(a.enviadoEm) || porNome(a, b);
+      default:
+        return porNome(a, b);
+    }
+  });
 
   return (
     <div className="space-y-3">
@@ -373,6 +442,17 @@ function TabelaDestinatarios({ id }: { id: string }) {
             </option>
           ))}
         </select>
+        <select
+          value={ordem}
+          onChange={(e) => definirOrdem(e.target.value)}
+          aria-label="Ordenar por"
+          className={`${classeEntrada} sm:max-w-xs`}
+        >
+          <option value="nome">Nome (A–Z)</option>
+          <option value="abertura">Abertura mais recente</option>
+          <option value="clique">Clique mais recente</option>
+          <option value="envio">Envio mais recente</option>
+        </select>
       </div>
 
       {itens.length === 0 ? (
@@ -385,6 +465,9 @@ function TabelaDestinatarios({ id }: { id: string }) {
                 <th className="py-2 pr-3 font-medium">Contato</th>
                 <th className="py-2 pr-3 font-medium">Status</th>
                 <th className="py-2 pr-3 font-medium">Enviado em</th>
+                <th className="py-2 pr-3 font-medium">Aberto em</th>
+                <th className="py-2 pr-3 font-medium">Clicou em</th>
+                <th className="py-2 pr-3 font-medium">Respondeu em</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -403,6 +486,15 @@ function TabelaDestinatarios({ id }: { id: string }) {
                     )}
                   </td>
                   <td className="py-2 pr-3 text-ink-suave">{dataHora(d.enviadoEm)}</td>
+                  <td className="py-2 pr-3 text-ink-suave">
+                    {d.abertoEm === null ? '—' : dataHora(d.abertoEm)}
+                  </td>
+                  <td className="py-2 pr-3 text-ink-suave">
+                    {d.clicadoEm === null ? '—' : dataHora(d.clicadoEm)}
+                  </td>
+                  <td className="py-2 pr-3 text-ink-suave">
+                    {d.respondidoEm === null ? '—' : dataHora(d.respondidoEm)}
+                  </td>
                 </tr>
               ))}
             </tbody>
