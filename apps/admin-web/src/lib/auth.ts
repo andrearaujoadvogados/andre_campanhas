@@ -6,6 +6,9 @@ import {
   confirmSignIn,
   resetPassword,
   confirmResetPassword,
+  setUpTOTP,
+  updateMFAPreference,
+  verifyTOTPSetup,
 } from 'aws-amplify/auth';
 import { useEffect, useState } from 'react';
 import { configuracao } from './configuracao.js';
@@ -111,3 +114,31 @@ export const confirmarNovaSenha = confirmResetPassword;
 
 export const temPapel = (usuario: Usuario, ...aceitos: Papel[]): boolean =>
   usuario.papeis.some((p) => aceitos.includes(p));
+
+/**
+ * Troca do aplicativo autenticador — rotação do segredo TOTP.
+ *
+ * Existe porque um segredo TOTP exposto (numa captura de tela, por exemplo)
+ * não expira sozinho: quem viu o QR consegue gerar códigos válidos para
+ * sempre. O Cognito não tem API administrativa para redefinir o token de
+ * outro usuário — o caminho é o próprio usuário, já autenticado, associar um
+ * segredo novo. O antigo deixa de valer no momento em que o novo é
+ * **verificado**; iniciar a troca e abandonar não muda nada.
+ */
+export async function iniciarTrocaDeAutenticador(email: string): Promise<{
+  uri: string;
+  segredo: string;
+}> {
+  const detalhes = await setUpTOTP();
+  return {
+    uri: detalhes.getSetupUri('Campanhas AAA', email).toString(),
+    segredo: detalhes.sharedSecret,
+  };
+}
+
+export async function confirmarTrocaDeAutenticador(codigo: string): Promise<void> {
+  await verifyTOTPSetup({ code: codigo });
+  // Reafirma a preferência: sem isso, um usuário criado antes de o pool exigir
+  // TOTP poderia ficar com a preferência vazia após a troca.
+  await updateMFAPreference({ totp: 'PREFERRED' });
+}

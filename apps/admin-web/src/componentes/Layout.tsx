@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { sair, type Usuario } from '../lib/auth.js';
+import { TrocarAutenticador } from './TrocarAutenticador.tsx';
 import { Logo } from './Logo.tsx';
 
 const SECOES = [
@@ -70,6 +71,9 @@ function BlocoUsuario({ usuario, ehAdmin }: { usuario: Usuario; ehAdmin: boolean
       </p>
       {/* O papel fica visível: evita a dúvida "por que não vejo esse botão?" */}
       <p className="px-3 text-xs text-ink-suave">{ehAdmin ? 'Administrador' : 'Operador'}</p>
+      <div className="mt-2">
+        <TrocarAutenticador email={usuario.email} />
+      </div>
       <button
         type="button"
         onClick={() => void sair()}
