@@ -1,4 +1,5 @@
 import {
+  DynamoExecucaoBoletimRepository,
   DynamoFonteBoletimRepository,
   DynamoTemplateRepository,
   SecretsProvider,
@@ -8,9 +9,14 @@ import {
 import {
   TENANT_PADRAO,
   coletarNoticias,
+  encerrarExecucao,
+  iniciarExecucao,
+  execucaoBoletimId as novoExecucaoId,
   templateId as novoTemplateId,
   userId as novoUserId,
   type BuscadorDePagina,
+  type ExecucaoBoletim,
+  type ExecucaoBoletimRepository,
   type ExtratorPorIa,
   type ResultadoColeta,
   type Template,
@@ -153,41 +159,147 @@ export interface ResultadoBoletim {
   readonly avisos: readonly string[];
 }
 
-export const handler = async (evento: { origem?: string } = {}): Promise<ResultadoBoletim> => {
+export const handler = async (
+  evento: { origem?: string; execucaoId?: string } = {},
+): Promise<ResultadoBoletim> => {
   const doc = dynamoDoc();
   const tabela = env('TABELA_PRINCIPAL');
-  const fontes = new DynamoFonteBoletimRepository(doc, tabela);
-  const templates = new DynamoTemplateRepository(doc, tabela);
+  const execucoes = new DynamoExecucaoBoletimRepository(doc, tabela);
 
-  const chave = await new SecretsProvider(secrets()).ler(env('SEGREDO_GEMINI_ARN'));
-  if (chave === '' || chave === CHAVE_PENDENTE) {
-    const aviso =
-      'A chave do Gemini ainda não foi configurada. Crie uma em aistudio.google.com e grave no ' +
-      'segredo do Secrets Manager indicado em docs/RUNBOOK.md.';
-    log.error('chave do Gemini não configurada');
-    return { gerado: false, totalNoticias: 0, avisos: [aviso] };
-  }
+  /**
+   * O registro que a tela acompanha.
+   *
+   * Vem pronto quando o operador clicou (a API o criou antes de invocar) e
+   * nasce aqui quando é a rodada de segunda-feira — a execução agendada
+   * também precisa aparecer no histórico, senão o modelo do dia surge em
+   * Modelos sem que ninguém saiba de onde veio.
+   */
+  let execucao = await obterExecucao(execucoes, evento);
 
-  const modeloFixo = process.env['MODELO_GEMINI'];
-  const extrator = criarExtrator(
-    chave,
-    // MODELO_GEMINI definido vale sozinho — quem fixa um modelo não quer
-    // fallback silencioso para outro.
-    modeloFixo === undefined || modeloFixo === '' ? MODELOS_CANDIDATOS : [modeloFixo],
-  );
+  const relatar = async (mudanca: Partial<ExecucaoBoletim>): Promise<void> => {
+    execucao = { ...execucao, ...mudanca, atualizadaEm: new Date() };
+    await execucoes.salvar(execucao);
+  };
 
-  const coleta = await coletarNoticias({ fontes, paginas: buscador, extrator }, TENANT_PADRAO);
+  const falhar = async (motivo: string): Promise<ResultadoBoletim> => {
+    log.error('geração falhou', { motivo, execucaoId: String(execucao.execucaoId) });
+    await execucoes
+      .salvar(encerrarExecucao(execucao, { situacao: 'FALHOU', erro: motivo }, new Date()))
+      .catch((e: unknown) => log.error('não foi possível gravar a falha', { erro: String(e) }));
+    return { gerado: false, totalNoticias: 0, avisos: [motivo] };
+  };
 
-  for (const aviso of coleta.avisos) log.info('aviso da coleta', { aviso });
+  try {
+    const fontes = new DynamoFonteBoletimRepository(doc, tabela);
+    const templates = new DynamoTemplateRepository(doc, tabela);
 
-  if (coleta.totalNoticias === 0) {
-    log.info('nada coletado — nenhum modelo gerado', {
-      origem: evento.origem ?? 'agendado',
-      avisos: coleta.avisos.length,
+    const chave = await new SecretsProvider(secrets()).ler(env('SEGREDO_GEMINI_ARN'));
+    if (chave === '' || chave === CHAVE_PENDENTE) {
+      // Falta de configuração é FALHA, não "nada encontrado": a diferença é o
+      // que o operador faz a seguir — aqui ele precisa de quem tenha acesso ao
+      // Secrets Manager, e nenhuma revisão de fonte resolveria.
+      return await falhar(
+        'A chave do Gemini ainda não foi configurada. Crie uma em aistudio.google.com e grave no ' +
+          'segredo do Secrets Manager indicado em docs/RUNBOOK.md.',
+      );
+    }
+
+    const modeloFixo = process.env['MODELO_GEMINI'];
+    const extrator = criarExtrator(
+      chave,
+      // MODELO_GEMINI definido vale sozinho — quem fixa um modelo não quer
+      // fallback silencioso para outro.
+      modeloFixo === undefined || modeloFixo === '' ? MODELOS_CANDIDATOS : [modeloFixo],
+    );
+
+    await relatar({ etapa: 'LENDO_FONTES' });
+
+    const coleta = await coletarNoticias(
+      {
+        fontes,
+        paginas: buscador,
+        extrator,
+        // Um batimento por fonte. É o que sustenta a barra de progresso da tela
+        // e o que distingue "demorando" de "morreu" (LIMITE_SEM_SINAL_MS).
+        aoProgredir: async (p) => {
+          await relatar({
+            etapa: 'LENDO_FONTES',
+            fontesTotal: p.totalFontes,
+            fontesConcluidas: p.fontesConcluidas,
+            fonteAtual: p.fonteAtual,
+            totalNoticias: p.noticiasAteAgora,
+          });
+        },
+      },
+      TENANT_PADRAO,
+    );
+
+    for (const aviso of coleta.avisos) log.info('aviso da coleta', { aviso });
+
+    if (coleta.totalNoticias === 0) {
+      log.info('nada coletado — nenhum modelo gerado', {
+        origem: evento.origem ?? 'agendado',
+        avisos: coleta.avisos.length,
+      });
+      await execucoes.salvar(
+        encerrarExecucao(
+          { ...execucao, fontesConcluidas: execucao.fontesTotal },
+          { situacao: 'SEM_NOTICIAS', avisos: coleta.avisos },
+          new Date(),
+        ),
+      );
+      return { gerado: false, totalNoticias: 0, avisos: coleta.avisos };
+    }
+
+    await relatar({
+      etapa: 'MONTANDO_EMAIL',
+      fontesConcluidas: execucao.fontesTotal,
+      totalNoticias: coleta.totalNoticias,
     });
-    return { gerado: false, totalNoticias: 0, avisos: coleta.avisos };
+
+    return await montarModelo({ coleta, templates, execucoes, execucao, origem: evento.origem });
+  } catch (erro) {
+    /**
+     * Falha inesperada vira registro, não exceção propagada — de propósito.
+     *
+     * Propagar faria a Lambda repetir a invocação duas vezes em silêncio, e as
+     * falhas reais deste worker (chave, cota da IA, modelo aposentado, fonte
+     * fora do ar) não se resolvem em trinta segundos. O operador vê o motivo na
+     * tela e decide se tenta de novo — que é a escolha dele, não do repetidor
+     * automático que ninguém observa.
+     */
+    return await falhar(erro instanceof Error ? erro.message : String(erro));
+  }
+};
+
+/** Recupera a execução criada pela API, ou abre uma nova para a rodada agendada. */
+async function obterExecucao(
+  execucoes: ExecucaoBoletimRepository,
+  evento: { origem?: string; execucaoId?: string },
+): Promise<ExecucaoBoletim> {
+  if (evento.execucaoId !== undefined && evento.execucaoId !== '') {
+    const existente = await execucoes.buscarPorId(TENANT_PADRAO, novoExecucaoId(evento.execucaoId));
+    if (existente !== null) return existente;
   }
 
+  const nova = iniciarExecucao({
+    tenantId: TENANT_PADRAO,
+    execucaoId: novoExecucaoId(evento.execucaoId ?? crypto.randomUUID()),
+    origem: evento.origem === 'manual' ? 'MANUAL' : 'AGENDADA',
+    agora: new Date(),
+  });
+  await execucoes.salvar(nova);
+  return nova;
+}
+
+async function montarModelo(ctx: {
+  coleta: ResultadoColeta;
+  templates: DynamoTemplateRepository;
+  execucoes: ExecucaoBoletimRepository;
+  execucao: ExecucaoBoletim;
+  origem: string | undefined;
+}): Promise<ResultadoBoletim> {
+  const { coleta, templates, execucoes, execucao } = ctx;
   const agora = new Date();
   const design = criarBoletimColetado({
     titulo: 'Destaques da semana',
@@ -235,12 +347,29 @@ export const handler = async (evento: { origem?: string } = {}): Promise<Resulta
     criadoEm: agora,
   });
 
+  // O desfecho é gravado DEPOIS do modelo existir. Marcar "concluída" antes
+  // deixaria a tela oferecendo o link de um modelo que a gravação não salvou.
+  await execucoes.salvar(
+    encerrarExecucao(
+      execucao,
+      {
+        situacao: 'CONCLUIDA',
+        templateId: template.templateId,
+        templateNome: template.nome,
+        totalNoticias: coleta.totalNoticias,
+        avisos: coleta.avisos,
+      },
+      new Date(),
+    ),
+  );
+
   log.info('boletim gerado', {
     templateId: String(template.templateId),
     noticias: coleta.totalNoticias,
     fontes: coleta.porFonte.length,
     avisos: coleta.avisos.length,
-    origem: evento.origem ?? 'agendado',
+    origem: ctx.origem ?? 'agendado',
+    execucaoId: String(execucao.execucaoId),
   });
 
   return {
@@ -249,7 +378,7 @@ export const handler = async (evento: { origem?: string } = {}): Promise<Resulta
     totalNoticias: coleta.totalNoticias,
     avisos: coleta.avisos,
   };
-};
+}
 
 const dataCurta = (d: Date): string =>
   d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });

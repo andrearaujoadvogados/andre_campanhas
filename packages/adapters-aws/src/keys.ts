@@ -1,6 +1,7 @@
 import type {
   CampaignId,
   ContactId,
+  ExecucaoBoletimId,
   FonteId,
   ListId,
   SendId,
@@ -65,6 +66,27 @@ export const chaveTipoEmail = (tenantId: TenantId, tipoEmailId: TipoEmailId): Ch
 export const chaveFonteBoletim = (tenantId: TenantId, fonteId: FonteId): Chave => ({
   pk: `${t(tenantId)}#FONTE#${fonteId}`,
   sk: 'META',
+});
+
+/**
+ * Execução da geração do boletim — item próprio, atualizado a cada passo do
+ * worker e lido em rajada pela tela enquanto a geração corre.
+ */
+export const chaveExecucaoBoletim = (tenantId: TenantId, execucaoId: ExecucaoBoletimId): Chave => ({
+  pk: `${t(tenantId)}#BOLETIM_EXEC#${execucaoId}`,
+  sk: 'META',
+});
+
+/**
+ * GSI3 — execuções do mais novo para o mais antigo.
+ *
+ * A sort key é o instante invertido (`9999… menos` o ISO não serve para
+ * string), então a Query lê ao contrário com `ScanIndexForward: false`. A
+ * partição é uma só por tenant porque são poucas execuções por semana.
+ */
+export const gsi3ExecucaoBoletim = (tenantId: TenantId, iniciadaEm: Date): Chave => ({
+  pk: `${t(tenantId)}#BOLETIM_EXECS`,
+  sk: iniciadaEm.toISOString(),
 });
 
 export const chaveMembroLista = (

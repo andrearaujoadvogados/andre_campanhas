@@ -11,11 +11,13 @@ import type { Template, VersaoTemplate } from '../../domain/template/template.js
 import type { Lista } from '../../domain/list/lista.js';
 import type { TipoEmail } from '../../domain/tipo-email/tipo-email.js';
 import type { FonteBoletim } from '../../domain/boletim/fonte-boletim.js';
+import type { ExecucaoBoletim } from '../../domain/boletim/execucao-boletim.js';
 import type { SuppressionEntry } from '../../domain/suppression/suppression.js';
 import type { EmailAddress } from '../../domain/shared/email-address.js';
 import type {
   CampaignId,
   ContactId,
+  ExecucaoBoletimId,
   FonteId,
   ListId,
   SendId,
@@ -455,6 +457,19 @@ export interface FonteBoletimRepository {
   listar(tenantId: TenantId): Promise<readonly FonteBoletim[]>;
   salvar(fonte: FonteBoletim): Promise<void>;
   excluir(tenantId: TenantId, fonteId: FonteId): Promise<void>;
+}
+
+/**
+ * Execuções da geração do boletim — o histórico que a tela consulta.
+ *
+ * `listarRecentes` vem da mais nova para a mais antiga: a pergunta que a tela
+ * faz a cada poucos segundos é "o que está acontecendo agora", e a resposta é
+ * sempre o primeiro item.
+ */
+export interface ExecucaoBoletimRepository {
+  salvar(execucao: ExecucaoBoletim): Promise<void>;
+  buscarPorId(tenantId: TenantId, execucaoId: ExecucaoBoletimId): Promise<ExecucaoBoletim | null>;
+  listarRecentes(tenantId: TenantId, limite: number): Promise<readonly ExecucaoBoletim[]>;
 }
 
 /** Busca uma página e devolve o TEXTO dela — sem tags, sem script, já podado. */

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
@@ -6,6 +6,7 @@ import { createBoletimDesign } from '@emailmkt/criador';
 
 import { api, type ComAviso } from '../lib/api.js';
 import { dataHora } from '../lib/formato.js';
+import { FaixaExecucaoBoletim, useExecucoesBoletim } from '../componentes/ExecucaoBoletim.tsx';
 import {
   Aviso,
   Botao,
@@ -35,6 +36,11 @@ const ROTULO_TIPO_TEMPLATE: Readonly<Record<string, string>> = {
   VISUAL: 'Criador',
   CODIGO: 'Código',
 };
+
+/** Seis horas — o turno em que ainda faz sentido explicar por que a lista não mudou. */
+const JANELA_AVISO_MS = 6 * 60 * 60_000;
+
+const recente = (iso: string): boolean => Date.now() - new Date(iso).getTime() < JANELA_AVISO_MS;
 
 interface Variavel {
   chave: string;
@@ -111,6 +117,25 @@ export function Templates() {
   });
 
   /**
+   * Esta é a tela onde se espera o boletim automático aparecer — por isso ela
+   * também acompanha a geração, e não só a lista de modelos.
+   */
+  const execucoesBoletim = useExecucoesBoletim();
+  const ultimaGeracao = execucoesBoletim.data?.itens[0];
+
+  /**
+   * Geração concluída = modelo novo no servidor que esta lista ainda não tem.
+   *
+   * Sem esta invalidação, o boletim ficaria pronto e a tela continuaria
+   * mostrando a lista antiga até alguém recarregar a página — que é
+   * exatamente a experiência de "pedi e não aconteceu nada".
+   */
+  const idConcluida = ultimaGeracao?.situacao === 'CONCLUIDA' ? ultimaGeracao.execucaoId : null;
+  useEffect(() => {
+    if (idConcluida !== null) void qc.invalidateQueries({ queryKey: ['templates'] });
+  }, [idConcluida, qc]);
+
+  /**
    * Arquivar em lote.
    *
    * `allSettled`, não `all`: um modelo que falhar não pode impedir os outros de
@@ -165,6 +190,16 @@ export function Templates() {
       >
         Modelos de e-mail
       </TituloPagina>
+
+      {/**
+       * A faixa some quando o desfecho envelhece: "não gerou nada" é notícia
+       * por algumas horas, depois vira ruído fixo no topo da tela. Uma geração
+       * em curso, essa aparece sempre — é o presente, não o histórico.
+       */}
+      {ultimaGeracao !== undefined &&
+        (ultimaGeracao.situacao === 'EXECUTANDO' || recente(ultimaGeracao.iniciadaEm)) && (
+          <FaixaExecucaoBoletim execucao={ultimaGeracao} />
+        )}
 
       <Cartao>
         {lista.isLoading && <Carregando />}

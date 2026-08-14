@@ -4,6 +4,7 @@ import {
   TENANT_PADRAO,
   campaignId,
   contactId,
+  execucaoBoletimId,
   listId,
   templateId,
   unwrap,
@@ -11,6 +12,7 @@ import {
   type Campaign,
   type Contact,
   type Envio,
+  type ExecucaoBoletim,
   type FonteBoletim,
   type Lista,
   type Template,
@@ -91,6 +93,9 @@ interface Estado {
   fontes: FonteBoletim[];
   fontesSalvas: FonteBoletim[];
   geracoesDisparadas: number;
+  execucoes: ExecucaoBoletim[];
+  /** Simula a invocação da Lambda falhando — o caso que não deixava rastro nenhum. */
+  falharDisparo: boolean;
 }
 
 let estado: Estado;
@@ -247,8 +252,21 @@ function montarDeps(): Dependencias {
         estado.fontes = estado.fontes.filter((f) => f.fonteId !== id);
       },
     },
+    execucoesBoletim: {
+      salvar: async (e) => {
+        // Put substitui: o dublê espelha o repositório real, senão o teste de
+        // "fecha como FALHOU" veria duas execuções em vez de uma atualizada.
+        estado.execucoes = [e, ...estado.execucoes.filter((x) => x.execucaoId !== e.execucaoId)];
+      },
+      buscarPorId: async (_t, id) => estado.execucoes.find((e) => e.execucaoId === id) ?? null,
+      listarRecentes: async (_t, limite) =>
+        [...estado.execucoes]
+          .sort((a, b) => b.iniciadaEm.getTime() - a.iniciadaEm.getTime())
+          .slice(0, limite),
+    },
     geradorBoletim: {
       gerarAgora: async () => {
+        if (estado.falharDisparo) throw new Error('Lambda indisponível');
         estado.geracoesDisparadas += 1;
       },
     },
@@ -283,6 +301,8 @@ beforeEach(() => {
     fontes: [],
     fontesSalvas: [],
     geracoesDisparadas: 0,
+    execucoes: [],
+    falharDisparo: false,
   };
   definirDependenciasParaTeste(montarDeps());
 });
@@ -1100,6 +1120,23 @@ describe('fontes do boletim automatizado — §11, item 12', () => {
     } as unknown as FonteBoletim;
   }
 
+  function execucaoFalsa(over: Partial<ExecucaoBoletim> = {}): ExecucaoBoletim {
+    return {
+      tenantId: TENANT_PADRAO,
+      execucaoId: execucaoBoletimId('e-1'),
+      situacao: 'CONCLUIDA',
+      etapa: 'FINALIZADA',
+      origem: 'MANUAL',
+      iniciadaEm: AGORA,
+      atualizadaEm: AGORA,
+      fontesTotal: 1,
+      fontesConcluidas: 1,
+      totalNoticias: 3,
+      avisos: [],
+      ...over,
+    };
+  }
+
   it('cadastra uma fonte com instrução do que coletar', async () => {
     const r = await req('/boletim/fontes', json(fonteValida));
 
@@ -1137,16 +1174,106 @@ describe('fontes do boletim automatizado — §11, item 12', () => {
     expect(estado.geracoesDisparadas).toBe(0);
   });
 
-  it('gerar com fonte ativa dispara em segundo plano e devolve 202', async () => {
+  it('gerar com fonte ativa dispara em segundo plano e devolve 202 com a execução', async () => {
     estado.fontes = [fonteFalsa()];
     const r = await req('/boletim/gerar', json({}));
 
     expect(r.status).toBe(202);
     expect(estado.geracoesDisparadas).toBe(1);
-    // A mensagem diz ONDE o resultado aparece — sem isso o operador clica e
-    // fica olhando para a tela esperando algo acontecer nela.
-    const corpo = (await r.json()) as { message: string };
-    expect(corpo.message).toContain('Modelos');
+
+    // O 202 devolve a execução, não só uma frase: é ela que a tela acompanha
+    // até o desfecho. Sem isso o operador clica e fica sem saber de nada.
+    const corpo = (await r.json()) as { execucao: { execucaoId: string; situacao: string } };
+    expect(corpo.execucao.situacao).toBe('EXECUTANDO');
+    expect(corpo.execucao.execucaoId).not.toBe('');
+  });
+
+  it('a execução é registrada ANTES de invocar — a janela de partida não fica cega', async () => {
+    estado.fontes = [fonteFalsa()];
+    await req('/boletim/gerar', json({}));
+
+    expect(estado.execucoes).toHaveLength(1);
+    expect(estado.execucoes[0]?.situacao).toBe('EXECUTANDO');
+    expect(estado.execucoes[0]?.origem).toBe('MANUAL');
+    expect(String(estado.execucoes[0]?.solicitadaPor)).toBe('u-1');
+  });
+
+  it('segundo clique durante a geração recusa e devolve a execução em curso', async () => {
+    estado.fontes = [fonteFalsa()];
+    await req('/boletim/gerar', json({}));
+    const r = await req('/boletim/gerar', json({}));
+
+    expect(r.status).toBe(409);
+    // Uma só invocação: dois boletins quase idênticos gastariam em dobro a
+    // cota gratuita da IA e confundiriam a lista de modelos.
+    expect(estado.geracoesDisparadas).toBe(1);
+    const corpo = (await r.json()) as { code: string; execucao: { situacao: string } };
+    expect(corpo.code).toBe('JA_EXECUTANDO');
+    expect(corpo.execucao.situacao).toBe('EXECUTANDO');
+  });
+
+  it('execução sem sinal há muito tempo não tranca o botão para sempre', async () => {
+    estado.fontes = [fonteFalsa()];
+    estado.execucoes = [
+      execucaoFalsa({
+        situacao: 'EXECUTANDO',
+        // O relógio do teste é AGORA; dez minutos de silêncio é processo morto.
+        iniciadaEm: new Date(AGORA.getTime() - 10 * 60_000),
+        atualizadaEm: new Date(AGORA.getTime() - 10 * 60_000),
+      }),
+    ];
+
+    const r = await req('/boletim/gerar', json({}));
+
+    expect(r.status).toBe(202);
+    expect(estado.geracoesDisparadas).toBe(1);
+  });
+
+  it('falha ao invocar fecha a execução como FALHOU em vez de deixá-la pendurada', async () => {
+    estado.fontes = [fonteFalsa()];
+    estado.falharDisparo = true;
+
+    const r = await req('/boletim/gerar', json({}));
+
+    expect(r.status).toBe(502);
+    expect(estado.execucoes[0]?.situacao).toBe('FALHOU');
+    expect(estado.execucoes[0]?.erro).toContain('Lambda indisponível');
+    expect(estado.execucoes[0]?.concluidaEm).toBeInstanceOf(Date);
+  });
+
+  it('lista as execuções recentes, da mais nova para a mais antiga', async () => {
+    estado.execucoes = [
+      execucaoFalsa({
+        execucaoId: execucaoBoletimId('e-antiga'),
+        iniciadaEm: new Date('2026-08-01T10:00:00Z'),
+      }),
+      execucaoFalsa({
+        execucaoId: execucaoBoletimId('e-nova'),
+        iniciadaEm: new Date('2026-08-06T10:00:00Z'),
+      }),
+    ];
+
+    const r = await req('/boletim/execucoes');
+    const corpo = (await r.json()) as { itens: { execucaoId: string }[] };
+
+    expect(r.status).toBe(200);
+    expect(corpo.itens.map((e) => e.execucaoId)).toEqual(['e-nova', 'e-antiga']);
+  });
+
+  it('execução parada há mais de quatro minutos é apresentada como TRAVADA', async () => {
+    estado.execucoes = [
+      execucaoFalsa({
+        situacao: 'EXECUTANDO',
+        atualizadaEm: new Date(AGORA.getTime() - 5 * 60_000),
+      }),
+    ];
+
+    const r = await req('/boletim/execucoes');
+    const corpo = (await r.json()) as { itens: { situacao: string }[] };
+
+    // O estado derivado sai resolvido do servidor: o relógio do navegador não
+    // é confiável para decidir se um processo morreu.
+    expect(corpo.itens[0]?.situacao).toBe('TRAVADA');
   });
 
   it('excluir remove e audita', async () => {
