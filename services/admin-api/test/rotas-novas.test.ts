@@ -376,6 +376,53 @@ describe('templates — arquivar em vez de excluir', () => {
   });
 });
 
+describe('templates — quem criou aparece na listagem', () => {
+  const usuarioDoPainel = (sub: string, email: string): UsuarioDoPainel => ({
+    id: email,
+    sub,
+    email,
+    papeis: ['OPERADOR'],
+    habilitado: true,
+    aguardandoPrimeiroAcesso: false,
+    criadoEm: AGORA,
+  });
+
+  it('resolve o sub do criador para o e-mail — só dos subs presentes na página', async () => {
+    estado.usuarios.push(
+      usuarioDoPainel('u-1', 'ana@escritorio.adv.br'),
+      usuarioDoPainel('u-2', 'beto@escritorio.adv.br'),
+    );
+
+    const corpo = (await (await req('/templates')).json()) as {
+      itens: { criadoPor: string }[];
+      criadores: Record<string, string>;
+    };
+
+    expect(corpo.itens[0]?.criadoPor).toBe('u-1');
+    // u-2 não criou nada do que está listado: expor o quadro inteiro é papel
+    // da rota de usuários, que é de ADMIN.
+    expect(corpo.criadores).toEqual({ 'u-1': 'ana@escritorio.adv.br' });
+  });
+
+  it('Cognito indisponível degrada para o mapa vazio — a listagem não cai', async () => {
+    const deps = montarDeps();
+    definirDependenciasParaTeste({
+      ...deps,
+      gestaoUsuarios: {
+        ...deps.gestaoUsuarios,
+        listar: async () => {
+          throw new Error('cognito fora do ar');
+        },
+      },
+    });
+
+    const r = await req('/templates');
+
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { criadores: Record<string, string> }).criadores).toEqual({});
+  });
+});
+
 describe('templates — prévia', () => {
   it('renderiza com dados fictícios, não com contato real', async () => {
     const r = await req(

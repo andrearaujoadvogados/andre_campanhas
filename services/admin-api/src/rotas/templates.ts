@@ -19,13 +19,33 @@ import { validarCorpo } from '../validacao.js';
 export const rotasTemplates = new Hono<{ Variables: Variaveis }>();
 
 rotasTemplates.get('/', async (c) => {
-  const { templates } = await obterDependencias();
+  const { templates, gestaoUsuarios } = await obterDependencias();
   const usuario = c.get('usuario');
 
   const pagina = await templates.listar(usuario.tenantId, c.req.query('cursor'));
+
+  /**
+   * `criadoPor` guarda o `sub` do Cognito, que não diz nada a quem olha a
+   * tela. O mapa `criadores` traduz para o e-mail — só dos subs presentes
+   * nesta página, não do quadro inteiro: a rota de usuários é de ADMIN, e
+   * aqui basta identificar quem assina os modelos listados.
+   */
+  const subs = new Set<string>(pagina.itens.map((t) => t.criadoPor));
+  let criadores: Record<string, string> = {};
+  try {
+    const usuarios = await gestaoUsuarios.listar();
+    criadores = Object.fromEntries(
+      usuarios.filter((u) => subs.has(u.sub)).map((u) => [u.sub, u.email]),
+    );
+  } catch {
+    // Cognito fora do ar não pode derrubar a listagem: sem o mapa, a tela
+    // mostra o identificador cru — degrada, não quebra.
+  }
+
   return c.json({
     itens: pagina.itens.map(paraResumo),
     cursor: pagina.cursor,
+    criadores,
     // A interface não precisa adivinhar o que o operador pode escrever.
     variaveisDisponiveis: VARIAVEIS_DISPONIVEIS,
   });
@@ -253,6 +273,7 @@ function paraResumo(t: Template): Record<string, unknown> {
     thumbnail: t.thumbnail ?? null,
     versaoAtual: t.versaoAtual,
     arquivado: t.arquivado,
+    criadoPor: t.criadoPor,
     criadoEm: t.criadoEm.toISOString(),
     atualizadoEm: t.atualizadoEm.toISOString(),
   };

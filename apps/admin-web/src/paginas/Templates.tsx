@@ -1,6 +1,7 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { LayoutGrid, List } from 'lucide-react';
 
 import { createBoletimDesign } from '@emailmkt/criador';
 
@@ -15,6 +16,7 @@ import {
   Cartao,
   ErroCaixa,
   Selo,
+  TabelaRolavel,
   TituloPagina,
   Vazio,
   classeEntrada,
@@ -28,6 +30,8 @@ interface Template extends ComAviso {
   thumbnail?: string | null;
   versaoAtual: number;
   arquivado: boolean;
+  criadoPor?: string;
+  criadoEm?: string;
   atualizadoEm: string;
   conteudo?: { assunto: string; corpoHtml: string; estruturaVisual?: string } | null;
 }
@@ -41,6 +45,33 @@ const ROTULO_TIPO_TEMPLATE: Readonly<Record<string, string>> = {
 const JANELA_AVISO_MS = 6 * 60 * 60_000;
 
 const recente = (iso: string): boolean => Date.now() - new Date(iso).getTime() < JANELA_AVISO_MS;
+
+const FILTROS_TIPO = [
+  { valor: '', rotulo: 'Todos os tipos' },
+  { valor: 'VISUAL', rotulo: 'Criador' },
+  { valor: 'CODIGO', rotulo: 'Código' },
+] as const;
+
+/** Grade com prévias ou lista compacta — preferência de quem usa, não dado do sistema. */
+const CHAVE_VISUALIZACAO = 'emailmkt:templates-visualizacao';
+
+// try/catch como nos módulos do criador: jsdom de teste e modo privado não
+// expõem o storage, e a tela funciona igual — a escolha só não sobrevive.
+function lerVisualizacao(): 'grade' | 'lista' {
+  try {
+    return window.localStorage.getItem(CHAVE_VISUALIZACAO) === 'lista' ? 'lista' : 'grade';
+  } catch {
+    return 'grade';
+  }
+}
+
+function gravarVisualizacao(modo: 'grade' | 'lista'): void {
+  try {
+    window.localStorage.setItem(CHAVE_VISUALIZACAO, modo);
+  } catch {
+    // Sem storage: a preferência vale só até sair da tela.
+  }
+}
 
 interface Variavel {
   chave: string;
@@ -62,6 +93,13 @@ interface Previa {
  * exigiria rasterizar o HTML em algum lugar. Assim a prévia vale para os modelos
  * que já existem, sem migração e sem backend novo.
  *
+ * O e-mail renderiza na largura canônica de 640px — encolher o iframe direto
+ * mudaria o layout e a prévia mostraria algo que ninguém vai receber — e a
+ * escala acompanha a largura real do card, medida aqui: o topo do e-mail
+ * preenche o quadro inteiro, como na caixa de entrada. A versão anterior usava
+ * escala fixa (0.42) num quadro menor e centrado, e a prévia saía deslocada e
+ * cortada num ponto arbitrário — modelos diferentes ficavam iguais.
+ *
  * O conteúdo vem de `GET /templates/:id` — a listagem devolve só metadados. São
  * algumas dezenas de modelos no total, e o React Query cacheia; o custo é uma
  * requisição por card, uma vez.
@@ -69,7 +107,25 @@ interface Previa {
  * `sandbox=""` e `pointer-events-none`: o HTML é autoral e não deve executar
  * nada nem capturar o clique, que pertence ao link do card.
  */
+const LARGURA_EMAIL = 640;
+/** Altura do quadro — o `h-40` do contêiner em pixels; muda um, muda o outro. */
+const ALTURA_PREVIA = 160;
+
 function PreviaModelo({ id }: { id: string }) {
+  const quadroRef = useRef<HTMLDivElement | null>(null);
+  const [largura, definirLargura] = useState(0);
+
+  useLayoutEffect(() => {
+    const el = quadroRef.current;
+    if (el === null) return;
+    definirLargura(el.clientWidth);
+    // O jsdom dos testes não tem ResizeObserver; lá a medida única acima basta.
+    if (typeof ResizeObserver === 'undefined') return;
+    const observador = new ResizeObserver(() => definirLargura(el.clientWidth));
+    observador.observe(el);
+    return () => observador.disconnect();
+  }, []);
+
   const conteudo = useQuery({
     queryKey: ['template', id],
     queryFn: () => api.get<Template>(`/templates/${id}`),
@@ -77,32 +133,36 @@ function PreviaModelo({ id }: { id: string }) {
   });
 
   const html = conteudo.data?.conteudo?.corpoHtml;
-
-  if (conteudo.isLoading) {
-    return <span className="text-xs text-ink-suave">carregando prévia…</span>;
-  }
-  if (html === undefined || html === '') {
-    return <span className="text-xs text-ink-suave">sem prévia</span>;
-  }
+  const escala = largura > 0 ? largura / LARGURA_EMAIL : 0;
+  const aviso = conteudo.isLoading
+    ? 'carregando prévia…'
+    : html === undefined || html === ''
+      ? 'sem prévia'
+      : undefined;
 
   return (
-    <iframe
-      title=""
-      aria-hidden="true"
-      tabIndex={-1}
-      sandbox=""
-      srcDoc={html}
-      // 640px é a largura típica de e-mail; a escala reduz para caber no card
-      // sem reflow do conteúdo — encolher o iframe direto mudaria o layout do
-      // e-mail e a prévia mostraria algo que ninguém vai receber.
-      style={{
-        width: '640px',
-        height: '420px',
-        transform: 'scale(0.42)',
-        transformOrigin: 'top left',
-      }}
-      className="pointer-events-none border-0 bg-white"
-    />
+    <div ref={quadroRef} className="relative h-40 overflow-hidden border-b border-line bg-paper">
+      {aviso !== undefined ? (
+        <span className="absolute inset-0 flex items-center justify-center text-xs text-ink-suave">
+          {aviso}
+        </span>
+      ) : escala > 0 ? (
+        <iframe
+          title=""
+          aria-hidden="true"
+          tabIndex={-1}
+          sandbox=""
+          srcDoc={html}
+          style={{
+            width: `${LARGURA_EMAIL}px`,
+            height: `${Math.ceil(ALTURA_PREVIA / escala)}px`,
+            transform: `scale(${escala})`,
+            transformOrigin: 'top left',
+          }}
+          className="pointer-events-none absolute top-0 left-0 border-0 bg-white"
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -111,9 +171,29 @@ export function Templates() {
   const [selecionados, definirSelecionados] = useState<Set<string>>(new Set());
   const [mostrarArquivados, definirMostrarArquivados] = useState(false);
 
+  const [modo, definirModo] = useState<'grade' | 'lista'>(lerVisualizacao);
+  const trocarModo = (novo: 'grade' | 'lista') => {
+    definirModo(novo);
+    gravarVisualizacao(novo);
+  };
+
+  // Filtros — recortes no cliente sobre a página carregada, como em Campanhas:
+  // a listagem já traz a partição inteira do tenant, e filtrar de novo no
+  // servidor seria outra consulta para responder menos.
+  const [filtroTipo, definirFiltroTipo] = useState('');
+  const [filtroCategoria, definirFiltroCategoria] = useState('');
+  const [filtroCriador, definirFiltroCriador] = useState('');
+  const [criadoDe, definirCriadoDe] = useState('');
+  const [criadoAte, definirCriadoAte] = useState('');
+
   const lista = useQuery({
     queryKey: ['templates'],
-    queryFn: () => api.get<{ itens: Template[]; variaveisDisponiveis: Variavel[] }>('/templates'),
+    queryFn: () =>
+      api.get<{
+        itens: Template[];
+        criadores?: Record<string, string>;
+        variaveisDisponiveis: Variavel[];
+      }>('/templates'),
   });
 
   /**
@@ -155,8 +235,53 @@ export function Templates() {
   });
 
   const todos = lista.data?.itens ?? [];
-  const itens = mostrarArquivados ? todos : todos.filter((t) => !t.arquivado);
-  const arquivados = todos.length - todos.filter((t) => !t.arquivado).length;
+  const criadores = lista.data?.criadores ?? {};
+  const arquivados = todos.filter((t) => t.arquivado).length;
+
+  /** E-mail de quem criou; sem o mapa (Cognito indisponível), o identificador cru. */
+  const nomeCriador = (t: Template) =>
+    t.criadoPor === undefined ? undefined : (criadores[t.criadoPor] ?? t.criadoPor);
+
+  const filtroAtivo =
+    filtroTipo !== '' ||
+    filtroCategoria !== '' ||
+    filtroCriador !== '' ||
+    criadoDe !== '' ||
+    criadoAte !== '';
+
+  const itens = todos.filter((t) => {
+    if (!mostrarArquivados && t.arquivado) return false;
+    if (filtroTipo !== '' && (t.tipo ?? 'CODIGO') !== filtroTipo) return false;
+    if (filtroCategoria !== '' && (t.categoria ?? '') !== filtroCategoria) return false;
+    if (filtroCriador !== '' && t.criadoPor !== filtroCriador) return false;
+    if (t.criadoEm !== undefined) {
+      // Limites no fuso de quem olha: "criado a partir de 13/08" quer dizer o
+      // dia 13 do operador, não o dia 13 em UTC.
+      if (criadoDe !== '' && new Date(t.criadoEm) < new Date(`${criadoDe}T00:00:00`)) return false;
+      if (criadoAte !== '' && new Date(t.criadoEm) > new Date(`${criadoAte}T23:59:59.999`))
+        return false;
+    }
+    return true;
+  });
+
+  // As opções saem do que existe de fato: categoria é texto livre e não há
+  // catálogo a consultar — um filtro sem resultado possível não é opção.
+  const categorias = [...new Set(todos.map((t) => t.categoria ?? '').filter((c) => c !== ''))].sort(
+    (a, b) => a.localeCompare(b, 'pt-BR'),
+  );
+  const opcoesCriador = [
+    ...new Set(todos.map((t) => t.criadoPor).filter((s): s is string => s !== undefined)),
+  ]
+    .map((sub) => ({ sub, rotulo: criadores[sub] ?? sub }))
+    .sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR'));
+
+  const limparFiltros = () => {
+    definirFiltroTipo('');
+    definirFiltroCategoria('');
+    definirFiltroCriador('');
+    definirCriadoDe('');
+    definirCriadoAte('');
+  };
 
   const alternar = (id: string) =>
     definirSelecionados((s) => {
@@ -204,56 +329,185 @@ export function Templates() {
       <Cartao>
         {lista.isLoading && <Carregando />}
         <ErroCaixa erro={lista.error} />
-        {itens.length === 0 && !lista.isLoading && <Vazio mensagem="Nenhum modelo criado ainda." />}
+        {todos.length === 0 && !lista.isLoading && <Vazio mensagem="Nenhum modelo criado ainda." />}
 
-        {itens.length > 0 && (
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="flex min-h-11 items-center gap-2 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={itens.length > 0 && itens.every((t) => selecionados.has(t.templateId))}
-                  onChange={(e) =>
-                    definirSelecionados(
-                      e.target.checked ? new Set(itens.map((t) => t.templateId)) : new Set(),
-                    )
-                  }
-                />
-                Selecionar todos
-              </label>
-              {selecionados.size > 0 && (
-                <>
-                  <span className="text-sm text-ink-suave">{selecionados.size} selecionado(s)</span>
-                  <Botao
-                    variante="perigo"
-                    carregando={arquivarSelecionados.isPending}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `Arquivar ${selecionados.size} modelo(s)? Eles saem da lista; as versões continuam guardadas para auditoria das campanhas que já os usaram.`,
-                        )
-                      )
-                        arquivarSelecionados.mutate();
-                    }}
+        {/* Os controles dependem de haver modelos, não de o filtro achar algum:
+            esconder o filtro que zerou a lista trancaria o usuário no vazio. */}
+        {todos.length > 0 && (
+          <div className="mb-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div role="group" aria-label="Filtrar por tipo" className="flex flex-wrap gap-1.5">
+                {FILTROS_TIPO.map((f) => (
+                  <button
+                    key={f.valor}
+                    type="button"
+                    aria-pressed={filtroTipo === f.valor}
+                    onClick={() => definirFiltroTipo(f.valor)}
+                    className={`inline-flex min-h-11 items-center rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                      filtroTipo === f.valor
+                        ? 'border-ink bg-ink text-paper-light'
+                        : 'border-line bg-paper-light text-ink-suave hover:bg-accent-mist hover:text-ink'
+                    }`}
                   >
-                    Arquivar selecionados
-                  </Botao>
-                </>
+                    {f.rotulo}
+                  </button>
+                ))}
+              </div>
+
+              <div
+                role="group"
+                aria-label="Modo de visualização"
+                className="inline-flex overflow-hidden rounded-md border border-line"
+              >
+                {(
+                  [
+                    { valor: 'grade', rotulo: 'Grade', Icone: LayoutGrid },
+                    { valor: 'lista', rotulo: 'Lista', Icone: List },
+                  ] as const
+                ).map(({ valor, rotulo, Icone }) => (
+                  <button
+                    key={valor}
+                    type="button"
+                    aria-pressed={modo === valor}
+                    onClick={() => trocarModo(valor)}
+                    className={`inline-flex min-h-11 items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors ${
+                      modo === valor
+                        ? 'bg-ink text-paper-light'
+                        : 'bg-paper-light text-ink-suave hover:bg-accent-mist hover:text-ink'
+                    }`}
+                  >
+                    <Icone aria-hidden="true" className="size-4" />
+                    {rotulo}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              {categorias.length > 0 && (
+                <div>
+                  <label className="mr-2 text-sm text-ink-suave" htmlFor="filtro-categoria">
+                    Categoria:
+                  </label>
+                  <select
+                    id="filtro-categoria"
+                    value={filtroCategoria}
+                    onChange={(e) => definirFiltroCategoria(e.target.value)}
+                    className={`${classeEntrada} inline-block w-auto`}
+                  >
+                    <option value="">Todas</option>
+                    {categorias.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {opcoesCriador.length > 0 && (
+                <div>
+                  <label className="mr-2 text-sm text-ink-suave" htmlFor="filtro-criador">
+                    Criado por:
+                  </label>
+                  <select
+                    id="filtro-criador"
+                    value={filtroCriador}
+                    onChange={(e) => definirFiltroCriador(e.target.value)}
+                    className={`${classeEntrada} inline-block w-auto`}
+                  >
+                    <option value="">Todos</option>
+                    {opcoesCriador.map((o) => (
+                      <option key={o.sub} value={o.sub}>
+                        {o.rotulo}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="mr-2 text-sm text-ink-suave" htmlFor="filtro-criado-de">
+                  Criado de:
+                </label>
+                <input
+                  id="filtro-criado-de"
+                  type="date"
+                  value={criadoDe}
+                  onChange={(e) => definirCriadoDe(e.target.value)}
+                  className={`${classeEntrada} inline-block w-auto`}
+                />
+              </div>
+              <div>
+                <label className="mr-2 text-sm text-ink-suave" htmlFor="filtro-criado-ate">
+                  até:
+                </label>
+                <input
+                  id="filtro-criado-ate"
+                  type="date"
+                  value={criadoAte}
+                  onChange={(e) => definirCriadoAte(e.target.value)}
+                  className={`${classeEntrada} inline-block w-auto`}
+                />
+              </div>
+
+              {filtroAtivo && (
+                <Botao variante="discreto" onClick={limparFiltros}>
+                  Limpar filtros
+                </Botao>
               )}
             </div>
 
-            {arquivados > 0 && (
-              <label className="flex min-h-11 items-center gap-2 text-sm text-ink-suave">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={mostrarArquivados}
-                  onChange={(e) => definirMostrarArquivados(e.target.checked)}
-                />
-                Mostrar arquivados ({arquivados})
-              </label>
-            )}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex min-h-11 items-center gap-2 text-sm text-ink">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={itens.length > 0 && itens.every((t) => selecionados.has(t.templateId))}
+                    onChange={(e) =>
+                      definirSelecionados(
+                        e.target.checked ? new Set(itens.map((t) => t.templateId)) : new Set(),
+                      )
+                    }
+                  />
+                  Selecionar todos
+                </label>
+                {selecionados.size > 0 && (
+                  <>
+                    <span className="text-sm text-ink-suave">
+                      {selecionados.size} selecionado(s)
+                    </span>
+                    <Botao
+                      variante="perigo"
+                      carregando={arquivarSelecionados.isPending}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `Arquivar ${selecionados.size} modelo(s)? Eles saem da lista; as versões continuam guardadas para auditoria das campanhas que já os usaram.`,
+                          )
+                        )
+                          arquivarSelecionados.mutate();
+                      }}
+                    >
+                      Arquivar selecionados
+                    </Botao>
+                  </>
+                )}
+              </div>
+
+              {arquivados > 0 && (
+                <label className="flex min-h-11 items-center gap-2 text-sm text-ink-suave">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={mostrarArquivados}
+                    onChange={(e) => definirMostrarArquivados(e.target.checked)}
+                  />
+                  Mostrar arquivados ({arquivados})
+                </label>
+              )}
+            </div>
           </div>
         )}
 
@@ -265,47 +519,129 @@ export function Templates() {
           />
         )}
 
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {itens.map((t) => (
-            <li
-              key={t.templateId}
-              className={`flex flex-col overflow-hidden rounded-lg border bg-paper-light ${
-                selecionados.has(t.templateId) ? 'border-ink ring-1 ring-ink' : 'border-line'
-              }`}
-            >
-              {/* Fora do link: marcar não pode navegar. */}
-              <label className="flex min-h-11 items-center gap-2 border-b border-line px-3 text-sm text-ink-suave">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={selecionados.has(t.templateId)}
-                  onChange={() => alternar(t.templateId)}
-                />
-                selecionar
-              </label>
+        {todos.length > 0 && itens.length === 0 && (
+          <Vazio mensagem="Nenhum modelo para este filtro." />
+        )}
 
-              <Link to={`/templates/${t.templateId}`} className="flex flex-1 flex-col">
-                {/* A prévia é o HTML real do modelo, reduzido. */}
-                <div className="flex h-32 items-center justify-center overflow-hidden border-b border-line bg-paper">
+        {itens.length > 0 && modo === 'grade' && (
+          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {itens.map((t) => (
+              <li
+                key={t.templateId}
+                className={`flex flex-col overflow-hidden rounded-lg border bg-paper-light ${
+                  selecionados.has(t.templateId) ? 'border-ink ring-1 ring-ink' : 'border-line'
+                }`}
+              >
+                {/* Fora do link: marcar não pode navegar. */}
+                <label className="flex min-h-11 items-center gap-2 border-b border-line px-3 text-sm text-ink-suave">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={selecionados.has(t.templateId)}
+                    onChange={() => alternar(t.templateId)}
+                  />
+                  selecionar
+                </label>
+
+                <Link to={`/templates/${t.templateId}`} className="flex flex-1 flex-col">
+                  {/* A prévia é o HTML real do modelo, reduzido até caber. */}
                   <PreviaModelo id={t.templateId} />
-                </div>
-                <div className="min-w-0 flex-1 space-y-1 p-3">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Selo tom={t.tipo === 'VISUAL' ? 'positivo' : 'neutro'}>
-                      {ROTULO_TIPO_TEMPLATE[t.tipo ?? 'CODIGO']}
-                    </Selo>
-                    {t.categoria ? <Selo tom="neutro">{t.categoria}</Selo> : null}
-                    {t.arquivado && <Selo tom="neutro">Arquivado</Selo>}
+                  <div className="min-w-0 flex-1 space-y-1 p-3">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Selo tom={t.tipo === 'VISUAL' ? 'positivo' : 'neutro'}>
+                        {ROTULO_TIPO_TEMPLATE[t.tipo ?? 'CODIGO']}
+                      </Selo>
+                      {t.categoria ? <Selo tom="neutro">{t.categoria}</Selo> : null}
+                      {t.arquivado && <Selo tom="neutro">Arquivado</Selo>}
+                    </div>
+                    <p className="font-medium break-words text-ink">{t.nome}</p>
+                    <p className="text-xs text-ink-suave">
+                      versão {t.versaoAtual} · {dataHora(t.atualizadoEm)}
+                    </p>
+                    {nomeCriador(t) !== undefined && (
+                      <p className="truncate text-xs text-ink-suave">criado por {nomeCriador(t)}</p>
+                    )}
                   </div>
-                  <p className="font-medium break-words text-ink">{t.nome}</p>
-                  <p className="text-xs text-ink-suave">
-                    versão {t.versaoAtual} · {dataHora(t.atualizadoEm)}
-                  </p>
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {itens.length > 0 && modo === 'lista' && (
+          <TabelaRolavel>
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b border-line text-left text-xs font-medium text-ink-suave">
+                  <th scope="col" className="w-10 py-2 pr-3">
+                    <span className="sr-only">Selecionar</span>
+                  </th>
+                  <th scope="col" className="py-2 pr-3">
+                    Modelo
+                  </th>
+                  <th scope="col" className="py-2 pr-3">
+                    Tipo
+                  </th>
+                  <th scope="col" className="py-2 pr-3">
+                    Categoria
+                  </th>
+                  <th scope="col" className="py-2 pr-3">
+                    Versão
+                  </th>
+                  <th scope="col" className="py-2 pr-3">
+                    Criado por
+                  </th>
+                  <th scope="col" className="py-2 pr-3">
+                    Criado em
+                  </th>
+                  <th scope="col" className="py-2">
+                    Atualizado em
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {itens.map((t) => (
+                  <tr key={t.templateId}>
+                    <td className="py-2 pr-3">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        aria-label={`Selecionar ${t.nome}`}
+                        checked={selecionados.has(t.templateId)}
+                        onChange={() => alternar(t.templateId)}
+                      />
+                    </td>
+                    <td className="py-2 pr-3">
+                      <Link
+                        to={`/templates/${t.templateId}`}
+                        className="inline-flex min-h-11 items-center font-medium text-ink hover:underline"
+                      >
+                        {t.nome}
+                      </Link>
+                      {t.arquivado && (
+                        <span className="ml-2">
+                          <Selo tom="neutro">Arquivado</Selo>
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <Selo tom={t.tipo === 'VISUAL' ? 'positivo' : 'neutro'}>
+                        {ROTULO_TIPO_TEMPLATE[t.tipo ?? 'CODIGO']}
+                      </Selo>
+                    </td>
+                    <td className="py-2 pr-3 text-ink-suave">{t.categoria ?? '—'}</td>
+                    <td className="py-2 pr-3 text-ink-suave">{t.versaoAtual}</td>
+                    <td className="py-2 pr-3 text-ink-suave">{nomeCriador(t) ?? '—'}</td>
+                    <td className="py-2 pr-3 text-ink-suave">
+                      {t.criadoEm === undefined ? '—' : dataHora(t.criadoEm)}
+                    </td>
+                    <td className="py-2 text-ink-suave">{dataHora(t.atualizadoEm)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TabelaRolavel>
+        )}
       </Cartao>
 
       {lista.data !== undefined && (
