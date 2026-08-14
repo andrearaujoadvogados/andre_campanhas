@@ -8,10 +8,27 @@ import {
 import type { TenantId } from '../../domain/shared/ids.js';
 import type { BuscadorDePagina, ExtratorPorIa, FonteBoletimRepository } from '../ports/index.js';
 
+/**
+ * Progresso da coleta, emitido antes de cada fonte.
+ *
+ * Existe para a execução ser observável enquanto acontece: a leitura das
+ * fontes é a etapa longa (página + IA, em sequência), e sem este sinal a tela
+ * só saberia do resultado no fim — que é justamente quando o feedback deixa de
+ * ter valor. É opcional porque a coleta não depende de quem escuta.
+ */
+export interface ProgressoColeta {
+  readonly totalFontes: number;
+  /** Quantas já foram processadas (com sucesso ou aviso) antes desta. */
+  readonly fontesConcluidas: number;
+  readonly fonteAtual: string;
+  readonly noticiasAteAgora: number;
+}
+
 export interface DepsColeta {
   readonly fontes: FonteBoletimRepository;
   readonly paginas: BuscadorDePagina;
   readonly extrator: ExtratorPorIa;
+  readonly aoProgredir?: (progresso: ProgressoColeta) => Promise<void>;
 }
 
 export interface NoticiasDaFonte {
@@ -49,7 +66,20 @@ export async function coletarNoticias(
   const porFonte: NoticiasDaFonte[] = [];
   const avisos: string[] = [];
 
-  for (const fonte of ativas) {
+  for (const [indice, fonte] of ativas.entries()) {
+    // O relato de progresso não pode derrubar a coleta: se gravar o estado
+    // falhar, o boletim ainda vale mais do que o indicador de progresso.
+    try {
+      await deps.aoProgredir?.({
+        totalFontes: ativas.length,
+        fontesConcluidas: indice,
+        fonteAtual: fonte.nome,
+        noticiasAteAgora: porFonte.reduce((soma, f) => soma + f.noticias.length, 0),
+      });
+    } catch {
+      /* estado é acessório; a coleta é o trabalho */
+    }
+
     // Revalida na leitura, não só no cadastro: uma fonte gravada antes de a
     // regra existir (ou por outra versão do código) não ganha passe livre.
     const url = validarUrlDeFonte(fonte.url);

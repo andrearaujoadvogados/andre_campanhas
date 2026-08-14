@@ -1,6 +1,7 @@
 import {
   CanonicalContentHasher,
   DynamoAuditLogger,
+  DynamoExecucaoBoletimRepository,
   DynamoFonteBoletimRepository,
   DynamoListRepository,
   DynamoMetricsRepository,
@@ -49,6 +50,7 @@ import type {
   ContactRepository,
   ContentHasher,
   EmailHasher,
+  ExecucaoBoletimRepository,
   FonteBoletimRepository,
   IdGenerator,
   SuppressionRepository,
@@ -83,14 +85,20 @@ export interface Dependencias {
   readonly clock: Clock;
   readonly ids: IdGenerator;
   readonly fontesBoletim: FonteBoletimRepository;
+  readonly execucoesBoletim: ExecucaoBoletimRepository;
   /**
    * Dispara a geração do boletim em segundo plano.
    *
    * É uma invocação assíncrona da Lambda `boletim-builder` — a coleta leva
    * dezenas de segundos (páginas + IA) e estouraria o timeout do API Gateway
    * se fosse síncrona. A rota devolve 202 e o modelo aparece em Modelos.
+   *
+   * O `execucaoId` vai junto porque a rota já criou o registro de execução
+   * antes de invocar: o worker atualiza ESSE registro, e não um que ele mesmo
+   * inventaria — do contrário a tela não teria o que acompanhar entre o clique
+   * e a primeira gravação do worker.
    */
-  readonly geradorBoletim: { gerarAgora(): Promise<void> };
+  readonly geradorBoletim: { gerarAgora(execucaoId: string): Promise<void> };
 }
 
 function exigirEnv(nome: string): string {
@@ -168,16 +176,18 @@ async function montar(): Promise<Dependencias> {
     clock: new SystemClock(),
     ids,
     fontesBoletim: new DynamoFonteBoletimRepository(doc, tabela),
+    execucoesBoletim: new DynamoExecucaoBoletimRepository(doc, tabela),
     geradorBoletim: {
-      async gerarAgora() {
+      async gerarAgora(execucaoId: string) {
         // `Event` = fire-and-forget: a coleta demora mais que o timeout do API
-        // Gateway. O resultado aparece como modelo novo; o log da Lambda conta o resto.
+        // Gateway. O acompanhamento não depende mais do log da Lambda — o
+        // worker relata o andamento no registro de execução `execucaoId`.
         const lambda = new LambdaClient({});
         await lambda.send(
           new InvokeCommand({
             FunctionName: exigirEnv('FN_BOLETIM_BUILDER'),
             InvocationType: 'Event',
-            Payload: Buffer.from(JSON.stringify({ origem: 'manual' })),
+            Payload: Buffer.from(JSON.stringify({ origem: 'manual', execucaoId })),
           }),
         );
       },

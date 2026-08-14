@@ -177,6 +177,11 @@ function montarDeps(): Dependencias {
       salvar: async () => undefined,
       excluir: async () => undefined,
     },
+    execucoesBoletim: {
+      salvar: async () => undefined,
+      buscarPorId: async () => null,
+      listarRecentes: async () => [],
+    },
     geradorBoletim: { gerarAgora: async () => undefined },
   };
 }

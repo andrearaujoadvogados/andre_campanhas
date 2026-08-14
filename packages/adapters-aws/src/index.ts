@@ -17,6 +17,7 @@ export * from './repositories/dynamo-template-repository.js';
 export * from './repositories/dynamo-list-repository.js';
 export * from './repositories/dynamo-tipo-email-repository.js';
 export * from './repositories/dynamo-fonte-boletim-repository.js';
+export * from './repositories/dynamo-execucao-boletim-repository.js';
 export * from './repositories/dynamo-event-repository.js';
 
 export * from './email/ses-email-provider.js';
