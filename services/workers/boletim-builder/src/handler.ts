@@ -15,6 +15,7 @@ import {
   TENANT_PADRAO,
   TIPO_EMAIL_PADRAO,
   coletarNoticias,
+  decidirPelaRespostaDoExtrator,
   encerrarExecucao,
   iniciarExecucao,
   campaignId as novoCampaignId,
@@ -104,6 +105,11 @@ const buscador: BuscadorDePagina = {
  */
 const MODELOS_CANDIDATOS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash'];
 
+/** Esperas entre as tentativas no mesmo modelo — a sobrecarga do Gemini dura segundos. */
+const ESPERAS_MS = [2_000, 5_000];
+
+const dormir = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
 /**
  * Gemini via REST — o único trecho que conhece o provedor.
  *
@@ -111,55 +117,77 @@ const MODELOS_CANDIDATOS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2
  * diário é ordens de grandeza acima de meia dúzia de fontes). Trocar de
  * provedor é reescrever esta função e nada mais: o prompt e a interpretação
  * da resposta são regra de domínio e moram no core.
+ *
+ * Duas defesas contra indisponibilidade momentânea, nesta ordem: retentar no
+ * mesmo modelo com espera crescente e, esgotadas as tentativas, passar ao
+ * próximo candidato da cadeia. `limiteMs` é o instante em que as retentativas
+ * param de valer a pena — a Lambda tem 5 minutos de teto, e insistir até o
+ * timeout duro perderia também as fontes que ainda seriam lidas.
  */
-function criarExtrator(chave: string, modelos: readonly string[]): ExtratorPorIa {
+function criarExtrator(chave: string, modelos: readonly string[], limiteMs: number): ExtratorPorIa {
   // O modelo que respondeu fica valendo para as próximas fontes do mesmo
   // lote — sem isso, cada fonte repetiria os 404 dos candidatos anteriores.
   let indice = 0;
 
   return {
     async completar(prompt: string): Promise<string> {
+      let ultimoErro = 'a IA não respondeu';
+
       while (indice < modelos.length) {
         const modelo = modelos[indice] ?? '';
-        const r = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
-          {
-            method: 'POST',
-            signal: AbortSignal.timeout(60_000),
-            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
-            }),
-          },
-        );
 
-        // 404 = este modelo não existe mais nesta API. Não é falha da fonte
-        // nem da chave: passa ao próximo candidato.
-        if (r.status === 404) {
-          log.info('modelo indisponível, tentando o próximo', { modelo });
-          indice += 1;
-          continue;
+        for (let tentativa = 0; tentativa <= ESPERAS_MS.length; tentativa += 1) {
+          const r = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
+            {
+              method: 'POST',
+              signal: AbortSignal.timeout(60_000),
+              headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
+              }),
+            },
+          );
+
+          const decisao = decidirPelaRespostaDoExtrator(r.status, modelo);
+
+          if (decisao.acao === 'USAR') {
+            const corpo = (await r.json()) as {
+              candidates?: { content?: { parts?: { text?: string }[] } }[];
+            };
+            const texto = corpo.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('');
+            if (texto === undefined || texto === '') throw new Error('resposta vazia do modelo');
+            return texto;
+          }
+
+          if (decisao.acao === 'DESISTIR') throw new Error(decisao.motivo);
+
+          // Modelo aposentado: ao próximo candidato, sem esperar.
+          if (decisao.acao === 'PROXIMO_MODELO') {
+            log.info('modelo indisponível, tentando o próximo', { modelo });
+            break;
+          }
+
+          ultimoErro = decisao.motivo;
+          const espera = ESPERAS_MS[tentativa];
+          // Sem tempo para mais uma espera: para de insistir aqui e deixa as
+          // fontes restantes com a chance de serem lidas.
+          if (espera === undefined || Date.now() + espera > limiteMs) break;
+
+          log.info('resposta transitória da IA; nova tentativa', {
+            modelo,
+            status: r.status,
+            esperaMs: espera,
+          });
+          await dormir(espera);
         }
 
-        if (!r.ok) {
-          // 429 é o limite do nível gratuito — a mensagem diz isso em vez de
-          // deixar um "HTTP 429" críptico no aviso da fonte.
-          if (r.status === 429)
-            throw new Error('limite do nível gratuito atingido; tente mais tarde');
-          throw new Error(`Gemini HTTP ${r.status} (modelo ${modelo})`);
-        }
-
-        const corpo = (await r.json()) as {
-          candidates?: { content?: { parts?: { text?: string }[] } }[];
-        };
-        const texto = corpo.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('');
-        if (texto === undefined || texto === '') throw new Error('resposta vazia do modelo');
-        return texto;
+        indice += 1;
       }
 
       throw new Error(
-        `nenhum dos modelos respondeu (${modelos.join(', ')}) — defina MODELO_GEMINI com um modelo atual`,
+        `${ultimoErro}. Nenhum modelo da lista respondeu (${modelos.join(', ')}); é indisponibilidade temporária da IA, não das fontes — gerar de novo em alguns minutos costuma resolver.`,
       );
     },
   };
@@ -247,6 +275,9 @@ export const handler = async (
       // MODELO_GEMINI definido vale sozinho — quem fixa um modelo não quer
       // fallback silencioso para outro.
       modeloFixo === undefined || modeloFixo === '' ? MODELOS_CANDIDATOS : [modeloFixo],
+      // Teto das retentativas: 3 min do início, dentro dos 5 min da Lambda, com
+      // folga para montar o e-mail e gravar o desfecho.
+      Date.now() + 3 * 60_000,
     );
 
     await relatar({ etapa: 'LENDO_FONTES' });
@@ -275,6 +306,22 @@ export const handler = async (
     );
 
     for (const aviso of coleta.avisos) log.info('aviso da coleta', { aviso });
+
+    /**
+     * Nenhuma notícia por FALHA TÉCNICA não é "nada encontrado".
+     *
+     * SEM_NOTICIAS aparece em âmbar e diz que as fontes não trouxeram nada que
+     * atendesse à instrução — o que manda o operador revisar instrução por
+     * instrução. Quando a coleta inteira caiu porque a IA estava fora do ar (o
+     * caso do 503), não há instrução nenhuma a revisar: o desfecho é falha, e
+     * a tela oferece "gerar de novo", que é a ação que de fato resolve.
+     */
+    if (coleta.totalNoticias === 0 && coleta.fontesSemNoticia === 0 && coleta.fontesComFalha > 0) {
+      return await falhar(
+        `Nenhuma fonte pôde ser lida: ${coleta.avisos.join(' ')} As fontes em si não foram descartadas — ` +
+          'quando a causa é indisponibilidade temporária (da IA ou dos sites), gerar de novo em alguns minutos costuma resolver.',
+      );
+    }
 
     if (coleta.totalNoticias === 0) {
       log.info('nada coletado — nenhum modelo gerado', {
