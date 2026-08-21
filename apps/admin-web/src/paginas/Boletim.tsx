@@ -101,12 +101,18 @@ export function Boletim() {
 
   const invalidar = () => void qc.invalidateQueries({ queryKey: ['fontes-boletim'] });
 
+  const [confirmacaoFonte, definirConfirmacaoFonte] = useState('');
   const salvar = useMutation({
     mutationFn: () =>
       editandoId === null
         ? api.post<Fonte>('/boletim/fontes', form)
         : api.patch<Fonte>(`/boletim/fontes/${editandoId}`, form),
-    onSuccess: () => {
+    onSuccess: (fonte) => {
+      // O formulário limpa ao salvar; sem a frase, limpar é o único sinal — e
+      // campo vazio também é a cara de um erro que descartou tudo.
+      definirConfirmacaoFonte(
+        editandoId === null ? `Fonte "${fonte.nome}" adicionada.` : `Fonte "${fonte.nome}" salva.`,
+      );
       definirForm(FORM_VAZIO);
       definirEditandoId(null);
       invalidar();
@@ -156,12 +162,18 @@ export function Boletim() {
     };
   }
 
+  const [confirmacaoRotina, definirConfirmacaoRotina] = useState('');
   const salvarRotina = useMutation({
     mutationFn: () =>
       editandoRotinaId === null
         ? api.post<Rotina>('/boletim/rotinas', corpoDaRotina(formRotina))
         : api.patch<Rotina>(`/boletim/rotinas/${editandoRotinaId}`, corpoDaRotina(formRotina)),
-    onSuccess: () => {
+    onSuccess: (rotina) => {
+      // Confirmar com a recorrência por extenso é reler o que foi armado: quem
+      // errou o dia percebe aqui, antes do primeiro disparo — não depois.
+      definirConfirmacaoRotina(
+        `${editandoRotinaId === null ? 'Rotina criada' : 'Rotina salva'}: ${descreverRotina(rotina).toLowerCase()}.`,
+      );
       definirFormRotina(ROTINA_VAZIA);
       definirEditandoRotinaId(null);
       invalidarRotinas();
@@ -200,6 +212,7 @@ export function Boletim() {
 
   function submeterRotina(e: FormEvent) {
     e.preventDefault();
+    definirConfirmacaoRotina('');
     salvarRotina.mutate();
   }
 
@@ -241,10 +254,12 @@ export function Boletim() {
 
   function submeter(e: FormEvent) {
     e.preventDefault();
+    definirConfirmacaoFonte('');
     salvar.mutate();
   }
 
   const erros = salvar.error instanceof FalhaApi ? salvar.error.porCampo : {};
+  const errosRotina = salvarRotina.error instanceof FalhaApi ? salvarRotina.error.porCampo : {};
   const itens = fontes.data?.itens ?? [];
   const temAtiva = itens.some((f) => f.ativa);
 
@@ -310,6 +325,11 @@ export function Boletim() {
       <ErroCaixa erro={execucoes.error} />
 
       <Cartao titulo={editandoId === null ? 'Nova fonte' : 'Editar fonte'}>
+        {confirmacaoFonte !== '' && !salvar.isPending && salvar.error === null && (
+          <div className="mb-4">
+            <Aviso tom="sucesso" texto={confirmacaoFonte} />
+          </div>
+        )}
         <form onSubmit={submeter} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Campo rotulo="Nome" obrigatorio erro={erros['nome']}>
@@ -436,9 +456,14 @@ export function Boletim() {
           vínculo). O resultado de cada envio fica no histórico desta página e em Campanhas.
         </p>
 
+        {confirmacaoRotina !== '' && !salvarRotina.isPending && salvarRotina.error === null && (
+          <div className="mb-4">
+            <Aviso tom="sucesso" texto={confirmacaoRotina} />
+          </div>
+        )}
         <form onSubmit={submeterRotina} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Campo rotulo="Período" obrigatorio>
+            <Campo rotulo="Período" obrigatorio erro={errosRotina['periodicidade']}>
               <select
                 value={formRotina.periodicidade}
                 onChange={(e) =>
@@ -456,7 +481,7 @@ export function Boletim() {
             </Campo>
 
             {formRotina.periodicidade === 'SEMANAL' && (
-              <Campo rotulo="Dia da semana" obrigatorio>
+              <Campo rotulo="Dia da semana" obrigatorio erro={errosRotina['diaDaSemana']}>
                 <select
                   value={formRotina.diaDaSemana}
                   onChange={(e) =>
@@ -477,6 +502,7 @@ export function Boletim() {
               <Campo
                 rotulo="Dia do mês"
                 obrigatorio
+                erro={errosRotina['diaDoMes']}
                 ajuda="1 a 28 — dias 29 a 31 não existem em todos os meses"
               >
                 <input
@@ -492,7 +518,12 @@ export function Boletim() {
               </Campo>
             )}
 
-            <Campo rotulo="Horário" obrigatorio ajuda="horário de Brasília">
+            <Campo
+              rotulo="Horário"
+              obrigatorio
+              erro={errosRotina['horario']}
+              ajuda="Horário de Brasília."
+            >
               <input
                 type="time"
                 value={formRotina.horario}
@@ -501,7 +532,7 @@ export function Boletim() {
               />
             </Campo>
 
-            <Campo rotulo="Lista que recebe" obrigatorio>
+            <Campo rotulo="Lista que recebe" obrigatorio erro={errosRotina['listId']}>
               <select
                 value={formRotina.listId}
                 onChange={(e) => definirFormRotina({ ...formRotina, listId: e.target.value })}

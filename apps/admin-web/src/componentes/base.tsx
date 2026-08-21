@@ -73,6 +73,16 @@ export function Botao({
  * O `<label>` envolve o controle, o que já cria a associação exigida pelo WCAG
  * sem depender de `id` — e `id` gerado à mão é a fonte clássica de rótulo
  * apontando para o campo errado depois de um copiar e colar.
+ *
+ * A ajuda fica ABAIXO do controle, nunca entre o rótulo e ele. Entre os dois,
+ * cada campo com ajuda empurrava o próprio controle para baixo e desalinhava a
+ * linha inteira do formulário — três entradas lado a lado em três alturas
+ * diferentes, e o olho perde a linha que deveria varrer. Com rótulos de uma
+ * linha e a ajuda embaixo, os controles de uma mesma linha ficam sempre na
+ * mesma altura, com qualquer combinação de campos com e sem ajuda.
+ *
+ * O erro vem antes da ajuda: quando os dois aparecem, o que impede o envio
+ * precisa estar colado no controle que o causou.
  */
 export function Campo({
   rotulo,
@@ -100,13 +110,13 @@ export function Campo({
           </>
         )}
       </span>
-      {ajuda !== undefined && <span className="mt-0.5 block text-xs text-ink-suave">{ajuda}</span>}
       <div className="mt-1.5">{children}</div>
       {erro !== undefined && (
         <span role="alert" className="mt-1.5 block text-xs font-medium text-erro">
           {erro}
         </span>
       )}
+      {ajuda !== undefined && <span className="mt-1 block text-xs text-ink-suave">{ajuda}</span>}
     </label>
   );
 }

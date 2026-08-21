@@ -399,3 +399,32 @@ describe('desfecho do envio automático no histórico', () => {
     expect(screen.queryByText(/nada foi enviado — revise antes de disparar/i)).toBeNull();
   });
 });
+
+describe('confirmação de sucesso nos formulários', () => {
+  it('adicionar fonte confirma com o nome — limpar o formulário não é feedback', async () => {
+    montar();
+
+    await userEvent.type(screen.getByLabelText(/nome/i), 'Migalhas');
+    await userEvent.type(screen.getByLabelText(/endereço/i), 'https://www.migalhas.com.br');
+    await userEvent.type(screen.getByLabelText(/o que coletar/i), 'Decisões do STJ tributário.');
+    await userEvent.click(screen.getByRole('button', { name: /adicionar fonte/i }));
+
+    expect(await screen.findByText('Fonte "Migalhas" adicionada.')).toBeInTheDocument();
+  });
+
+  it('criar rotina confirma relendo a recorrência por extenso', async () => {
+    montar();
+    await screen.findByLabelText(/período/i);
+
+    await userEvent.selectOptions(screen.getByLabelText(/período/i), 'SEMANAL');
+    await userEvent.selectOptions(screen.getByLabelText(/dia da semana/i), '1');
+    await userEvent.selectOptions(screen.getByLabelText(/lista que recebe/i), 'l-1');
+    await userEvent.click(screen.getByRole('button', { name: /criar rotina/i }));
+
+    // Reler o que foi armado é a última chance de pegar o dia errado antes do
+    // primeiro disparo automático.
+    expect(
+      await screen.findByText('Rotina criada: toda segunda-feira às 08:00.'),
+    ).toBeInTheDocument();
+  });
+});

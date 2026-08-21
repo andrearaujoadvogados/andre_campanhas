@@ -354,7 +354,7 @@ export function Dashboard() {
                 </Campo>
               </div>
               <div className="w-44">
-                <Campo rotulo="Até" ajuda="o dia escolhido entra inteiro">
+                <Campo rotulo="Até" ajuda="O dia escolhido entra inteiro.">
                   <input
                     type="date"
                     value={ate}
