@@ -41,6 +41,19 @@ export interface ResultadoColeta {
   /** Um aviso por fonte que falhou — a coleta das demais não para por causa de uma. */
   readonly avisos: readonly string[];
   readonly totalNoticias: number;
+  /**
+   * Quantas fontes falharam por problema TÉCNICO — página fora do ar, extrator
+   * indisponível, resposta ilegível.
+   *
+   * Existe para separar duas coisas que o total zerado confunde: "as fontes não
+   * tinham nada esta semana" e "a coleta não conseguiu ler nada". A primeira
+   * pede revisar as instruções das fontes; a segunda pede tentar de novo — e
+   * mandar o operador revisar instrução por instrução quando a IA é que estava
+   * fora do ar é o pior tipo de diagnóstico, o que parece certo e não é.
+   */
+  readonly fontesComFalha: number;
+  /** Quantas fontes foram lidas até o fim e não trouxeram nada que atendesse à instrução. */
+  readonly fontesSemNoticia: number;
 }
 
 /**
@@ -81,6 +94,8 @@ export async function coletarNoticias(
 
   const porFonte: NoticiasDaFonte[] = [];
   const avisos: string[] = [];
+  let fontesComFalha = 0;
+  let fontesSemNoticia = 0;
 
   for (const [indice, fonte] of ativas.entries()) {
     // O relato de progresso não pode derrubar a coleta: se gravar o estado
@@ -101,6 +116,7 @@ export async function coletarNoticias(
     const url = validarUrlDeFonte(fonte.url);
     if (!url.ok) {
       avisos.push(`${fonte.nome}: URL recusada — ${url.motivo}`);
+      fontesComFalha += 1;
       continue;
     }
 
@@ -109,11 +125,13 @@ export async function coletarNoticias(
       pagina = await deps.paginas.buscarTexto(fonte.url);
     } catch (erro) {
       avisos.push(`${fonte.nome}: não foi possível ler a página (${mensagem(erro)}).`);
+      fontesComFalha += 1;
       continue;
     }
 
     if (pagina.trim() === '') {
       avisos.push(`${fonte.nome}: a página veio vazia.`);
+      fontesComFalha += 1;
       continue;
     }
 
@@ -132,23 +150,31 @@ export async function coletarNoticias(
       );
     } catch (erro) {
       avisos.push(`${fonte.nome}: o extrator falhou (${mensagem(erro)}).`);
+      fontesComFalha += 1;
       continue;
     }
 
     const noticias = analisarNoticias(resposta, fonte.url);
     if (noticias === null) {
       avisos.push(`${fonte.nome}: a resposta do extrator não veio no formato esperado.`);
+      fontesComFalha += 1;
       continue;
     }
 
-    if (noticias.length > 0) porFonte.push({ fonte, noticias });
-    else avisos.push(`${fonte.nome}: nada encontrado que atenda à instrução.`);
+    if (noticias.length > 0) {
+      porFonte.push({ fonte, noticias });
+    } else {
+      fontesSemNoticia += 1;
+      avisos.push(`${fonte.nome}: nada encontrado que atenda à instrução.`);
+    }
   }
 
   return {
     porFonte,
     avisos,
     totalNoticias: porFonte.reduce((soma, f) => soma + f.noticias.length, 0),
+    fontesComFalha,
+    fontesSemNoticia,
   };
 }
 
