@@ -119,6 +119,54 @@ export function montarPromptDeExtracao(fonte: {
 }
 
 /**
+ * O que fazer diante do estado devolvido pelo extrator de IA.
+ *
+ * Mora no domínio, e não no adaptador HTTP, pela mesma razão que o prompt: é
+ * decisão de negócio, não detalhe de transporte. "O modelo está sobrecarregado"
+ * significa *tentar de novo*; "o modelo não existe mais" significa *trocar de
+ * modelo*; e confundir os dois custou uma edição inteira do boletim — três
+ * fontes descartadas em 24 segundos por um 503 que teria passado sozinho.
+ */
+export type DecisaoDoExtrator =
+  /** Resposta boa: seguir com o conteúdo. */
+  | { readonly acao: 'USAR' }
+  /** Modelo aposentado (404): passar ao próximo candidato, sem esperar. */
+  | { readonly acao: 'PROXIMO_MODELO'; readonly motivo: string }
+  /** Indisponibilidade momentânea: esperar e insistir; depois, próximo modelo. */
+  | { readonly acao: 'TENTAR_DE_NOVO'; readonly motivo: string }
+  /** Erro que não melhora com insistência (chave inválida, requisição recusada). */
+  | { readonly acao: 'DESISTIR'; readonly motivo: string };
+
+/**
+ * Estados em que insistir faz sentido.
+ *
+ * 429 entra porque, no nível gratuito, o limite é por modelo e por minuto:
+ * esperar alguns segundos — ou passar ao próximo modelo — costuma resolver.
+ * Os 5xx são sobrecarga do lado do provedor, que volta sozinha.
+ */
+const ESTADOS_TRANSITORIOS = new Set([429, 500, 502, 503, 504]);
+
+export function decidirPelaRespostaDoExtrator(status: number, modelo: string): DecisaoDoExtrator {
+  if (status >= 200 && status < 300) return { acao: 'USAR' };
+
+  if (status === 404) {
+    return { acao: 'PROXIMO_MODELO', motivo: `o modelo ${modelo} não existe mais nesta API` };
+  }
+
+  if (ESTADOS_TRANSITORIOS.has(status)) {
+    return {
+      acao: 'TENTAR_DE_NOVO',
+      motivo:
+        status === 429
+          ? `limite do nível gratuito atingido no modelo ${modelo}`
+          : `o modelo ${modelo} respondeu HTTP ${status} (sobrecarregado)`,
+    };
+  }
+
+  return { acao: 'DESISTIR', motivo: `Gemini HTTP ${status} (modelo ${modelo})` };
+}
+
+/**
  * Interpreta a resposta da IA — tolerante no envelope, estrita no conteúdo.
  *
  * Modelos embrulham JSON em cerca de código com frequência; arrancar o

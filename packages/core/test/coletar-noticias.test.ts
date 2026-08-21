@@ -3,6 +3,7 @@ import {
   TENANT_PADRAO,
   analisarNoticias,
   coletarNoticias,
+  decidirPelaRespostaDoExtrator,
   fonteId as novoFonteId,
   montarPromptDeExtracao,
   userId as novoUserId,
@@ -234,5 +235,87 @@ describe('interpretação da resposta da IA', () => {
   it('lixo completo devolve null — o chamador transforma em aviso', () => {
     expect(analisarNoticias('<html>erro 500</html>', 'https://f.br')).toBeNull();
     expect(analisarNoticias('{"nao":"array"}', 'https://f.br')).toBeNull();
+  });
+});
+
+describe('o que fazer quando a IA não responde', () => {
+  // O 503 de 21/08/2026 derrubou as três fontes do boletim em 24 segundos: o
+  // modelo estava sobrecarregado, o worker tratou como erro definitivo e nem
+  // tentou o próximo candidato. A tabela abaixo é a lição virada regra.
+  it('sobrecarga (5xx) manda tentar de novo, não desistir', () => {
+    for (const status of [500, 502, 503, 504]) {
+      const d = decidirPelaRespostaDoExtrator(status, 'gemini-flash-latest');
+      expect(d.acao).toBe('TENTAR_DE_NOVO');
+    }
+    const d = decidirPelaRespostaDoExtrator(503, 'gemini-flash-latest');
+    expect(d.acao === 'TENTAR_DE_NOVO' && d.motivo).toContain('sobrecarregado');
+  });
+
+  it('limite do nível gratuito também é transitório — e diz isso em português', () => {
+    const d = decidirPelaRespostaDoExtrator(429, 'gemini-flash-latest');
+    expect(d.acao).toBe('TENTAR_DE_NOVO');
+    expect(d.acao === 'TENTAR_DE_NOVO' && d.motivo).toContain('nível gratuito');
+  });
+
+  it('modelo aposentado troca de modelo, sem esperar', () => {
+    const d = decidirPelaRespostaDoExtrator(404, 'gemini-2.0-flash');
+    expect(d.acao).toBe('PROXIMO_MODELO');
+  });
+
+  it('erro que não melhora com insistência faz desistir na hora', () => {
+    // 400 (requisição recusada) e 403 (chave inválida) não passam com o tempo.
+    expect(decidirPelaRespostaDoExtrator(400, 'm').acao).toBe('DESISTIR');
+    expect(decidirPelaRespostaDoExtrator(403, 'm').acao).toBe('DESISTIR');
+  });
+
+  it('resposta boa é para usar', () => {
+    expect(decidirPelaRespostaDoExtrator(200, 'm').acao).toBe('USAR');
+  });
+});
+
+describe('falha técnica não se confunde com "nada encontrado"', () => {
+  it('extrator fora do ar conta como FALHA, não como fonte sem notícia', async () => {
+    // A diferença decide o que a tela diz ao operador: revisar as instruções
+    // das fontes (inútil aqui) ou gerar de novo (o que de fato resolve).
+    const r = await coletarNoticias(
+      montar({
+        extrator: {
+          completar: async () => {
+            throw new Error('o modelo gemini-flash-latest respondeu HTTP 503 (sobrecarregado)');
+          },
+        },
+      }),
+      TENANT_PADRAO,
+    );
+
+    expect(r.totalNoticias).toBe(0);
+    expect(r.fontesComFalha).toBe(1);
+    expect(r.fontesSemNoticia).toBe(0);
+  });
+
+  it('fonte lida até o fim sem nada que atenda conta como SEM notícia', async () => {
+    const r = await coletarNoticias(
+      montar({ extrator: { completar: async () => '[]' } }),
+      TENANT_PADRAO,
+    );
+
+    expect(r.fontesSemNoticia).toBe(1);
+    expect(r.fontesComFalha).toBe(0);
+  });
+
+  it('página fora do ar é falha técnica da fonte', async () => {
+    const r = await coletarNoticias(
+      montar({
+        paginas: {
+          buscarTexto: async () => {
+            throw new Error('HTTP 403');
+          },
+        },
+      }),
+      TENANT_PADRAO,
+    );
+
+    expect(r.fontesComFalha).toBe(1);
+    expect(r.fontesSemNoticia).toBe(0);
   });
 });
