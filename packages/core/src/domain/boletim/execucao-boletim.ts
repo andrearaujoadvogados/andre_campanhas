@@ -65,12 +65,15 @@ export interface ExecucaoBoletim {
   readonly erro?: string;
   /** Quem apertou o botão. Ausente na execução agendada. */
   readonly solicitadaPor?: UserId;
-  /** Campanha criada e disparada pela rotina de envio automático, quando houve. */
+  /** Campanhas criadas e disparadas pela rotina — uma por lista de destino. */
+  readonly envioCampaignIds?: readonly CampaignId[];
+  /** Forma antiga, de quando a rotina tinha uma lista só. Registros novos usam o plural. */
   readonly envioCampaignId?: CampaignId;
   /**
    * Falha do envio automático da rotina. Campo próprio, e não `erro`: o modelo
    * FOI gerado (`templateId` está aí para o disparo manual); o que não saiu foi
    * o e-mail — e a tela precisa contar as duas coisas, não uma média delas.
+   * Com várias listas, agrega as que falharam; as que saíram estão no plural.
    */
   readonly envioErro?: string;
 }
@@ -208,11 +211,17 @@ export function encerrarExecucao(
  */
 export function registrarEnvioAutomatico(
   execucao: ExecucaoBoletim,
-  resultado: { readonly campaignId: CampaignId } | { readonly erro: string },
+  // Sucesso e falha podem coexistir: com várias listas, algumas campanhas
+  // saem e outras não — e esconder qualquer um dos lados mentiria ao operador.
+  resultado: { readonly campaignIds?: readonly CampaignId[]; readonly erro?: string },
   agora: Date,
 ): ExecucaoBoletim {
-  const base = { ...execucao, atualizadaEm: agora };
-  return 'campaignId' in resultado
-    ? { ...base, envioCampaignId: resultado.campaignId }
-    : { ...base, envioErro: resultado.erro };
+  return {
+    ...execucao,
+    atualizadaEm: agora,
+    ...(resultado.campaignIds === undefined || resultado.campaignIds.length === 0
+      ? {}
+      : { envioCampaignIds: resultado.campaignIds }),
+    ...(resultado.erro === undefined || resultado.erro === '' ? {} : { envioErro: resultado.erro }),
+  };
 }

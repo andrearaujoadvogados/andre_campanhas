@@ -1359,10 +1359,11 @@ describe('fontes do boletim automatizado — §11, item 12', () => {
 
 describe('rotina de envio automático do boletim', () => {
   const corpoValido = {
+    nome: 'Boletim Tributário',
     periodicidade: 'SEMANAL',
     horario: '08:00',
     diaDaSemana: 1,
-    listId: 'l-1',
+    listIds: ['l-1'],
     ativa: true,
   };
 
@@ -1370,15 +1371,37 @@ describe('rotina de envio automático do boletim', () => {
     const r = await req('/boletim/rotinas', json(corpoValido));
     expect(r.status).toBe(201);
     const corpo = (await r.json()) as Record<string, unknown>;
+    expect(corpo['nome']).toBe('Boletim Tributário');
     expect(corpo['periodicidade']).toBe('SEMANAL');
     expect(corpo['diaDaSemana']).toBe(1);
-    expect(corpo['listId']).toBe('l-1');
+    expect(corpo['listIds']).toEqual(['l-1']);
 
     expect(estado.rotinasSalvas).toHaveLength(1);
     // Banco primeiro, agenda depois — e a agenda recebe a mesma rotina gravada.
     expect(estado.agendasSincronizadas).toHaveLength(1);
     expect(String(estado.agendasSincronizadas[0]?.rotinaId)).toBe('id-novo');
     expect(estado.auditados).toContainEqual({ acao: 'CRIOU', recursoTipo: 'RotinaBoletim' });
+  });
+
+  it('o recorte editorial — tipo, temas e fontes — viaja inteiro e volta na resposta', async () => {
+    const r = await req(
+      '/boletim/rotinas',
+      json({
+        ...corpoValido,
+        nome: 'Notícias gerais',
+        tipoEmailId: 'tipo-1',
+        temas: ['Reforma Tributária', 'STJ'],
+        fonteIds: ['f-1', 'f-2'],
+        listIds: ['l-1'],
+      }),
+    );
+
+    expect(r.status).toBe(201);
+    const corpo = (await r.json()) as Record<string, unknown>;
+    expect(corpo['tipoEmailId']).toBe('tipo-1');
+    expect(corpo['temas']).toEqual(['Reforma Tributária', 'STJ']);
+    expect(corpo['fonteIds']).toEqual(['f-1', 'f-2']);
+    expect(String(estado.rotinasSalvas[0]?.tipoEmailId)).toBe('tipo-1');
   });
 
   it('recusa semanal sem dia da semana — nenhum padrão decide em silêncio', async () => {
@@ -1389,11 +1412,17 @@ describe('rotina de envio automático do boletim', () => {
     expect(estado.agendasSincronizadas).toHaveLength(0);
   });
 
-  it('recusa lista inexistente no cadastro, não no primeiro disparo', async () => {
+  it('recusa lista inexistente no cadastro, não no primeiro disparo — e diz qual', async () => {
     estado.lista = null;
     const r = await req('/boletim/rotinas', json(corpoValido));
     expect(r.status).toBe(400);
+    expect(((await r.json()) as { message: string }).message).toContain('l-1');
     expect(estado.rotinasSalvas).toHaveLength(0);
+  });
+
+  it('rotina sem lista nenhuma é recusada na forma — envio automático precisa de destino', async () => {
+    const r = await req('/boletim/rotinas', json({ ...corpoValido, listIds: [] }));
+    expect(r.status).toBe(400);
   });
 
   it('mudar a periodicidade descarta o dia da configuração anterior', async () => {
@@ -1402,7 +1431,14 @@ describe('rotina de envio automático do boletim', () => {
     const r = await req(
       '/boletim/rotinas/id-novo',
       json(
-        { periodicidade: 'MENSAL', horario: '09:30', diaDoMes: 15, listId: 'l-1', ativa: true },
+        {
+          nome: 'Boletim Tributário',
+          periodicidade: 'MENSAL',
+          horario: '09:30',
+          diaDoMes: 15,
+          listIds: ['l-1'],
+          ativa: true,
+        },
         'PATCH',
       ),
     );
@@ -1444,5 +1480,6 @@ describe('rotina de envio automático do boletim', () => {
     const corpo = (await r.json()) as { itens: Record<string, unknown>[] };
     expect(corpo.itens).toHaveLength(1);
     expect(corpo.itens[0]?.['horario']).toBe('08:00');
+    expect(corpo.itens[0]?.['nome']).toBe('Boletim Tributário');
   });
 });

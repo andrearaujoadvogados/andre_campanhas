@@ -80,13 +80,13 @@ describe('desfecho do envio automático na execução', () => {
     agora: new Date('2026-08-20T11:00:00Z'),
   });
 
-  it('sucesso guarda a campanha disparada', () => {
+  it('sucesso guarda as campanhas disparadas — uma por lista', () => {
     const depois = registrarEnvioAutomatico(
       base,
-      { campaignId: campaignId('k-1') },
+      { campaignIds: [campaignId('k-1'), campaignId('k-2')] },
       new Date('2026-08-20T11:02:00Z'),
     );
-    expect(depois.envioCampaignId).toBe('k-1');
+    expect(depois.envioCampaignIds).toEqual(['k-1', 'k-2']);
     expect(depois.envioErro).toBeUndefined();
   });
 
@@ -100,6 +100,17 @@ describe('desfecho do envio automático na execução', () => {
     );
     expect(depois.envioErro).toBe('lista inexistente');
     expect(depois.situacao).toBe(base.situacao);
-    expect(depois.envioCampaignId).toBeUndefined();
+    expect(depois.envioCampaignIds).toBeUndefined();
+  });
+
+  it('sucesso parcial guarda os dois lados: as que saíram E as que falharam', () => {
+    // Com várias listas, esconder qualquer um dos lados mentiria ao operador.
+    const depois = registrarEnvioAutomatico(
+      base,
+      { campaignIds: [campaignId('k-1')], erro: 'Leads: lista não existe mais.' },
+      new Date('2026-08-20T11:02:00Z'),
+    );
+    expect(depois.envioCampaignIds).toEqual(['k-1']);
+    expect(depois.envioErro).toContain('Leads');
   });
 });

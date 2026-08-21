@@ -119,7 +119,11 @@ aws secretsmanager put-secret-value --secret-id emailmkt-prod-gemini-api-key --s
    agora** para testar. O modelo aparece em **Modelos**, categoria Boletim,
    em um ou dois minutos.
 
-A coleta agendada roda toda segunda às 8h. **Atenção ao nível gratuito**: os
+A coleta agendada roda toda segunda às 8h (gera só o modelo, sem enviar).
+Além dela, as **rotinas de envio automático** na tela Boletim geram E enviam
+sem revisão, no período e horário cadastrados — cada rotina com nome, fontes,
+temas, tipo de campanha e listas de destino próprios (uma campanha por lista).
+**Atenção ao nível gratuito**: os
 dados enviados ao Gemini podem ser usados pelo Google para treinamento — por
 isso o worker só envia texto de páginas públicas de notícia, nunca dados de
 contatos. Se um dia isso mudar de figura, trocar para a versão paga é só

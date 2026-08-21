@@ -44,6 +44,17 @@ export interface ResultadoColeta {
 }
 
 /**
+ * Recorte de uma rotina sobre o catálogo — fontes escolhidas e temas.
+ *
+ * `fonteIds` vazio ou ausente significa "todas as ativas": é o comportamento
+ * que o boletim sempre teve, e a rotina que não escolher fontes o herda.
+ */
+export interface EscolhaColeta {
+  readonly fonteIds?: readonly string[];
+  readonly temas?: readonly string[];
+}
+
+/**
  * Coleta as notícias de todas as fontes ativas — §11, item 12.
  *
  * **Falha por fonte, nunca do lote**: um site fora do ar não pode derrubar o
@@ -59,9 +70,14 @@ export interface ResultadoColeta {
 export async function coletarNoticias(
   deps: DepsColeta,
   tenantId: TenantId,
+  escolha: EscolhaColeta = {},
 ): Promise<ResultadoColeta> {
   const todas = await deps.fontes.listar(tenantId);
-  const ativas = todas.filter((f) => f.ativa);
+  const escolhidas =
+    escolha.fonteIds === undefined || escolha.fonteIds.length === 0
+      ? todas
+      : todas.filter((f) => escolha.fonteIds?.includes(String(f.fonteId)));
+  const ativas = escolhidas.filter((f) => f.ativa);
 
   const porFonte: NoticiasDaFonte[] = [];
   const avisos: string[] = [];
@@ -109,6 +125,9 @@ export async function coletarNoticias(
           url: fonte.url,
           instrucao: fonte.instrucao,
           textoDaPagina: pagina,
+          ...(escolha.temas === undefined || escolha.temas.length === 0
+            ? {}
+            : { temas: escolha.temas }),
         }),
       );
     } catch (erro) {

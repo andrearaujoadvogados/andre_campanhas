@@ -36,13 +36,22 @@ const FORM_VAZIO = { nome: '', url: '', instrucao: '', ativa: true };
 
 interface Rotina {
   rotinaId: string;
+  nome: string;
   periodicidade: 'DIARIA' | 'SEMANAL' | 'MENSAL';
   horario: string;
   diaDaSemana: number | null;
   diaDoMes: number | null;
-  listId: string;
+  tipoEmailId: string | null;
+  temas: string[];
+  fonteIds: string[];
+  listIds: string[];
   ativa: boolean;
   atualizadoEm: string;
+}
+
+interface TipoEmail {
+  tipoEmailId: string;
+  nome: string;
 }
 
 interface Lista {
@@ -62,13 +71,23 @@ const DIAS_SEMANA = [
 ] as const;
 
 const ROTINA_VAZIA = {
+  nome: '',
   periodicidade: 'SEMANAL' as Rotina['periodicidade'],
   horario: '08:00',
   diaDaSemana: 1,
   diaDoMes: 1,
-  listId: '',
+  tipoEmailId: '',
+  /** Separados por vírgula na digitação; viram lista ao salvar. */
+  temas: '',
+  fonteIds: [] as string[],
+  listIds: [] as string[],
   ativa: true,
 };
+
+/** Marca ou desmarca um id numa lista de escolha (fontes, listas). */
+function marcar(atual: string[], id: string, marcado: boolean): string[] {
+  return marcado ? [...atual, id] : atual.filter((x) => x !== id);
+}
 
 /** "Toda segunda-feira às 08:00" — a frase que confirma o que foi cadastrado. */
 function descreverRotina(
@@ -139,6 +158,9 @@ export function Boletim() {
 
   const [formRotina, definirFormRotina] = useState(ROTINA_VAZIA);
   const [editandoRotinaId, definirEditandoRotinaId] = useState<string | null>(null);
+  // O formulário cresceu (fontes, temas, listas): fechado por padrão, a lista
+  // de rotinas — que é o que se consulta no dia a dia — fica à vista.
+  const [formRotinaAberto, definirFormRotinaAberto] = useState(false);
 
   const rotinas = useQuery({
     queryKey: ['rotinas-boletim'],
@@ -148,14 +170,25 @@ export function Boletim() {
     queryKey: ['listas'],
     queryFn: () => api.get<{ itens: Lista[] }>('/listas'),
   });
+  const tipos = useQuery({
+    queryKey: ['tipos'],
+    queryFn: () => api.get<{ itens: TipoEmail[] }>('/tipos'),
+  });
   const invalidarRotinas = () => void qc.invalidateQueries({ queryKey: ['rotinas-boletim'] });
 
   /** Só os campos da periodicidade escolhida viajam — o resto seria configuração dormente. */
   function corpoDaRotina(f: typeof ROTINA_VAZIA): Record<string, unknown> {
     return {
+      nome: f.nome,
       periodicidade: f.periodicidade,
       horario: f.horario,
-      listId: f.listId,
+      ...(f.tipoEmailId === '' ? {} : { tipoEmailId: f.tipoEmailId }),
+      temas: f.temas
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t !== ''),
+      fonteIds: f.fonteIds,
+      listIds: f.listIds,
       ativa: f.ativa,
       ...(f.periodicidade === 'SEMANAL' ? { diaDaSemana: f.diaDaSemana } : {}),
       ...(f.periodicidade === 'MENSAL' ? { diaDoMes: f.diaDoMes } : {}),
@@ -176,6 +209,7 @@ export function Boletim() {
       );
       definirFormRotina(ROTINA_VAZIA);
       definirEditandoRotinaId(null);
+      definirFormRotinaAberto(false);
       invalidarRotinas();
     },
   });
@@ -183,9 +217,13 @@ export function Boletim() {
   const alternarRotina = useMutation({
     mutationFn: (r: Rotina) =>
       api.patch<Rotina>(`/boletim/rotinas/${r.rotinaId}`, {
+        nome: r.nome,
         periodicidade: r.periodicidade,
         horario: r.horario,
-        listId: r.listId,
+        ...(r.tipoEmailId === null ? {} : { tipoEmailId: r.tipoEmailId }),
+        temas: r.temas,
+        fonteIds: r.fonteIds,
+        listIds: r.listIds,
         ativa: !r.ativa,
         ...(r.periodicidade === 'SEMANAL' ? { diaDaSemana: r.diaDaSemana } : {}),
         ...(r.periodicidade === 'MENSAL' ? { diaDoMes: r.diaDoMes } : {}),
@@ -199,13 +237,18 @@ export function Boletim() {
   });
 
   function editarRotina(r: Rotina) {
+    definirFormRotinaAberto(true);
     definirEditandoRotinaId(r.rotinaId);
     definirFormRotina({
+      nome: r.nome,
       periodicidade: r.periodicidade,
       horario: r.horario,
       diaDaSemana: r.diaDaSemana ?? 1,
       diaDoMes: r.diaDoMes ?? 1,
-      listId: r.listId,
+      tipoEmailId: r.tipoEmailId ?? '',
+      temas: r.temas.join(', '),
+      fonteIds: r.fonteIds,
+      listIds: r.listIds,
       ativa: r.ativa,
     });
   }
@@ -461,127 +504,236 @@ export function Boletim() {
             <Aviso tom="sucesso" texto={confirmacaoRotina} />
           </div>
         )}
-        <form onSubmit={submeterRotina} className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Campo rotulo="Período" obrigatorio erro={errosRotina['periodicidade']}>
-              <select
-                value={formRotina.periodicidade}
-                onChange={(e) =>
-                  definirFormRotina({
-                    ...formRotina,
-                    periodicidade: e.target.value as Rotina['periodicidade'],
-                  })
-                }
-                className={classeEntrada}
-              >
-                <option value="DIARIA">Diário</option>
-                <option value="SEMANAL">Semanal</option>
-                <option value="MENSAL">Mensal</option>
-              </select>
-            </Campo>
+        {!formRotinaAberto && (
+          <Botao
+            variante="secundario"
+            onClick={() => {
+              definirEditandoRotinaId(null);
+              definirFormRotina(ROTINA_VAZIA);
+              definirFormRotinaAberto(true);
+            }}
+          >
+            Nova rotina
+          </Botao>
+        )}
 
-            {formRotina.periodicidade === 'SEMANAL' && (
-              <Campo rotulo="Dia da semana" obrigatorio erro={errosRotina['diaDaSemana']}>
+        {formRotinaAberto && (
+          <form onSubmit={submeterRotina} className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Campo
+                rotulo="Nome da rotina"
+                obrigatorio
+                erro={errosRotina['nome']}
+                ajuda="Vira o nome do modelo e das campanhas de cada edição."
+              >
+                <input
+                  value={formRotina.nome}
+                  onChange={(e) => definirFormRotina({ ...formRotina, nome: e.target.value })}
+                  placeholder="Ex.: Boletim Tributário"
+                  className={classeEntrada}
+                />
+              </Campo>
+              <Campo
+                rotulo="Tipo de campanha"
+                erro={errosRotina['tipoEmailId']}
+                ajuda="Dá a categoria do modelo e o tipo da campanha. Sem escolha, sai como Boletim."
+              >
                 <select
-                  value={formRotina.diaDaSemana}
+                  value={formRotina.tipoEmailId}
                   onChange={(e) =>
-                    definirFormRotina({ ...formRotina, diaDaSemana: Number(e.target.value) })
+                    definirFormRotina({ ...formRotina, tipoEmailId: e.target.value })
                   }
                   className={classeEntrada}
                 >
-                  {DIAS_SEMANA.map((d, i) => (
-                    <option key={d} value={i + 1}>
-                      {d}
+                  <option value="">Boletim (padrão)</option>
+                  {(tipos.data?.itens ?? []).map((t) => (
+                    <option key={t.tipoEmailId} value={t.tipoEmailId}>
+                      {t.nome}
                     </option>
                   ))}
                 </select>
               </Campo>
-            )}
+            </div>
 
-            {formRotina.periodicidade === 'MENSAL' && (
+            <Campo
+              rotulo="Temas"
+              erro={errosRotina['temas']}
+              ajuda="Separados por vírgula. A IA prioriza notícias destes temas e descarta o resto. Vazio = a instrução de cada fonte manda sozinha."
+            >
+              <input
+                value={formRotina.temas}
+                onChange={(e) => definirFormRotina({ ...formRotina, temas: e.target.value })}
+                placeholder="Ex.: Reforma Tributária, STJ, contencioso"
+                className={classeEntrada}
+              />
+            </Campo>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <fieldset>
+                <legend className="text-sm font-medium text-ink">Fontes desta rotina</legend>
+                <p className="mt-0.5 text-xs text-ink-suave">
+                  Nenhuma marcada = todas as fontes ativas.
+                </p>
+                <div className="mt-1.5 max-h-44 space-y-1 overflow-y-auto rounded-md border border-line p-2">
+                  {itens.length === 0 && (
+                    <p className="text-sm text-ink-suave">Nenhuma fonte cadastrada ainda.</p>
+                  )}
+                  {itens.map((f) => (
+                    <label key={f.fonteId} className="flex min-h-8 items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={formRotina.fonteIds.includes(f.fonteId)}
+                        onChange={(e) =>
+                          definirFormRotina({
+                            ...formRotina,
+                            fonteIds: marcar(formRotina.fonteIds, f.fonteId, e.target.checked),
+                          })
+                        }
+                      />
+                      <span className="min-w-0 truncate">
+                        {f.nome}
+                        {!f.ativa && <span className="text-ink-suave"> (pausada)</span>}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend className="text-sm font-medium text-ink">Listas que recebem</legend>
+                <p className="mt-0.5 text-xs text-ink-suave">
+                  Uma campanha enviada por lista, sem revisão. Pelo menos uma.
+                </p>
+                <div className="mt-1.5 max-h-44 space-y-1 overflow-y-auto rounded-md border border-line p-2">
+                  {(listas.data?.itens.length ?? 0) === 0 && (
+                    <p className="text-sm text-ink-suave">Nenhuma lista de contatos ainda.</p>
+                  )}
+                  {(listas.data?.itens ?? []).map((l) => (
+                    <label key={l.listId} className="flex min-h-8 items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={formRotina.listIds.includes(l.listId)}
+                        onChange={(e) =>
+                          definirFormRotina({
+                            ...formRotina,
+                            listIds: marcar(formRotina.listIds, l.listId, e.target.checked),
+                          })
+                        }
+                      />
+                      <span className="min-w-0 truncate">{l.nome}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Campo rotulo="Período" obrigatorio erro={errosRotina['periodicidade']}>
+                <select
+                  value={formRotina.periodicidade}
+                  onChange={(e) =>
+                    definirFormRotina({
+                      ...formRotina,
+                      periodicidade: e.target.value as Rotina['periodicidade'],
+                    })
+                  }
+                  className={classeEntrada}
+                >
+                  <option value="DIARIA">Diário</option>
+                  <option value="SEMANAL">Semanal</option>
+                  <option value="MENSAL">Mensal</option>
+                </select>
+              </Campo>
+
+              {formRotina.periodicidade === 'SEMANAL' && (
+                <Campo rotulo="Dia da semana" obrigatorio erro={errosRotina['diaDaSemana']}>
+                  <select
+                    value={formRotina.diaDaSemana}
+                    onChange={(e) =>
+                      definirFormRotina({ ...formRotina, diaDaSemana: Number(e.target.value) })
+                    }
+                    className={classeEntrada}
+                  >
+                    {DIAS_SEMANA.map((d, i) => (
+                      <option key={d} value={i + 1}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </Campo>
+              )}
+
+              {formRotina.periodicidade === 'MENSAL' && (
+                <Campo
+                  rotulo="Dia do mês"
+                  obrigatorio
+                  erro={errosRotina['diaDoMes']}
+                  ajuda="1 a 28 — dias 29 a 31 não existem em todos os meses"
+                >
+                  <input
+                    type="number"
+                    min={1}
+                    max={28}
+                    value={formRotina.diaDoMes}
+                    onChange={(e) =>
+                      definirFormRotina({ ...formRotina, diaDoMes: Number(e.target.value) })
+                    }
+                    className={classeEntrada}
+                  />
+                </Campo>
+              )}
+
               <Campo
-                rotulo="Dia do mês"
+                rotulo="Horário"
                 obrigatorio
-                erro={errosRotina['diaDoMes']}
-                ajuda="1 a 28 — dias 29 a 31 não existem em todos os meses"
+                erro={errosRotina['horario']}
+                ajuda="Horário de Brasília."
               >
                 <input
-                  type="number"
-                  min={1}
-                  max={28}
-                  value={formRotina.diaDoMes}
-                  onChange={(e) =>
-                    definirFormRotina({ ...formRotina, diaDoMes: Number(e.target.value) })
-                  }
+                  type="time"
+                  value={formRotina.horario}
+                  onChange={(e) => definirFormRotina({ ...formRotina, horario: e.target.value })}
                   className={classeEntrada}
                 />
               </Campo>
-            )}
+            </div>
 
-            <Campo
-              rotulo="Horário"
-              obrigatorio
-              erro={errosRotina['horario']}
-              ajuda="Horário de Brasília."
-            >
-              <input
-                type="time"
-                value={formRotina.horario}
-                onChange={(e) => definirFormRotina({ ...formRotina, horario: e.target.value })}
-                className={classeEntrada}
-              />
-            </Campo>
+            <ErroCaixa erro={salvarRotina.error} />
 
-            <Campo rotulo="Lista que recebe" obrigatorio erro={errosRotina['listId']}>
-              <select
-                value={formRotina.listId}
-                onChange={(e) => definirFormRotina({ ...formRotina, listId: e.target.value })}
-                className={classeEntrada}
-              >
-                <option value="">Escolha a lista…</option>
-                {(listas.data?.itens ?? []).map((l) => (
-                  <option key={l.listId} value={l.listId}>
-                    {l.nome}
-                  </option>
-                ))}
-              </select>
-            </Campo>
-          </div>
-
-          <ErroCaixa erro={salvarRotina.error} />
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <label className="flex min-h-11 items-center gap-2 text-sm text-ink">
-              <input
-                type="checkbox"
-                className="h-4 w-4"
-                checked={formRotina.ativa}
-                onChange={(e) => definirFormRotina({ ...formRotina, ativa: e.target.checked })}
-              />
-              Rotina ligada
-            </label>
-            <div className="flex gap-2">
-              {editandoRotinaId !== null && (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <label className="flex min-h-11 items-center gap-2 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={formRotina.ativa}
+                  onChange={(e) => definirFormRotina({ ...formRotina, ativa: e.target.checked })}
+                />
+                Rotina ligada
+              </label>
+              <div className="flex gap-2">
                 <Botao
                   variante="secundario"
                   onClick={() => {
                     definirEditandoRotinaId(null);
                     definirFormRotina(ROTINA_VAZIA);
+                    definirFormRotinaAberto(false);
                   }}
                 >
-                  Cancelar edição
+                  Cancelar
                 </Botao>
-              )}
-              <Botao
-                type="submit"
-                carregando={salvarRotina.isPending}
-                disabled={formRotina.listId === ''}
-              >
-                {editandoRotinaId === null ? 'Criar rotina' : 'Salvar rotina'}
-              </Botao>
+                <Botao
+                  type="submit"
+                  carregando={salvarRotina.isPending}
+                  disabled={formRotina.listIds.length === 0}
+                >
+                  {editandoRotinaId === null ? 'Criar rotina' : 'Salvar rotina'}
+                </Botao>
+              </div>
             </div>
-          </div>
-        </form>
+          </form>
+        )}
 
         <div className="mt-6">
           {rotinas.isLoading && <Carregando />}
@@ -592,7 +744,12 @@ export function Boletim() {
 
           <ul className="divide-y divide-line">
             {(rotinas.data?.itens ?? []).map((r) => {
-              const lista = (listas.data?.itens ?? []).find((l) => l.listId === r.listId);
+              const nomesListas = r.listIds.map(
+                (id) => (listas.data?.itens ?? []).find((l) => l.listId === id)?.nome ?? id,
+              );
+              const nomeTipo = (tipos.data?.itens ?? []).find(
+                (t) => t.tipoEmailId === r.tipoEmailId,
+              )?.nome;
               return (
                 <li
                   key={r.rotinaId}
@@ -600,14 +757,22 @@ export function Boletim() {
                 >
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-ink">{descreverRotina(r)}</span>
+                      <span className="font-medium text-ink">{r.nome}</span>
                       <Selo tom={r.ativa ? 'positivo' : 'neutro'}>
                         {r.ativa ? 'ligada' : 'desligada'}
                       </Selo>
+                      {nomeTipo !== undefined && <Selo tom="neutro">{nomeTipo}</Selo>}
                     </p>
+                    <p className="mt-0.5 text-sm text-ink-suave">{descreverRotina(r)}</p>
                     <p className="mt-1 text-sm text-ink-suave">
-                      Envia para <span className="font-medium">{lista?.nome ?? r.listId}</span> sem
+                      Envia para <span className="font-medium">{nomesListas.join(', ')}</span> sem
                       revisão.
+                    </p>
+                    <p className="text-xs text-ink-suave">
+                      {r.fonteIds.length === 0
+                        ? 'Todas as fontes ativas'
+                        : `${r.fonteIds.length} fonte(s) escolhida(s)`}
+                      {r.temas.length > 0 && ` · temas: ${r.temas.join(', ')}`}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -694,7 +859,7 @@ function LinhaHistorico({ execucao }: { execucao: Execucao }) {
         {execucao.situacao === 'CONCLUIDA' && (
           <p className="mt-1 text-sm text-ink-suave">
             {execucao.totalNoticias} notícia(s) · {execucao.templateNome}
-            {(execucao.envioCampaignId ?? null) !== null ? ' · enviado automaticamente' : ''}
+            {(execucao.envioCampaignIds ?? []).length > 0 ? ' · enviado automaticamente' : ''}
           </p>
         )}
         {(execucao.envioErro ?? null) !== null && (
