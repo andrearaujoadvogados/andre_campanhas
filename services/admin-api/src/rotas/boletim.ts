@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { salvarFonteBoletimSchema } from '@emailmkt/contracts';
+import { salvarFonteBoletimSchema, salvarRotinaBoletimSchema } from '@emailmkt/contracts';
 import {
   LIMITE_SEM_SINAL_MS,
   encerrarExecucao,
@@ -7,10 +7,14 @@ import {
   execucaoBoletimId as novoExecucaoId,
   fonteId as novoFonteId,
   iniciarExecucao,
+  listId as novoListId,
+  rotinaId as novoRotinaId,
+  validarRecorrencia,
   situacaoVisivel,
   validarUrlDeFonte,
   type ExecucaoBoletim,
   type FonteBoletim,
+  type RotinaBoletim,
 } from '@emailmkt/core';
 import type { Variaveis } from '../auth.js';
 import { obterDependencias } from '../container.js';
@@ -127,6 +131,194 @@ rotasBoletim.delete('/fontes/:id', async (c) => {
 
   return c.json({ ok: true });
 });
+
+// ── Rotina de envio automático ───────────────────────────────────────────────
+
+/**
+ * Rotinas de envio automático — geração E disparo no horário cadastrado.
+ *
+ * Aqui o sistema cruza a linha que o resto do módulo respeita: o boletim
+ * gerado sai para a lista escolhida sem ninguém revisar. A decisão é do
+ * escritório e fica gravada como cadastro explícito (quem criou, quando, para
+ * qual lista) — não existe rotina implícita nem padrão ligado de fábrica.
+ */
+rotasBoletim.get('/rotinas', async (c) => {
+  const deps = await obterDependencias();
+  const usuario = c.get('usuario');
+  const rotinas = await deps.rotinasBoletim.listar(usuario.tenantId);
+  return c.json({ itens: rotinas.map(paraRespostaRotina) });
+});
+
+rotasBoletim.post('/rotinas', validarCorpo(salvarRotinaBoletimSchema), async (c) => {
+  const dados = c.req.valid('json');
+  const deps = await obterDependencias();
+  const usuario = c.get('usuario');
+
+  const recorrencia = validarRecorrencia(dados);
+  if (!recorrencia.ok) {
+    return c.json({ code: 'RECORRENCIA_INVALIDA', message: recorrencia.motivo }, 400);
+  }
+
+  // A lista é o destino de um envio sem revisão: apontar para uma inexistente
+  // não pode ser descoberto só no primeiro disparo, dias depois do cadastro.
+  const lista = await deps.listas.buscarPorId(usuario.tenantId, novoListId(dados.listId));
+  if (lista === null) {
+    return c.json({ code: 'NAO_ENCONTRADO', message: 'A lista escolhida não existe.' }, 400);
+  }
+
+  const agora = deps.clock.agora();
+  const rotina: RotinaBoletim = {
+    tenantId: usuario.tenantId,
+    rotinaId: novoRotinaId(deps.ids.gerar()),
+    periodicidade: dados.periodicidade,
+    horario: dados.horario,
+    // Só o dia da periodicidade escolhida é gravado — um dia da outra, enviado
+    // por engano, viraria configuração dormente no banco.
+    ...(dados.periodicidade === 'SEMANAL' && dados.diaDaSemana !== undefined
+      ? { diaDaSemana: dados.diaDaSemana }
+      : {}),
+    ...(dados.periodicidade === 'MENSAL' && dados.diaDoMes !== undefined
+      ? { diaDoMes: dados.diaDoMes }
+      : {}),
+    listId: novoListId(dados.listId),
+    ativa: dados.ativa,
+    criadoPor: usuario.userId,
+    criadoEm: agora,
+    atualizadoEm: agora,
+  };
+
+  // Banco primeiro, agenda depois: se a agenda falhar, existe uma rotina
+  // cadastrada sem gatilho — visível e reeditável. Na ordem inversa, uma
+  // agenda órfã dispararia envio de verdade sem cadastro nenhum à vista.
+  await deps.rotinasBoletim.salvar(rotina);
+  await deps.agendadorRotinas.sincronizar(rotina);
+
+  await deps.auditoria.registrar({
+    tenantId: usuario.tenantId,
+    userId: usuario.userId,
+    acao: 'CRIOU',
+    recursoTipo: 'RotinaBoletim',
+    recursoId: rotina.rotinaId,
+    depois: resumoRotina(rotina),
+    ocorridoEm: agora,
+  });
+
+  return c.json(paraRespostaRotina(rotina), 201);
+});
+
+rotasBoletim.patch('/rotinas/:id', validarCorpo(salvarRotinaBoletimSchema), async (c) => {
+  const dados = c.req.valid('json');
+  const deps = await obterDependencias();
+  const usuario = c.get('usuario');
+
+  const rotina = await deps.rotinasBoletim.buscarPorId(
+    usuario.tenantId,
+    novoRotinaId(c.req.param('id')),
+  );
+  if (rotina === null) {
+    return c.json({ code: 'NAO_ENCONTRADO', message: 'Rotina inexistente.' }, 404);
+  }
+
+  const recorrencia = validarRecorrencia(dados);
+  if (!recorrencia.ok) {
+    return c.json({ code: 'RECORRENCIA_INVALIDA', message: recorrencia.motivo }, 400);
+  }
+
+  const lista = await deps.listas.buscarPorId(usuario.tenantId, novoListId(dados.listId));
+  if (lista === null) {
+    return c.json({ code: 'NAO_ENCONTRADO', message: 'A lista escolhida não existe.' }, 400);
+  }
+
+  // A recorrência é reconstruída do zero, não mesclada: um `diaDoMes` da
+  // configuração antiga sobrevivendo numa rotina que virou semanal reapareceria
+  // se ela voltasse a mensal, reativando uma escolha que o operador já não vê.
+  const atualizada: RotinaBoletim = {
+    tenantId: rotina.tenantId,
+    rotinaId: rotina.rotinaId,
+    periodicidade: dados.periodicidade,
+    horario: dados.horario,
+    ...(dados.periodicidade === 'SEMANAL' && dados.diaDaSemana !== undefined
+      ? { diaDaSemana: dados.diaDaSemana }
+      : {}),
+    ...(dados.periodicidade === 'MENSAL' && dados.diaDoMes !== undefined
+      ? { diaDoMes: dados.diaDoMes }
+      : {}),
+    listId: novoListId(dados.listId),
+    ativa: dados.ativa,
+    criadoPor: rotina.criadoPor,
+    criadoEm: rotina.criadoEm,
+    atualizadoEm: deps.clock.agora(),
+  };
+
+  await deps.rotinasBoletim.salvar(atualizada);
+  await deps.agendadorRotinas.sincronizar(atualizada);
+
+  await deps.auditoria.registrar({
+    tenantId: usuario.tenantId,
+    userId: usuario.userId,
+    acao: 'EDITOU',
+    recursoTipo: 'RotinaBoletim',
+    recursoId: rotina.rotinaId,
+    antes: resumoRotina(rotina),
+    depois: resumoRotina(atualizada),
+    ocorridoEm: atualizada.atualizadoEm,
+  });
+
+  return c.json(paraRespostaRotina(atualizada));
+});
+
+rotasBoletim.delete('/rotinas/:id', async (c) => {
+  const deps = await obterDependencias();
+  const usuario = c.get('usuario');
+  const id = novoRotinaId(c.req.param('id'));
+
+  const rotina = await deps.rotinasBoletim.buscarPorId(usuario.tenantId, id);
+  if (rotina === null) {
+    return c.json({ code: 'NAO_ENCONTRADO', message: 'Rotina inexistente.' }, 404);
+  }
+
+  // Agenda primeiro, banco depois — o inverso do cadastro, pelo mesmo motivo:
+  // falhar no meio pode deixar rotina sem gatilho, nunca gatilho sem rotina.
+  await deps.agendadorRotinas.remover(usuario.tenantId, id);
+  await deps.rotinasBoletim.excluir(usuario.tenantId, id);
+
+  await deps.auditoria.registrar({
+    tenantId: usuario.tenantId,
+    userId: usuario.userId,
+    acao: 'EXCLUIU',
+    recursoTipo: 'RotinaBoletim',
+    recursoId: id,
+    antes: resumoRotina(rotina),
+    ocorridoEm: deps.clock.agora(),
+  });
+
+  return c.json({ ok: true });
+});
+
+function paraRespostaRotina(r: RotinaBoletim): Record<string, unknown> {
+  return {
+    rotinaId: String(r.rotinaId),
+    periodicidade: r.periodicidade,
+    horario: r.horario,
+    diaDaSemana: r.diaDaSemana ?? null,
+    diaDoMes: r.diaDoMes ?? null,
+    listId: String(r.listId),
+    ativa: r.ativa,
+    atualizadoEm: r.atualizadoEm.toISOString(),
+  };
+}
+
+/** O que vai para a auditoria — os campos que definem o comportamento da rotina. */
+function resumoRotina(r: RotinaBoletim): Record<string, unknown> {
+  return {
+    periodicidade: r.periodicidade,
+    horario: r.horario,
+    diaDaSemana: r.diaDaSemana ?? null,
+    diaDoMes: r.diaDoMes ?? null,
+    listId: String(r.listId),
+    ativa: r.ativa,
+  };
+}
 
 /**
  * Últimas execuções — a fonte de verdade do que a tela mostra.
@@ -281,6 +473,9 @@ function paraRespostaExecucao(e: ExecucaoBoletim, agora: Date): Record<string, u
     templateNome: e.templateNome ?? null,
     avisos: [...e.avisos],
     erro: e.erro ?? null,
+    // Desfecho do envio automático da rotina — nulo fora desse caminho.
+    envioCampaignId: e.envioCampaignId === undefined ? null : String(e.envioCampaignId),
+    envioErro: e.envioErro ?? null,
   };
 }
 

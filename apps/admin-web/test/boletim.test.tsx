@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -13,6 +13,8 @@ interface Chamada {
 
 let fontes: Record<string, unknown>[];
 let execucoes: Record<string, unknown>[];
+let rotinas: Record<string, unknown>[];
+let listas: Record<string, unknown>[];
 const chamadas: Chamada[] = [];
 
 vi.mock('../src/lib/api.js', () => ({
@@ -20,6 +22,8 @@ vi.mock('../src/lib/api.js', () => ({
     get: async (caminho: string) => {
       chamadas.push({ metodo: 'GET', caminho });
       if (caminho === '/boletim/execucoes') return { itens: execucoes };
+      if (caminho === '/boletim/rotinas') return { itens: rotinas };
+      if (caminho === '/listas') return { itens: listas };
       return { itens: fontes };
     },
     post: async (caminho: string, corpo: unknown) => {
@@ -34,6 +38,7 @@ vi.mock('../src/lib/api.js', () => ({
           execucao: execucoes[0],
         };
       }
+      if (caminho === '/boletim/rotinas') return { rotinaId: 'r-novo', ...(corpo as object) };
       return { fonteId: 'f-novo', ...(corpo as object) };
     },
     patch: async (caminho: string, corpo: unknown) => {
@@ -94,8 +99,24 @@ function montar() {
 beforeEach(() => {
   fontes = [];
   execucoes = [];
+  rotinas = [];
+  listas = [{ listId: 'l-1', nome: 'Clientes', totalContatosAproximado: 42 }];
   chamadas.length = 0;
 });
+
+function rotinaFalsa(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    rotinaId: 'r-1',
+    periodicidade: 'SEMANAL',
+    horario: '08:00',
+    diaDaSemana: 1,
+    diaDoMes: null,
+    listId: 'l-1',
+    ativa: true,
+    atualizadoEm: '2026-08-20T10:00:00Z',
+    ...over,
+  };
+}
 
 describe('boletim automático — fontes', () => {
   it('cadastra uma fonte com nome, endereço e a instrução do que coletar', async () => {
@@ -270,5 +291,111 @@ describe('boletim automático — visibilidade da geração', () => {
     montar();
 
     expect(await screen.findByText(/nenhuma geração registrada ainda/i)).toBeInTheDocument();
+  });
+});
+
+describe('rotina de envio automático', () => {
+  it('cria uma rotina semanal com dia, horário e lista — e diz que envia sem revisão', async () => {
+    montar();
+
+    // O aviso do que a rotina faz precisa estar na tela antes do cadastro.
+    expect(
+      await screen.findByText(/envia sem revisão/i, { selector: 'strong' }),
+    ).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText(/período/i), 'SEMANAL');
+    await userEvent.selectOptions(screen.getByLabelText(/dia da semana/i), '3');
+    fireEvent.change(screen.getByLabelText(/horário/i), { target: { value: '09:30' } });
+    await userEvent.selectOptions(screen.getByLabelText(/lista que recebe/i), 'l-1');
+    await userEvent.click(screen.getByRole('button', { name: /criar rotina/i }));
+
+    const post = chamadas.find((c) => c.metodo === 'POST' && c.caminho === '/boletim/rotinas');
+    expect(post?.corpo).toEqual({
+      periodicidade: 'SEMANAL',
+      horario: '09:30',
+      diaDaSemana: 3,
+      listId: 'l-1',
+      ativa: true,
+    });
+  });
+
+  it('rotina mensal manda o dia do mês e NÃO manda dia da semana', async () => {
+    montar();
+    await screen.findByLabelText(/período/i);
+
+    await userEvent.selectOptions(screen.getByLabelText(/período/i), 'MENSAL');
+    fireEvent.change(screen.getByLabelText(/dia do mês/i), { target: { value: '15' } });
+    await userEvent.selectOptions(screen.getByLabelText(/lista que recebe/i), 'l-1');
+    await userEvent.click(screen.getByRole('button', { name: /criar rotina/i }));
+
+    const post = chamadas.find((c) => c.metodo === 'POST' && c.caminho === '/boletim/rotinas');
+    expect(post?.corpo).toEqual({
+      periodicidade: 'MENSAL',
+      horario: '08:00',
+      diaDoMes: 15,
+      listId: 'l-1',
+      ativa: true,
+    });
+  });
+
+  it('sem lista escolhida o botão não cria — a lista é o alcance do envio', async () => {
+    montar();
+    const botao = await screen.findByRole('button', { name: /criar rotina/i });
+    expect(botao).toBeDisabled();
+  });
+
+  it('lista a rotina em linguagem de gente, com a lista de destino', async () => {
+    rotinas = [rotinaFalsa({ diaDaSemana: 1, horario: '08:00' })];
+    montar();
+
+    expect(await screen.findByText('Toda segunda-feira às 08:00')).toBeInTheDocument();
+    expect(screen.getByText(/envia para/i)).toHaveTextContent('Clientes');
+  });
+
+  it('desligar envia o cadastro inteiro com ativa: false', async () => {
+    rotinas = [rotinaFalsa()];
+    montar();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Desligar' }));
+    const patch = chamadas.find((c) => c.metodo === 'PATCH');
+    expect(patch?.caminho).toBe('/boletim/rotinas/r-1');
+    expect((patch?.corpo as { ativa: boolean }).ativa).toBe(false);
+  });
+
+  it('excluir pede confirmação antes — o clique errado desarmaria um envio recorrente', async () => {
+    rotinas = [rotinaFalsa()];
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    montar();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Excluir' }));
+    expect(confirmar).toHaveBeenCalled();
+    expect(chamadas.some((c) => c.metodo === 'DELETE')).toBe(false);
+    confirmar.mockRestore();
+  });
+});
+
+describe('desfecho do envio automático no histórico', () => {
+  it('a execução da rotina mostra que enviou, com link para acompanhar', async () => {
+    execucoes = [execucaoFalsa({ origem: 'ROTINA', envioCampaignId: 'k-7', envioErro: null })];
+    montar();
+
+    expect(
+      await screen.findByText(/a rotina de envio automático já disparou este boletim/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /acompanhar o envio/i })).toHaveAttribute(
+      'href',
+      '/relatorios/k-7',
+    );
+  });
+
+  it('falha do envio aparece com destaque — o modelo existe, o e-mail não saiu', async () => {
+    execucoes = [
+      execucaoFalsa({ origem: 'ROTINA', envioCampaignId: null, envioErro: 'lista inexistente.' }),
+    ];
+    montar();
+
+    expect(await screen.findByText(/o envio automático da rotina falhou/i)).toBeInTheDocument();
+    // E não pode, ao mesmo tempo, sugerir que nada deveria ter saído.
+    expect(screen.queryByText(/nada foi enviado — revise antes de disparar/i)).toBeNull();
   });
 });

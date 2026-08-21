@@ -34,6 +34,52 @@ interface Fonte {
 
 const FORM_VAZIO = { nome: '', url: '', instrucao: '', ativa: true };
 
+interface Rotina {
+  rotinaId: string;
+  periodicidade: 'DIARIA' | 'SEMANAL' | 'MENSAL';
+  horario: string;
+  diaDaSemana: number | null;
+  diaDoMes: number | null;
+  listId: string;
+  ativa: boolean;
+  atualizadoEm: string;
+}
+
+interface Lista {
+  listId: string;
+  nome: string;
+  totalContatosAproximado?: number;
+}
+
+const DIAS_SEMANA = [
+  'segunda-feira',
+  'terça-feira',
+  'quarta-feira',
+  'quinta-feira',
+  'sexta-feira',
+  'sábado',
+  'domingo',
+] as const;
+
+const ROTINA_VAZIA = {
+  periodicidade: 'SEMANAL' as Rotina['periodicidade'],
+  horario: '08:00',
+  diaDaSemana: 1,
+  diaDoMes: 1,
+  listId: '',
+  ativa: true,
+};
+
+/** "Toda segunda-feira às 08:00" — a frase que confirma o que foi cadastrado. */
+function descreverRotina(
+  r: Pick<Rotina, 'periodicidade' | 'horario' | 'diaDaSemana' | 'diaDoMes'>,
+): string {
+  if (r.periodicidade === 'DIARIA') return `Todos os dias às ${r.horario}`;
+  if (r.periodicidade === 'SEMANAL')
+    return `Toda ${DIAS_SEMANA[(r.diaDaSemana ?? 1) - 1]} às ${r.horario}`;
+  return `Todo dia ${r.diaDoMes ?? 1} do mês às ${r.horario}`;
+}
+
 /**
  * Boletim automatizado — fontes e geração (§11, item 12).
  *
@@ -82,6 +128,80 @@ export function Boletim() {
     mutationFn: (id: string) => api.delete(`/boletim/fontes/${id}`),
     onSuccess: invalidar,
   });
+
+  // ── Rotina de envio automático ─────────────────────────────────────────────
+
+  const [formRotina, definirFormRotina] = useState(ROTINA_VAZIA);
+  const [editandoRotinaId, definirEditandoRotinaId] = useState<string | null>(null);
+
+  const rotinas = useQuery({
+    queryKey: ['rotinas-boletim'],
+    queryFn: () => api.get<{ itens: Rotina[] }>('/boletim/rotinas'),
+  });
+  const listas = useQuery({
+    queryKey: ['listas'],
+    queryFn: () => api.get<{ itens: Lista[] }>('/listas'),
+  });
+  const invalidarRotinas = () => void qc.invalidateQueries({ queryKey: ['rotinas-boletim'] });
+
+  /** Só os campos da periodicidade escolhida viajam — o resto seria configuração dormente. */
+  function corpoDaRotina(f: typeof ROTINA_VAZIA): Record<string, unknown> {
+    return {
+      periodicidade: f.periodicidade,
+      horario: f.horario,
+      listId: f.listId,
+      ativa: f.ativa,
+      ...(f.periodicidade === 'SEMANAL' ? { diaDaSemana: f.diaDaSemana } : {}),
+      ...(f.periodicidade === 'MENSAL' ? { diaDoMes: f.diaDoMes } : {}),
+    };
+  }
+
+  const salvarRotina = useMutation({
+    mutationFn: () =>
+      editandoRotinaId === null
+        ? api.post<Rotina>('/boletim/rotinas', corpoDaRotina(formRotina))
+        : api.patch<Rotina>(`/boletim/rotinas/${editandoRotinaId}`, corpoDaRotina(formRotina)),
+    onSuccess: () => {
+      definirFormRotina(ROTINA_VAZIA);
+      definirEditandoRotinaId(null);
+      invalidarRotinas();
+    },
+  });
+
+  const alternarRotina = useMutation({
+    mutationFn: (r: Rotina) =>
+      api.patch<Rotina>(`/boletim/rotinas/${r.rotinaId}`, {
+        periodicidade: r.periodicidade,
+        horario: r.horario,
+        listId: r.listId,
+        ativa: !r.ativa,
+        ...(r.periodicidade === 'SEMANAL' ? { diaDaSemana: r.diaDaSemana } : {}),
+        ...(r.periodicidade === 'MENSAL' ? { diaDoMes: r.diaDoMes } : {}),
+      }),
+    onSuccess: invalidarRotinas,
+  });
+
+  const excluirRotina = useMutation({
+    mutationFn: (id: string) => api.delete(`/boletim/rotinas/${id}`),
+    onSuccess: invalidarRotinas,
+  });
+
+  function editarRotina(r: Rotina) {
+    definirEditandoRotinaId(r.rotinaId);
+    definirFormRotina({
+      periodicidade: r.periodicidade,
+      horario: r.horario,
+      diaDaSemana: r.diaDaSemana ?? 1,
+      diaDoMes: r.diaDoMes ?? 1,
+      listId: r.listId,
+      ativa: r.ativa,
+    });
+  }
+
+  function submeterRotina(e: FormEvent) {
+    e.preventDefault();
+    salvarRotina.mutate();
+  }
 
   const execucoes = useExecucoesBoletim();
 
@@ -157,7 +277,8 @@ export function Boletim() {
           Modelos
         </Link>
         , na categoria Boletim, pronta para revisão. Nada é enviado sem passar pelo assistente de
-        campanha.
+        campanha — <strong className="font-medium text-ink">exceto</strong> pelas rotinas de envio
+        automático abaixo, que disparam o boletim gerado direto para a lista escolhida.
       </p>
 
       {!temAtiva && !fontes.isLoading && (
@@ -300,6 +421,193 @@ export function Boletim() {
         </ul>
       </Cartao>
 
+      <Cartao
+        titulo={editandoRotinaId === null ? 'Rotina de envio automático' : 'Editar rotina de envio'}
+      >
+        {/**
+         * A frase de risco vem antes do formulário, não depois: quem cadastra
+         * precisa saber O QUE está ligando antes de escolher horário e lista —
+         * este é o único lugar do sistema onde um e-mail sai sem revisão.
+         */}
+        <p className="mb-4 max-w-3xl text-sm text-ink-suave">
+          No período e horário escolhidos, o sistema gera o boletim e o{' '}
+          <strong className="font-medium text-ink">envia sem revisão</strong> para a lista
+          escolhida, com as guardas de sempre do disparo (descadastro, supressão, classificação de
+          vínculo). O resultado de cada envio fica no histórico desta página e em Campanhas.
+        </p>
+
+        <form onSubmit={submeterRotina} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Campo rotulo="Período" obrigatorio>
+              <select
+                value={formRotina.periodicidade}
+                onChange={(e) =>
+                  definirFormRotina({
+                    ...formRotina,
+                    periodicidade: e.target.value as Rotina['periodicidade'],
+                  })
+                }
+                className={classeEntrada}
+              >
+                <option value="DIARIA">Diário</option>
+                <option value="SEMANAL">Semanal</option>
+                <option value="MENSAL">Mensal</option>
+              </select>
+            </Campo>
+
+            {formRotina.periodicidade === 'SEMANAL' && (
+              <Campo rotulo="Dia da semana" obrigatorio>
+                <select
+                  value={formRotina.diaDaSemana}
+                  onChange={(e) =>
+                    definirFormRotina({ ...formRotina, diaDaSemana: Number(e.target.value) })
+                  }
+                  className={classeEntrada}
+                >
+                  {DIAS_SEMANA.map((d, i) => (
+                    <option key={d} value={i + 1}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </Campo>
+            )}
+
+            {formRotina.periodicidade === 'MENSAL' && (
+              <Campo
+                rotulo="Dia do mês"
+                obrigatorio
+                ajuda="1 a 28 — dias 29 a 31 não existem em todos os meses"
+              >
+                <input
+                  type="number"
+                  min={1}
+                  max={28}
+                  value={formRotina.diaDoMes}
+                  onChange={(e) =>
+                    definirFormRotina({ ...formRotina, diaDoMes: Number(e.target.value) })
+                  }
+                  className={classeEntrada}
+                />
+              </Campo>
+            )}
+
+            <Campo rotulo="Horário" obrigatorio ajuda="horário de Brasília">
+              <input
+                type="time"
+                value={formRotina.horario}
+                onChange={(e) => definirFormRotina({ ...formRotina, horario: e.target.value })}
+                className={classeEntrada}
+              />
+            </Campo>
+
+            <Campo rotulo="Lista que recebe" obrigatorio>
+              <select
+                value={formRotina.listId}
+                onChange={(e) => definirFormRotina({ ...formRotina, listId: e.target.value })}
+                className={classeEntrada}
+              >
+                <option value="">Escolha a lista…</option>
+                {(listas.data?.itens ?? []).map((l) => (
+                  <option key={l.listId} value={l.listId}>
+                    {l.nome}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+          </div>
+
+          <ErroCaixa erro={salvarRotina.error} />
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <label className="flex min-h-11 items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={formRotina.ativa}
+                onChange={(e) => definirFormRotina({ ...formRotina, ativa: e.target.checked })}
+              />
+              Rotina ligada
+            </label>
+            <div className="flex gap-2">
+              {editandoRotinaId !== null && (
+                <Botao
+                  variante="secundario"
+                  onClick={() => {
+                    definirEditandoRotinaId(null);
+                    definirFormRotina(ROTINA_VAZIA);
+                  }}
+                >
+                  Cancelar edição
+                </Botao>
+              )}
+              <Botao
+                type="submit"
+                carregando={salvarRotina.isPending}
+                disabled={formRotina.listId === ''}
+              >
+                {editandoRotinaId === null ? 'Criar rotina' : 'Salvar rotina'}
+              </Botao>
+            </div>
+          </div>
+        </form>
+
+        <div className="mt-6">
+          {rotinas.isLoading && <Carregando />}
+          <ErroCaixa erro={rotinas.error} />
+          {(rotinas.data?.itens.length ?? 0) === 0 && !rotinas.isLoading && (
+            <Vazio mensagem="Nenhuma rotina de envio. Sem rotina, o boletim gerado espera revisão e disparo manual — que é o comportamento padrão." />
+          )}
+
+          <ul className="divide-y divide-line">
+            {(rotinas.data?.itens ?? []).map((r) => {
+              const lista = (listas.data?.itens ?? []).find((l) => l.listId === r.listId);
+              return (
+                <li
+                  key={r.rotinaId}
+                  className="flex flex-wrap items-start justify-between gap-3 py-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-ink">{descreverRotina(r)}</span>
+                      <Selo tom={r.ativa ? 'positivo' : 'neutro'}>
+                        {r.ativa ? 'ligada' : 'desligada'}
+                      </Selo>
+                    </p>
+                    <p className="mt-1 text-sm text-ink-suave">
+                      Envia para <span className="font-medium">{lista?.nome ?? r.listId}</span> sem
+                      revisão.
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Botao variante="secundario" onClick={() => editarRotina(r)}>
+                      Editar
+                    </Botao>
+                    <Botao
+                      variante="secundario"
+                      carregando={alternarRotina.isPending}
+                      onClick={() => alternarRotina.mutate(r)}
+                    >
+                      {r.ativa ? 'Desligar' : 'Ligar'}
+                    </Botao>
+                    <Botao
+                      variante="perigo"
+                      carregando={excluirRotina.isPending}
+                      onClick={() => {
+                        if (window.confirm('Excluir esta rotina de envio automático?'))
+                          excluirRotina.mutate(r.rotinaId);
+                      }}
+                    >
+                      Excluir
+                    </Botao>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </Cartao>
+
       {/**
        * O histórico responde "isto costuma funcionar?" sem obrigar ninguém a
        * lembrar do que aconteceu na semana passada — e é onde uma fonte que
@@ -343,7 +651,11 @@ function LinhaHistorico({ execucao }: { execucao: Execucao }) {
             {RESUMO[execucao.situacao]}
           </Selo>
           <span className="text-xs text-ink-suave">
-            {execucao.origem === 'MANUAL' ? 'manual' : 'rotina de segunda'}
+            {execucao.origem === 'MANUAL'
+              ? 'manual'
+              : execucao.origem === 'ROTINA'
+                ? 'rotina de envio'
+                : 'rotina de segunda'}
             {duracao === null ? '' : ` · ${duracao}`}
           </span>
         </p>
@@ -351,6 +663,12 @@ function LinhaHistorico({ execucao }: { execucao: Execucao }) {
         {execucao.situacao === 'CONCLUIDA' && (
           <p className="mt-1 text-sm text-ink-suave">
             {execucao.totalNoticias} notícia(s) · {execucao.templateNome}
+            {(execucao.envioCampaignId ?? null) !== null ? ' · enviado automaticamente' : ''}
+          </p>
+        )}
+        {(execucao.envioErro ?? null) !== null && (
+          <p className="mt-1 text-sm font-medium text-erro">
+            O envio automático falhou: {execucao.envioErro}
           </p>
         )}
       </div>

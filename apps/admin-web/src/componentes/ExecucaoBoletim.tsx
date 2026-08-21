@@ -22,7 +22,7 @@ export interface ExecucaoBoletim {
   execucaoId: string;
   situacao: SituacaoBoletim;
   etapa: EtapaBoletim;
-  origem: 'MANUAL' | 'AGENDADA';
+  origem: 'MANUAL' | 'AGENDADA' | 'ROTINA';
   iniciadaEm: string;
   atualizadaEm: string;
   concluidaEm: string | null;
@@ -34,6 +34,10 @@ export interface ExecucaoBoletim {
   templateNome: string | null;
   avisos: string[];
   erro: string | null;
+  /** Campanha disparada pela rotina de envio automático, quando houve. */
+  envioCampaignId: string | null;
+  /** Falha do envio automático — o modelo existe, mas o e-mail não saiu. */
+  envioErro: string | null;
 }
 
 export const CHAVE_EXECUCOES = ['execucoes-boletim'];
@@ -155,6 +159,10 @@ export function PainelExecucaoBoletim({
   // Este painel existe para nunca deixar o operador sem resposta; um campo
   // ausente na resposta não pode ser o que derruba a tela inteira.
   const avisos = execucao.avisos ?? [];
+  // Mesma resiliência dos avisos: resposta sem os campos do envio automático
+  // (versão anterior da API em cache) não pode inventar um desfecho.
+  const envioCampaignId = execucao.envioCampaignId ?? null;
+  const envioErro = execucao.envioErro ?? null;
 
   return (
     <section
@@ -229,9 +237,32 @@ export function PainelExecucaoBoletim({
         <div className="mt-3 space-y-3">
           <p className="text-sm text-ink">
             {execucao.totalNoticias} notícia(s) de {execucao.fontesTotal} fonte(s) viraram o modelo{' '}
-            <span className="font-medium">{execucao.templateNome}</span>. Nada foi enviado — revise
-            antes de disparar.
+            <span className="font-medium">{execucao.templateNome}</span>.
+            {envioCampaignId !== null
+              ? ' A rotina de envio automático já disparou este boletim.'
+              : envioErro !== null
+                ? ''
+                : ' Nada foi enviado — revise antes de disparar.'}
           </p>
+          {/**
+           * A falha do envio automático NÃO pode se disfarçar de sucesso: a
+           * geração concluiu, mas o e-mail não saiu. Quem cadastrou a rotina
+           * conta que ele sai sozinho — e só fica sabendo do contrário aqui.
+           */}
+          {envioErro !== null && (
+            <p className="rounded-md border border-erro/30 bg-erro/5 p-3 text-sm font-medium text-erro">
+              O envio automático da rotina falhou: {envioErro} O modelo está pronto — dá para
+              disparar manualmente pelo assistente.
+            </p>
+          )}
+          {envioCampaignId !== null && (
+            <Link
+              to={`/relatorios/${envioCampaignId}`}
+              className="inline-flex min-h-11 items-center justify-center rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper-light transition-colors hover:bg-ink/90"
+            >
+              Acompanhar o envio
+            </Link>
+          )}
           {execucao.templateId !== null && (
             <Link
               to={`/templates/${execucao.templateId}`}

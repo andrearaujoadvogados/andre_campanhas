@@ -3,11 +3,13 @@ import {
   DynamoAuditLogger,
   DynamoExecucaoBoletimRepository,
   DynamoFonteBoletimRepository,
+  DynamoRotinaBoletimRepository,
   DynamoListRepository,
   DynamoMetricsRepository,
   DynamoTemplateRepository,
   DynamoTipoEmailRepository,
   EventBridgeCampaignScheduler,
+  EventBridgeRotinaScheduler,
   DynamoCampaignRepository,
   DynamoContactRepository,
   DynamoEventRepository,
@@ -53,6 +55,8 @@ import type {
   ExecucaoBoletimRepository,
   FonteBoletimRepository,
   IdGenerator,
+  RotinaBoletimRepository,
+  RotinaBoletimScheduler,
   SuppressionRepository,
 } from '@emailmkt/core';
 
@@ -86,6 +90,9 @@ export interface Dependencias {
   readonly ids: IdGenerator;
   readonly fontesBoletim: FonteBoletimRepository;
   readonly execucoesBoletim: ExecucaoBoletimRepository;
+  readonly rotinasBoletim: RotinaBoletimRepository;
+  /** Mantém a agenda recorrente do EventBridge igual ao cadastro da rotina. */
+  readonly agendadorRotinas: RotinaBoletimScheduler;
   /**
    * Dispara a geração do boletim em segundo plano.
    *
@@ -177,6 +184,14 @@ async function montar(): Promise<Dependencias> {
     ids,
     fontesBoletim: new DynamoFonteBoletimRepository(doc, tabela),
     execucoesBoletim: new DynamoExecucaoBoletimRepository(doc, tabela),
+    rotinasBoletim: new DynamoRotinaBoletimRepository(doc, tabela),
+    // Mesmo grupo e mesmo papel do agendamento de campanha; o alvo é que muda —
+    // a rotina invoca o construtor do boletim, não a máquina de disparo.
+    agendadorRotinas: new EventBridgeRotinaScheduler(new SchedulerClient({}), {
+      grupo: exigirEnv('GRUPO_AGENDAMENTOS'),
+      alvoArn: exigirEnv('FN_BOLETIM_BUILDER_ARN'),
+      papelArn: exigirEnv('PAPEL_SCHEDULER_ARN'),
+    }),
     geradorBoletim: {
       async gerarAgora(execucaoId: string) {
         // `Event` = fire-and-forget: a coleta demora mais que o timeout do API

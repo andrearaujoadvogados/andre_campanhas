@@ -786,6 +786,20 @@ export class CoreStack extends Stack {
     );
     fnAdminApi.addEnvironment('PAPEL_SCHEDULER_ARN', papelScheduler.roleArn);
 
+    /**
+     * Rotina de envio automático do boletim.
+     *
+     * A API cadastra agendas recorrentes (mesmo grupo, mesmo papel) apontando
+     * para o construtor do boletim; o papel do Scheduler ganha permissão de
+     * invocá-lo. No horário, o construtor gera o modelo e — só neste caminho —
+     * dispara a campanha pelo mesmo orquestrador do painel, e por isso recebe
+     * o ARN e o `StartExecution`.
+     */
+    fnBoletimBuilder.grantInvoke(papelScheduler);
+    fnAdminApi.addEnvironment('FN_BOLETIM_BUILDER_ARN', fnBoletimBuilder.functionArn);
+    orquestrador.grantStartExecution(fnBoletimBuilder);
+    fnBoletimBuilder.addEnvironment('ORQUESTRADOR_ARN', orquestrador.stateMachineArn);
+
     // ── Alarmes — §10.4 ──────────────────────────────────────────────────────
 
     const topicoAlarmes = criarAlarmes(this, {

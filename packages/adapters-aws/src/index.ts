@@ -17,6 +17,7 @@ export * from './repositories/dynamo-template-repository.js';
 export * from './repositories/dynamo-list-repository.js';
 export * from './repositories/dynamo-tipo-email-repository.js';
 export * from './repositories/dynamo-fonte-boletim-repository.js';
+export * from './repositories/dynamo-rotina-boletim-repository.js';
 export * from './repositories/dynamo-execucao-boletim-repository.js';
 export * from './repositories/dynamo-event-repository.js';
 
@@ -31,5 +32,6 @@ export * from './queue/sqs-import-queue-publisher.js';
 export * from './storage/s3-storage.js';
 export * from './config/ssm-config-provider.js';
 export * from './scheduler/eventbridge-campaign-scheduler.js';
+export * from './scheduler/eventbridge-rotina-scheduler.js';
 export * from './system/index.js';
 export * from './usuarios/cognito-gestao-usuarios.js';

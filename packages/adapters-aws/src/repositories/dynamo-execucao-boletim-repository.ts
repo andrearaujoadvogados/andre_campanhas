@@ -7,6 +7,7 @@ import {
 import {
   execucaoBoletimId as novoExecucaoId,
   templateId as novoTemplateId,
+  campaignId as novoCampaignId,
   tenantId as novoTenantId,
   userId as novoUserId,
   type ExecucaoBoletim,
@@ -84,6 +85,8 @@ export class DynamoExecucaoBoletimRepository implements ExecucaoBoletimRepositor
           ...opcional('templateNome', execucao.templateNome),
           ...opcional('erro', execucao.erro),
           ...opcional('solicitadaPor', execucao.solicitadaPor as string | undefined),
+          ...opcional('envioCampaignId', execucao.envioCampaignId as string | undefined),
+          ...opcional('envioErro', execucao.envioErro),
           gsi3pk: gsi3.pk,
           gsi3sk: gsi3.sk,
           /**
@@ -110,6 +113,8 @@ function paraExecucao(item: Record<string, unknown>): ExecucaoBoletim {
   const templateNome = item['templateNome'];
   const erro = item['erro'];
   const solicitadaPor = item['solicitadaPor'];
+  const envioCampaignId = item['envioCampaignId'];
+  const envioErro = item['envioErro'];
 
   return {
     tenantId: novoTenantId(String(item['tenantId'])),
@@ -128,6 +133,10 @@ function paraExecucao(item: Record<string, unknown>): ExecucaoBoletim {
     ...(templateId === undefined ? {} : { templateId: novoTemplateId(String(templateId)) }),
     ...(templateNome === undefined ? {} : { templateNome: String(templateNome) }),
     ...(erro === undefined ? {} : { erro: String(erro) }),
+    ...(envioCampaignId === undefined
+      ? {}
+      : { envioCampaignId: novoCampaignId(String(envioCampaignId)) }),
+    ...(envioErro === undefined ? {} : { envioErro: String(envioErro) }),
     ...(solicitadaPor === undefined ? {} : { solicitadaPor: novoUserId(String(solicitadaPor)) }),
   };
 }

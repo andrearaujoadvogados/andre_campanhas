@@ -15,6 +15,7 @@ export * from './domain/list/lista.js';
 export * from './domain/tipo-email/tipo-email.js';
 export * from './domain/boletim/fonte-boletim.js';
 export * from './domain/boletim/execucao-boletim.js';
+export * from './domain/boletim/rotina-boletim.js';
 export * from './domain/report/metricas.js';
 
 // Aplicação

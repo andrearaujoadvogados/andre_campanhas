@@ -12,6 +12,7 @@ import type { Lista } from '../../domain/list/lista.js';
 import type { TipoEmail } from '../../domain/tipo-email/tipo-email.js';
 import type { FonteBoletim } from '../../domain/boletim/fonte-boletim.js';
 import type { ExecucaoBoletim } from '../../domain/boletim/execucao-boletim.js';
+import type { RotinaBoletim } from '../../domain/boletim/rotina-boletim.js';
 import type { SuppressionEntry } from '../../domain/suppression/suppression.js';
 import type { EmailAddress } from '../../domain/shared/email-address.js';
 import type {
@@ -20,6 +21,7 @@ import type {
   ExecucaoBoletimId,
   FonteId,
   ListId,
+  RotinaId,
   SendId,
   TemplateId,
   TenantId,
@@ -470,6 +472,27 @@ export interface ExecucaoBoletimRepository {
   salvar(execucao: ExecucaoBoletim): Promise<void>;
   buscarPorId(tenantId: TenantId, execucaoId: ExecucaoBoletimId): Promise<ExecucaoBoletim | null>;
   listarRecentes(tenantId: TenantId, limite: number): Promise<readonly ExecucaoBoletim[]>;
+}
+
+export interface RotinaBoletimRepository {
+  buscarPorId(tenantId: TenantId, rotinaId: RotinaId): Promise<RotinaBoletim | null>;
+  listar(tenantId: TenantId): Promise<readonly RotinaBoletim[]>;
+  salvar(rotina: RotinaBoletim): Promise<void>;
+  excluir(tenantId: TenantId, rotinaId: RotinaId): Promise<void>;
+}
+
+/**
+ * Agenda recorrente da rotina de envio na infraestrutura.
+ *
+ * `sincronizar` é deliberadamente idempotente e absoluto: recebe a rotina e
+ * deixa a agenda no estado que ela pede — cria, atualiza ou (se inativa)
+ * remove. A alternativa (criar/atualizar/remover como operações distintas)
+ * empurraria para cada rota o raciocínio de qual chamada fazer, e uma rota que
+ * errasse deixaria uma agenda fantasma disparando envio de verdade.
+ */
+export interface RotinaBoletimScheduler {
+  sincronizar(rotina: RotinaBoletim): Promise<void>;
+  remover(tenantId: TenantId, rotinaId: RotinaId): Promise<void>;
 }
 
 /** Busca uma página e devolve o TEXTO dela — sem tags, sem script, já podado. */

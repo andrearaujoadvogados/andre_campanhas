@@ -2,6 +2,7 @@ import type {
   CampaignId,
   ContactId,
   ExecucaoBoletimId,
+  RotinaId,
   FonteId,
   ListId,
   SendId,
@@ -74,6 +75,12 @@ export const chaveFonteBoletim = (tenantId: TenantId, fonteId: FonteId): Chave =
  */
 export const chaveExecucaoBoletim = (tenantId: TenantId, execucaoId: ExecucaoBoletimId): Chave => ({
   pk: `${t(tenantId)}#BOLETIM_EXEC#${execucaoId}`,
+  sk: 'META',
+});
+
+/** Rotina de envio automático do boletim — mesmo desenho das fontes. */
+export const chaveRotinaBoletim = (tenantId: TenantId, rotinaId: RotinaId): Chave => ({
+  pk: `${t(tenantId)}#ROTINA_BOLETIM#${rotinaId}`,
   sk: 'META',
 });
 
