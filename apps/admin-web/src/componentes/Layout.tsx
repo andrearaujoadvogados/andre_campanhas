@@ -4,19 +4,51 @@ import { sair, type Usuario } from '../lib/auth.js';
 import { TrocarAutenticador } from './TrocarAutenticador.tsx';
 import { Logo } from './Logo.tsx';
 
-const SECOES = [
-  // `end` porque a raiz casaria com todas as rotas: sem isso, "Visão geral"
-  // ficaria marcado como seção atual em qualquer tela do painel.
-  { para: '/', rotulo: 'Visão geral', end: true },
-  { para: '/campanhas', rotulo: 'Campanhas' },
-  { para: '/listas', rotulo: 'Listas' },
-  { para: '/contatos', rotulo: 'Contatos' },
-  { para: '/templates', rotulo: 'Modelos' },
-  { para: '/boletim', rotulo: 'Boletim' },
-  { para: '/tipos', rotulo: 'Tipos' },
-  // Só ADMIN. Esconder não é o controle — o controle é o `exigirPapel` da API —,
-  // mas oferecer um link que devolve 403 é pior que não oferecer.
-  { para: '/usuarios', rotulo: 'Usuários', somenteAdmin: true },
+/**
+ * A navegação em grupos, não em lista corrida.
+ *
+ * Oito itens soltos obrigam a ler os oito para achar um; agrupados pela
+ * pergunta que o operador traz ("vou enviar algo" / "vou mexer no público" /
+ * "vou mexer no conteúdo"), o olho pula direto ao grupo certo. Os rótulos dos
+ * grupos também dão nome ao modelo do sistema — a distinção Campanhas ×
+ * Boletim, por exemplo, só fica clara quando os dois aparecem sob "Envio".
+ */
+const GRUPOS: {
+  rotulo?: string;
+  itens: { para: string; rotulo: string; end?: boolean; somenteAdmin?: boolean }[];
+}[] = [
+  {
+    // `end` porque a raiz casaria com todas as rotas: sem isso, "Visão geral"
+    // ficaria marcado como seção atual em qualquer tela do painel.
+    itens: [{ para: '/', rotulo: 'Visão geral', end: true }],
+  },
+  {
+    rotulo: 'Envio',
+    itens: [
+      { para: '/campanhas', rotulo: 'Campanhas' },
+      { para: '/boletim', rotulo: 'Boletim' },
+    ],
+  },
+  {
+    rotulo: 'Público',
+    itens: [
+      { para: '/listas', rotulo: 'Listas' },
+      { para: '/contatos', rotulo: 'Contatos' },
+    ],
+  },
+  {
+    rotulo: 'Conteúdo',
+    itens: [
+      { para: '/templates', rotulo: 'Modelos' },
+      { para: '/tipos', rotulo: 'Tipos' },
+    ],
+  },
+  {
+    rotulo: 'Administração',
+    // Só ADMIN. Esconder não é o controle — o controle é o `exigirPapel` da API —,
+    // mas oferecer um link que devolve 403 é pior que não oferecer.
+    itens: [{ para: '/usuarios', rotulo: 'Usuários', somenteAdmin: true }],
+  },
 ];
 
 const classeLink = ({ isActive }: { isActive: boolean }): string =>
@@ -46,19 +78,40 @@ function LogoInicio({ aoNavegar, className }: { aoNavegar?: () => void; classNam
   );
 }
 
-function Navegacao({ visiveis, aoNavegar }: { visiveis: typeof SECOES; aoNavegar?: () => void }) {
+function Navegacao({ visiveis, aoNavegar }: { visiveis: typeof GRUPOS; aoNavegar?: () => void }) {
   return (
-    <nav aria-label="Seções do painel" className="flex flex-col gap-1">
-      {visiveis.map((s) => (
-        <NavLink
-          key={s.para}
-          to={s.para}
-          end={s.end === true}
-          className={classeLink}
-          onClick={aoNavegar}
+    <nav aria-label="Seções do painel" className="flex flex-col gap-4">
+      {visiveis.map((g, i) => (
+        /**
+         * `role="group"` + `aria-label`: quem usa leitor de tela recebe o mesmo
+         * agrupamento que o olho recebe, sem virar heading (que entraria na
+         * navegação por títulos da página, onde não pertence).
+         */
+        <div
+          key={g.rotulo ?? i}
+          {...(g.rotulo === undefined ? {} : { role: 'group', 'aria-label': g.rotulo })}
+          className="flex flex-col gap-1"
         >
-          {s.rotulo}
-        </NavLink>
+          {g.rotulo !== undefined && (
+            <p
+              aria-hidden="true"
+              className="px-3 pt-1 text-xs font-medium tracking-wide text-ink-suave uppercase"
+            >
+              {g.rotulo}
+            </p>
+          )}
+          {g.itens.map((s) => (
+            <NavLink
+              key={s.para}
+              to={s.para}
+              end={s.end === true}
+              className={classeLink}
+              onClick={aoNavegar}
+            >
+              {s.rotulo}
+            </NavLink>
+          ))}
+        </div>
       ))}
     </nav>
   );
@@ -90,7 +143,10 @@ export function Layout({ usuario }: { usuario: Usuario }) {
   const [menuAberto, definirMenuAberto] = useState(false);
   const local = useLocation();
   const ehAdmin = usuario.papeis.includes('ADMIN');
-  const visiveis = SECOES.filter((s) => s.somenteAdmin !== true || ehAdmin);
+  const visiveis = GRUPOS.map((g) => ({
+    ...g,
+    itens: g.itens.filter((s) => s.somenteAdmin !== true || ehAdmin),
+  })).filter((g) => g.itens.length > 0);
 
   /**
    * Esc fecha o menu do celular.

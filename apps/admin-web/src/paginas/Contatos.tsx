@@ -50,6 +50,7 @@ export function Contatos({ usuario }: { usuario: Usuario }) {
   const [tagsTexto, definirTagsTexto] = useState('');
   const [isLead, definirIsLead] = useState(false);
   const [relacionamento, definirRelacionamento] = useState('CLIENTE_ATIVO');
+  const [confirmacao, definirConfirmacao] = useState('');
 
   // Tags entram como texto separado por vírgula e viram lista antes de enviar —
   // o backend guarda a lista; a UI é que fala "vírgula".
@@ -69,7 +70,16 @@ export function Contatos({ usuario }: { usuario: Usuario }) {
         isLead,
         relacionamento,
       }),
-    onSuccess: () => {
+    onSuccess: (novo) => {
+      /**
+       * A confirmação diz O QUE foi cadastrado, não só "sucesso".
+       *
+       * O formulário limpa os campos ao salvar — sem a frase, limpar é o único
+       * sinal, e campo vazio também é o que se vê depois de um erro que
+       * descartou tudo. Nomear o e-mail tira a dúvida e deixa um rastro para
+       * cadastros em sequência ("o anterior era o da Maria?").
+       */
+      definirConfirmacao(`Contato ${novo.email} cadastrado.`);
       definirEmail('');
       definirNome('');
       definirTelefone('');
@@ -173,7 +183,7 @@ export function Contatos({ usuario }: { usuario: Usuario }) {
           </Campo>
         </div>
 
-        <label className="mt-4 flex items-center gap-2 text-sm text-ink">
+        <label className="mt-4 flex min-h-11 items-center gap-2 text-sm text-ink">
           <input
             type="checkbox"
             checked={isLead}
@@ -184,9 +194,17 @@ export function Contatos({ usuario }: { usuario: Usuario }) {
         </label>
 
         <div className="mt-4 space-y-3">
+          {/* A confirmação anterior sai de cena junto com o clique novo — um
+              "cadastrado" antigo ao lado de um erro atual leria como sucesso. */}
+          {confirmacao !== '' && !criar.isPending && criar.error === null && (
+            <Aviso tom="sucesso" texto={confirmacao} />
+          )}
           <ErroCaixa erro={criar.error} />
           <Botao
-            onClick={() => criar.mutate()}
+            onClick={() => {
+              definirConfirmacao('');
+              criar.mutate();
+            }}
             disabled={email.trim() === ''}
             carregando={criar.isPending}
           >
@@ -421,7 +439,7 @@ export function ContatoDetalhe({ usuario }: { usuario: Usuario }) {
                 </select>
               </Campo>
             </div>
-            <label className="flex items-center gap-2 text-sm text-ink">
+            <label className="flex min-h-11 items-center gap-2 text-sm text-ink">
               <input
                 type="checkbox"
                 checked={rascunho.isLead}
