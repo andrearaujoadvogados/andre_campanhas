@@ -86,12 +86,19 @@ export function montarPromptDeExtracao(fonte: {
   readonly url: string;
   readonly instrucao: string;
   readonly textoDaPagina: string;
+  /** Temas da rotina — orientação do editor, com a mesma autoridade da instrução. */
+  readonly temas?: readonly string[];
 }): string {
   return [
     'Você extrai notícias de páginas para o boletim informativo de um escritório de advocacia brasileiro.',
     '',
     `Fonte: ${fonte.nome} (${fonte.url})`,
     `O que coletar, nas palavras do editor: ${fonte.instrucao}`,
+    ...(fonte.temas === undefined || fonte.temas.length === 0
+      ? []
+      : [
+          `Temas prioritários desta edição: ${fonte.temas.join(', ')}. Prefira notícias desses temas e descarte o que não tiver relação com nenhum deles.`,
+        ]),
     '',
     `Responda SOMENTE com JSON válido, um array de no máximo ${MAXIMO_NOTICIAS_POR_FONTE} objetos:`,
     '[{"titulo": "...", "resumo": "...", "url": "...", "tag": "..."}]',

@@ -35,7 +35,7 @@ export interface ExecucaoBoletim {
   avisos: string[];
   erro: string | null;
   /** Campanha disparada pela rotina de envio automático, quando houve. */
-  envioCampaignId: string | null;
+  envioCampaignIds: string[] | null;
   /** Falha do envio automático — o modelo existe, mas o e-mail não saiu. */
   envioErro: string | null;
 }
@@ -161,7 +161,7 @@ export function PainelExecucaoBoletim({
   const avisos = execucao.avisos ?? [];
   // Mesma resiliência dos avisos: resposta sem os campos do envio automático
   // (versão anterior da API em cache) não pode inventar um desfecho.
-  const envioCampaignId = execucao.envioCampaignId ?? null;
+  const envioCampaignIds = execucao.envioCampaignIds ?? [];
   const envioErro = execucao.envioErro ?? null;
 
   return (
@@ -238,8 +238,10 @@ export function PainelExecucaoBoletim({
           <p className="text-sm text-ink">
             {execucao.totalNoticias} notícia(s) de {execucao.fontesTotal} fonte(s) viraram o modelo{' '}
             <span className="font-medium">{execucao.templateNome}</span>.
-            {envioCampaignId !== null
-              ? ' A rotina de envio automático já disparou este boletim.'
+            {envioCampaignIds.length > 0
+              ? envioCampaignIds.length === 1
+                ? ' A rotina de envio automático já disparou este boletim.'
+                : ` A rotina de envio automático já disparou este boletim para ${envioCampaignIds.length} listas.`
               : envioErro !== null
                 ? ''
                 : ' Nada foi enviado — revise antes de disparar.'}
@@ -255,14 +257,17 @@ export function PainelExecucaoBoletim({
               disparar manualmente pelo assistente.
             </p>
           )}
-          {envioCampaignId !== null && (
+          {envioCampaignIds.map((campaignId, indice) => (
             <Link
-              to={`/relatorios/${envioCampaignId}`}
-              className="inline-flex min-h-11 items-center justify-center rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper-light transition-colors hover:bg-ink/90"
+              key={campaignId}
+              to={`/relatorios/${campaignId}`}
+              className="mr-2 inline-flex min-h-11 items-center justify-center rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper-light transition-colors hover:bg-ink/90"
             >
-              Acompanhar o envio
+              {envioCampaignIds.length === 1
+                ? 'Acompanhar o envio'
+                : `Acompanhar o envio ${indice + 1} de ${envioCampaignIds.length}`}
             </Link>
-          )}
+          ))}
           {execucao.templateId !== null && (
             <Link
               to={`/templates/${execucao.templateId}`}

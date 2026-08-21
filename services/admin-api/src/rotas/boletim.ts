@@ -9,6 +9,7 @@ import {
   iniciarExecucao,
   listId as novoListId,
   rotinaId as novoRotinaId,
+  tipoEmailId as novoTipoEmailId,
   validarRecorrencia,
   situacaoVisivel,
   validarUrlDeFonte,
@@ -159,29 +160,18 @@ rotasBoletim.post('/rotinas', validarCorpo(salvarRotinaBoletimSchema), async (c)
     return c.json({ code: 'RECORRENCIA_INVALIDA', message: recorrencia.motivo }, 400);
   }
 
-  // A lista é o destino de um envio sem revisão: apontar para uma inexistente
-  // não pode ser descoberto só no primeiro disparo, dias depois do cadastro.
-  const lista = await deps.listas.buscarPorId(usuario.tenantId, novoListId(dados.listId));
-  if (lista === null) {
-    return c.json({ code: 'NAO_ENCONTRADO', message: 'A lista escolhida não existe.' }, 400);
+  // As listas são o destino de um envio sem revisão: apontar para uma
+  // inexistente não pode ser descoberto só no primeiro disparo, dias depois.
+  const listaInvalida = await primeiraListaInexistente(dados.listIds, usuario.tenantId);
+  if (listaInvalida !== null) {
+    return c.json({ code: 'NAO_ENCONTRADO', message: `A lista ${listaInvalida} não existe.` }, 400);
   }
 
   const agora = deps.clock.agora();
   const rotina: RotinaBoletim = {
     tenantId: usuario.tenantId,
     rotinaId: novoRotinaId(deps.ids.gerar()),
-    periodicidade: dados.periodicidade,
-    horario: dados.horario,
-    // Só o dia da periodicidade escolhida é gravado — um dia da outra, enviado
-    // por engano, viraria configuração dormente no banco.
-    ...(dados.periodicidade === 'SEMANAL' && dados.diaDaSemana !== undefined
-      ? { diaDaSemana: dados.diaDaSemana }
-      : {}),
-    ...(dados.periodicidade === 'MENSAL' && dados.diaDoMes !== undefined
-      ? { diaDoMes: dados.diaDoMes }
-      : {}),
-    listId: novoListId(dados.listId),
-    ativa: dados.ativa,
+    ...camposDaRotina(dados),
     criadoPor: usuario.userId,
     criadoEm: agora,
     atualizadoEm: agora,
@@ -224,27 +214,18 @@ rotasBoletim.patch('/rotinas/:id', validarCorpo(salvarRotinaBoletimSchema), asyn
     return c.json({ code: 'RECORRENCIA_INVALIDA', message: recorrencia.motivo }, 400);
   }
 
-  const lista = await deps.listas.buscarPorId(usuario.tenantId, novoListId(dados.listId));
-  if (lista === null) {
-    return c.json({ code: 'NAO_ENCONTRADO', message: 'A lista escolhida não existe.' }, 400);
+  const listaInvalida = await primeiraListaInexistente(dados.listIds, usuario.tenantId);
+  if (listaInvalida !== null) {
+    return c.json({ code: 'NAO_ENCONTRADO', message: `A lista ${listaInvalida} não existe.` }, 400);
   }
 
-  // A recorrência é reconstruída do zero, não mesclada: um `diaDoMes` da
+  // A configuração é reconstruída do zero, não mesclada: um `diaDoMes` da
   // configuração antiga sobrevivendo numa rotina que virou semanal reapareceria
   // se ela voltasse a mensal, reativando uma escolha que o operador já não vê.
   const atualizada: RotinaBoletim = {
     tenantId: rotina.tenantId,
     rotinaId: rotina.rotinaId,
-    periodicidade: dados.periodicidade,
-    horario: dados.horario,
-    ...(dados.periodicidade === 'SEMANAL' && dados.diaDaSemana !== undefined
-      ? { diaDaSemana: dados.diaDaSemana }
-      : {}),
-    ...(dados.periodicidade === 'MENSAL' && dados.diaDoMes !== undefined
-      ? { diaDoMes: dados.diaDoMes }
-      : {}),
-    listId: novoListId(dados.listId),
-    ativa: dados.ativa,
+    ...camposDaRotina(dados),
     criadoPor: rotina.criadoPor,
     criadoEm: rotina.criadoEm,
     atualizadoEm: deps.clock.agora(),
@@ -295,14 +276,64 @@ rotasBoletim.delete('/rotinas/:id', async (c) => {
   return c.json({ ok: true });
 });
 
+/** Do corpo validado para os campos de domínio — a parte comum de criar e editar. */
+function camposDaRotina(dados: {
+  nome: string;
+  periodicidade: RotinaBoletim['periodicidade'];
+  horario: string;
+  diaDaSemana?: number | undefined;
+  diaDoMes?: number | undefined;
+  tipoEmailId?: string | undefined;
+  temas: string[];
+  fonteIds: string[];
+  listIds: string[];
+  ativa: boolean;
+}) {
+  return {
+    nome: dados.nome,
+    periodicidade: dados.periodicidade,
+    horario: dados.horario,
+    // Só o dia da periodicidade escolhida é gravado — um dia da outra, enviado
+    // por engano, viraria configuração dormente no banco.
+    ...(dados.periodicidade === 'SEMANAL' && dados.diaDaSemana !== undefined
+      ? { diaDaSemana: dados.diaDaSemana }
+      : {}),
+    ...(dados.periodicidade === 'MENSAL' && dados.diaDoMes !== undefined
+      ? { diaDoMes: dados.diaDoMes }
+      : {}),
+    ...(dados.tipoEmailId === undefined ? {} : { tipoEmailId: novoTipoEmailId(dados.tipoEmailId) }),
+    temas: dados.temas,
+    fonteIds: dados.fonteIds.map(novoFonteId),
+    listIds: dados.listIds.map(novoListId),
+    ativa: dados.ativa,
+  };
+}
+
+/** A primeira lista que não existe, ou null se todas existem. */
+async function primeiraListaInexistente(
+  listIds: readonly string[],
+  tenantId: RotinaBoletim['tenantId'],
+): Promise<string | null> {
+  const deps = await obterDependencias();
+  for (const id of listIds) {
+    const lista = await deps.listas.buscarPorId(tenantId, novoListId(id));
+    if (lista === null) return id;
+  }
+  return null;
+}
+
 function paraRespostaRotina(r: RotinaBoletim): Record<string, unknown> {
   return {
     rotinaId: String(r.rotinaId),
+    nome: r.nome,
     periodicidade: r.periodicidade,
     horario: r.horario,
     diaDaSemana: r.diaDaSemana ?? null,
     diaDoMes: r.diaDoMes ?? null,
-    listId: String(r.listId),
+    tipoEmailId: r.tipoEmailId === undefined ? null : String(r.tipoEmailId),
+    temas: [...r.temas],
+    fonteIds: r.fonteIds.map(String),
+    listIds: r.listIds.map(String),
     ativa: r.ativa,
     atualizadoEm: r.atualizadoEm.toISOString(),
   };
@@ -311,11 +342,15 @@ function paraRespostaRotina(r: RotinaBoletim): Record<string, unknown> {
 /** O que vai para a auditoria — os campos que definem o comportamento da rotina. */
 function resumoRotina(r: RotinaBoletim): Record<string, unknown> {
   return {
+    nome: r.nome,
     periodicidade: r.periodicidade,
     horario: r.horario,
     diaDaSemana: r.diaDaSemana ?? null,
     diaDoMes: r.diaDoMes ?? null,
-    listId: String(r.listId),
+    tipoEmailId: r.tipoEmailId === undefined ? null : String(r.tipoEmailId),
+    temas: [...r.temas],
+    fonteIds: r.fonteIds.map(String),
+    listIds: r.listIds.map(String),
     ativa: r.ativa,
   };
 }
@@ -474,7 +509,12 @@ function paraRespostaExecucao(e: ExecucaoBoletim, agora: Date): Record<string, u
     avisos: [...e.avisos],
     erro: e.erro ?? null,
     // Desfecho do envio automático da rotina — nulo fora desse caminho.
-    envioCampaignId: e.envioCampaignId === undefined ? null : String(e.envioCampaignId),
+    envioCampaignIds:
+      e.envioCampaignIds !== undefined
+        ? e.envioCampaignIds.map(String)
+        : e.envioCampaignId === undefined
+          ? []
+          : [String(e.envioCampaignId)],
     envioErro: e.envioErro ?? null,
   };
 }

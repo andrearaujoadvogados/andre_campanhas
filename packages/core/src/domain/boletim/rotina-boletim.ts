@@ -1,4 +1,4 @@
-import type { ListId, RotinaId, TenantId, UserId } from '../shared/ids.js';
+import type { FonteId, ListId, RotinaId, TenantId, TipoEmailId, UserId } from '../shared/ids.js';
 
 /**
  * Rotina de envio automático do boletim — geração E disparo, sem clique.
@@ -6,16 +6,23 @@ import type { ListId, RotinaId, TenantId, UserId } from '../shared/ids.js';
  * É a decisão que o resto do módulo evitou de propósito: o construtor do
  * boletim sempre parou no modelo, deixando o disparo para uma pessoa. A rotina
  * inverte isso por escolha explícita do escritório — quem a cadastra está
- * dizendo "o que a IA montar neste horário sai para esta lista, sem revisão".
- * Por isso a entidade carrega a lista de destino consigo: o alcance do envio
+ * dizendo "o que a IA montar neste horário sai para estas listas, sem revisão".
+ * Por isso a entidade carrega as listas de destino consigo: o alcance do envio
  * automático fica escrito no cadastro, não decidido na hora por um padrão
  * qualquer.
+ *
+ * Cada rotina também escolhe o RECORTE editorial da edição: as fontes lidas,
+ * os temas que orientam a IA e o tipo de e-mail (Boletim, Notícias…) — o que
+ * permite rotinas diferentes com linhas editoriais diferentes no mesmo
+ * catálogo de fontes.
  */
 export type PeriodicidadeRotina = 'DIARIA' | 'SEMANAL' | 'MENSAL';
 
 export interface RotinaBoletim {
   readonly tenantId: TenantId;
   readonly rotinaId: RotinaId;
+  /** Nome da rotina — vira o nome do modelo e das campanhas de cada edição. */
+  readonly nome: string;
   readonly periodicidade: PeriodicidadeRotina;
   /** Horário local de São Paulo, "HH:mm" — quem agenda pensa no relógio da parede. */
   readonly horario: string;
@@ -23,8 +30,14 @@ export interface RotinaBoletim {
   readonly diaDaSemana?: number;
   /** 1 a 28 — teto em 28 para o boletim sair TODO mês, fevereiro incluído. Obrigatório quando MENSAL. */
   readonly diaDoMes?: number;
-  /** Lista que recebe o boletim gerado. */
-  readonly listId: ListId;
+  /** Tipo de e-mail do catálogo — dá a categoria do modelo e o tipo da campanha. */
+  readonly tipoEmailId?: TipoEmailId;
+  /** Temas que orientam a seleção da IA. Vazio = a instrução de cada fonte manda sozinha. */
+  readonly temas: readonly string[];
+  /** Fontes desta rotina. Vazio = todas as fontes ativas do catálogo. */
+  readonly fonteIds: readonly FonteId[];
+  /** Listas que recebem o boletim gerado — uma campanha disparada por lista. */
+  readonly listIds: readonly ListId[];
   /** Desligada fica cadastrada, mas nada gera nem envia — pausa sem perder a configuração. */
   readonly ativa: boolean;
   readonly criadoPor: UserId;

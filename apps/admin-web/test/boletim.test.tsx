@@ -23,6 +23,7 @@ vi.mock('../src/lib/api.js', () => ({
       chamadas.push({ metodo: 'GET', caminho });
       if (caminho === '/boletim/execucoes') return { itens: execucoes };
       if (caminho === '/boletim/rotinas') return { itens: rotinas };
+      if (caminho === '/tipos') return { itens: [{ tipoEmailId: 'tipo-1', nome: 'Boletim' }] };
       if (caminho === '/listas') return { itens: listas };
       return { itens: fontes };
     },
@@ -107,15 +108,24 @@ beforeEach(() => {
 function rotinaFalsa(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     rotinaId: 'r-1',
+    nome: 'Boletim Tributário',
     periodicidade: 'SEMANAL',
     horario: '08:00',
     diaDaSemana: 1,
     diaDoMes: null,
-    listId: 'l-1',
+    tipoEmailId: null,
+    temas: [],
+    fonteIds: [],
+    listIds: ['l-1'],
     ativa: true,
     atualizadoEm: '2026-08-20T10:00:00Z',
     ...over,
   };
+}
+
+/** O formulário de rotina abre sob demanda — os testes o abrem como o operador. */
+async function abrirFormRotina() {
+  await userEvent.click(await screen.findByRole('button', { name: 'Nova rotina' }));
 }
 
 describe('boletim automático — fontes', () => {
@@ -303,53 +313,87 @@ describe('rotina de envio automático', () => {
       await screen.findByText(/envia sem revisão/i, { selector: 'strong' }),
     ).toBeInTheDocument();
 
+    await abrirFormRotina();
+    await userEvent.type(screen.getByLabelText(/nome da rotina/i), 'Boletim Tributário');
     await userEvent.selectOptions(screen.getByLabelText(/período/i), 'SEMANAL');
     await userEvent.selectOptions(screen.getByLabelText(/dia da semana/i), '3');
     fireEvent.change(screen.getByLabelText(/horário/i), { target: { value: '09:30' } });
-    await userEvent.selectOptions(screen.getByLabelText(/lista que recebe/i), 'l-1');
+    await userEvent.click(screen.getByRole('checkbox', { name: /clientes/i }));
     await userEvent.click(screen.getByRole('button', { name: /criar rotina/i }));
 
     const post = chamadas.find((c) => c.metodo === 'POST' && c.caminho === '/boletim/rotinas');
     expect(post?.corpo).toEqual({
+      nome: 'Boletim Tributário',
       periodicidade: 'SEMANAL',
       horario: '09:30',
       diaDaSemana: 3,
-      listId: 'l-1',
+      temas: [],
+      fonteIds: [],
+      listIds: ['l-1'],
       ativa: true,
     });
   });
 
   it('rotina mensal manda o dia do mês e NÃO manda dia da semana', async () => {
     montar();
-    await screen.findByLabelText(/período/i);
+    await abrirFormRotina();
 
+    await userEvent.type(screen.getByLabelText(/nome da rotina/i), 'Boletim mensal');
     await userEvent.selectOptions(screen.getByLabelText(/período/i), 'MENSAL');
     fireEvent.change(screen.getByLabelText(/dia do mês/i), { target: { value: '15' } });
-    await userEvent.selectOptions(screen.getByLabelText(/lista que recebe/i), 'l-1');
+    await userEvent.click(screen.getByRole('checkbox', { name: /clientes/i }));
     await userEvent.click(screen.getByRole('button', { name: /criar rotina/i }));
 
     const post = chamadas.find((c) => c.metodo === 'POST' && c.caminho === '/boletim/rotinas');
     expect(post?.corpo).toEqual({
+      nome: 'Boletim mensal',
       periodicidade: 'MENSAL',
       horario: '08:00',
       diaDoMes: 15,
-      listId: 'l-1',
+      temas: [],
+      fonteIds: [],
+      listIds: ['l-1'],
       ativa: true,
     });
   });
 
-  it('sem lista escolhida o botão não cria — a lista é o alcance do envio', async () => {
+  it('sem lista escolhida o botão não cria — as listas são o alcance do envio', async () => {
     montar();
+    await abrirFormRotina();
     const botao = await screen.findByRole('button', { name: /criar rotina/i });
     expect(botao).toBeDisabled();
   });
 
-  it('lista a rotina em linguagem de gente, com a lista de destino', async () => {
+  it('lista a rotina pelo nome, em linguagem de gente, com as listas de destino', async () => {
     rotinas = [rotinaFalsa({ diaDaSemana: 1, horario: '08:00' })];
     montar();
 
-    expect(await screen.findByText('Toda segunda-feira às 08:00')).toBeInTheDocument();
+    expect(await screen.findByText('Boletim Tributário')).toBeInTheDocument();
+    expect(screen.getByText('Toda segunda-feira às 08:00')).toBeInTheDocument();
     expect(screen.getByText(/envia para/i)).toHaveTextContent('Clientes');
+    expect(screen.getByText(/todas as fontes ativas/i)).toBeInTheDocument();
+  });
+
+  it('o recorte editorial da rotina viaja no corpo — temas, fontes e tipo', async () => {
+    fontes = [fonteMigalhas()];
+    montar();
+    await abrirFormRotina();
+
+    await userEvent.type(screen.getByLabelText(/nome da rotina/i), 'Notícias gerais');
+    await userEvent.selectOptions(screen.getByLabelText(/tipo de campanha/i), 'tipo-1');
+    await userEvent.type(screen.getByLabelText(/temas/i), 'Reforma Tributária, STJ');
+    await userEvent.click(screen.getByRole('checkbox', { name: /migalhas/i }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /clientes/i }));
+    await userEvent.click(screen.getByRole('button', { name: /criar rotina/i }));
+
+    const post = chamadas.find((c) => c.metodo === 'POST' && c.caminho === '/boletim/rotinas');
+    expect(post?.corpo).toMatchObject({
+      nome: 'Notícias gerais',
+      tipoEmailId: 'tipo-1',
+      temas: ['Reforma Tributária', 'STJ'],
+      fonteIds: ['f-1'],
+      listIds: ['l-1'],
+    });
   });
 
   it('desligar envia o cadastro inteiro com ativa: false', async () => {
@@ -376,7 +420,7 @@ describe('rotina de envio automático', () => {
 
 describe('desfecho do envio automático no histórico', () => {
   it('a execução da rotina mostra que enviou, com link para acompanhar', async () => {
-    execucoes = [execucaoFalsa({ origem: 'ROTINA', envioCampaignId: 'k-7', envioErro: null })];
+    execucoes = [execucaoFalsa({ origem: 'ROTINA', envioCampaignIds: ['k-7'], envioErro: null })];
     montar();
 
     expect(
@@ -390,7 +434,7 @@ describe('desfecho do envio automático no histórico', () => {
 
   it('falha do envio aparece com destaque — o modelo existe, o e-mail não saiu', async () => {
     execucoes = [
-      execucaoFalsa({ origem: 'ROTINA', envioCampaignId: null, envioErro: 'lista inexistente.' }),
+      execucaoFalsa({ origem: 'ROTINA', envioCampaignIds: null, envioErro: 'lista inexistente.' }),
     ];
     montar();
 
@@ -414,11 +458,12 @@ describe('confirmação de sucesso nos formulários', () => {
 
   it('criar rotina confirma relendo a recorrência por extenso', async () => {
     montar();
-    await screen.findByLabelText(/período/i);
+    await abrirFormRotina();
 
+    await userEvent.type(screen.getByLabelText(/nome da rotina/i), 'Boletim Tributário');
     await userEvent.selectOptions(screen.getByLabelText(/período/i), 'SEMANAL');
     await userEvent.selectOptions(screen.getByLabelText(/dia da semana/i), '1');
-    await userEvent.selectOptions(screen.getByLabelText(/lista que recebe/i), 'l-1');
+    await userEvent.click(screen.getByRole('checkbox', { name: /clientes/i }));
     await userEvent.click(screen.getByRole('button', { name: /criar rotina/i }));
 
     // Reler o que foi armado é a última chance de pegar o dia errado antes do

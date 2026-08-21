@@ -222,6 +222,8 @@ export type SalvarFonteBoletimInput = z.infer<typeof salvarFonteBoletimSchema>;
  * roda na rota, para o erro sair com a mensagem do negócio e não a do zod.
  */
 export const salvarRotinaBoletimSchema = z.object({
+  /** Nome da rotina — vira o nome do modelo e das campanhas de cada edição. */
+  nome: z.string().trim().min(1).max(80),
   periodicidade: z.enum(['DIARIA', 'SEMANAL', 'MENSAL']),
   /** Horário local de São Paulo, HH:mm. */
   horario: z.string().regex(/^\d{2}:\d{2}$/, 'Horário deve estar no formato HH:mm.'),
@@ -229,7 +231,14 @@ export const salvarRotinaBoletimSchema = z.object({
   diaDaSemana: z.number().int().min(1).max(7).optional(),
   /** 1 a 28 — dias 29 a 31 não existem em todos os meses. */
   diaDoMes: z.number().int().min(1).max(28).optional(),
-  listId: z.string().min(1),
+  /** Tipo de e-mail do catálogo — categoria do modelo e tipo da campanha. */
+  tipoEmailId: z.string().trim().min(1).max(100).optional(),
+  /** Temas que orientam a IA. Vazio = a instrução de cada fonte manda sozinha. */
+  temas: z.array(z.string().trim().min(1).max(60)).max(10).default([]),
+  /** Fontes desta rotina. Vazio = todas as fontes ativas. */
+  fonteIds: z.array(z.string().trim().min(1).max(100)).max(50).default([]),
+  /** Listas de destino — uma campanha disparada por lista. Pelo menos uma. */
+  listIds: z.array(z.string().trim().min(1).max(100)).min(1).max(20),
   ativa: z.boolean().default(true),
 });
 export type SalvarRotinaBoletimInput = z.infer<typeof salvarRotinaBoletimSchema>;

@@ -6,9 +6,11 @@ import {
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
 import {
+  fonteId as novoFonteId,
   listId as novoListId,
   rotinaId as novoRotinaId,
   tenantId as novoTenantId,
+  tipoEmailId as novoTipoEmailId,
   userId as novoUserId,
   type PeriodicidadeRotina,
   type RotinaBoletim,
@@ -57,11 +59,15 @@ export class DynamoRotinaBoletimRepository implements RotinaBoletimRepository {
           tipo: 'ROTINA_BOLETIM',
           tenantId: String(rotina.tenantId),
           rotinaId: String(rotina.rotinaId),
+          nome: rotina.nome,
           periodicidade: rotina.periodicidade,
           horario: rotina.horario,
           ...(rotina.diaDaSemana === undefined ? {} : { diaDaSemana: rotina.diaDaSemana }),
           ...(rotina.diaDoMes === undefined ? {} : { diaDoMes: rotina.diaDoMes }),
-          listId: String(rotina.listId),
+          ...(rotina.tipoEmailId === undefined ? {} : { tipoEmailId: String(rotina.tipoEmailId) }),
+          temas: [...rotina.temas],
+          fonteIds: rotina.fonteIds.map(String),
+          listIds: rotina.listIds.map(String),
           ativa: rotina.ativa,
           criadoPor: String(rotina.criadoPor),
           criadoEm: rotina.criadoEm.toISOString(),
@@ -84,14 +90,33 @@ function paraRotina(item: Record<string, unknown>): RotinaBoletim {
   return {
     tenantId: novoTenantId(String(item['tenantId'])),
     rotinaId: novoRotinaId(String(item['rotinaId'])),
+    // Rotina gravada antes de o nome existir: um nome padrão legível, que o
+    // operador troca na primeira edição.
+    nome: item['nome'] === undefined ? 'Boletim automático' : String(item['nome']),
     periodicidade: String(item['periodicidade']) as PeriodicidadeRotina,
     horario: String(item['horario']),
     ...(item['diaDaSemana'] === undefined ? {} : { diaDaSemana: Number(item['diaDaSemana']) }),
     ...(item['diaDoMes'] === undefined ? {} : { diaDoMes: Number(item['diaDoMes']) }),
-    listId: novoListId(String(item['listId'])),
+    ...(item['tipoEmailId'] === undefined
+      ? {}
+      : { tipoEmailId: novoTipoEmailId(String(item['tipoEmailId'])) }),
+    temas: lerLista(item['temas']),
+    fonteIds: lerLista(item['fonteIds']).map(novoFonteId),
+    // O singular é a forma antiga (uma lista por rotina) — vira lista de um.
+    listIds:
+      Array.isArray(item['listIds']) && item['listIds'].length > 0
+        ? lerLista(item['listIds']).map(novoListId)
+        : item['listId'] === undefined
+          ? []
+          : [novoListId(String(item['listId']))],
     ativa: item['ativa'] === true,
     criadoPor: novoUserId(String(item['criadoPor'])),
     criadoEm: new Date(String(item['criadoEm'])),
     atualizadoEm: new Date(String(item['atualizadoEm'])),
   };
+}
+
+/** Dynamo devolve listas como array; qualquer outra coisa vira lista vazia. */
+function lerLista(bruto: unknown): string[] {
+  return Array.isArray(bruto) ? bruto.map(String) : [];
 }
