@@ -1,4 +1,4 @@
-import type { ExecucaoBoletimId, TemplateId, TenantId, UserId } from '../shared/ids.js';
+import type { CampaignId, ExecucaoBoletimId, TemplateId, TenantId, UserId } from '../shared/ids.js';
 
 /**
  * Execução do boletim automático — o registro que torna a geração visível.
@@ -33,7 +33,8 @@ export type SituacaoExecucaoBoletim =
  */
 export type EtapaExecucaoBoletim = 'INICIANDO' | 'LENDO_FONTES' | 'MONTANDO_EMAIL' | 'FINALIZADA';
 
-export type OrigemExecucaoBoletim = 'MANUAL' | 'AGENDADA';
+/** ROTINA = rotina de envio automático: além de gerar o modelo, dispara para a lista da rotina. */
+export type OrigemExecucaoBoletim = 'MANUAL' | 'AGENDADA' | 'ROTINA';
 
 export interface ExecucaoBoletim {
   readonly tenantId: TenantId;
@@ -64,6 +65,14 @@ export interface ExecucaoBoletim {
   readonly erro?: string;
   /** Quem apertou o botão. Ausente na execução agendada. */
   readonly solicitadaPor?: UserId;
+  /** Campanha criada e disparada pela rotina de envio automático, quando houve. */
+  readonly envioCampaignId?: CampaignId;
+  /**
+   * Falha do envio automático da rotina. Campo próprio, e não `erro`: o modelo
+   * FOI gerado (`templateId` está aí para o disparo manual); o que não saiu foi
+   * o e-mail — e a tela precisa contar as duas coisas, não uma média delas.
+   */
+  readonly envioErro?: string;
 }
 
 /**
@@ -187,4 +196,23 @@ export function encerrarExecucao(
   }
 
   return { ...base, situacao: 'FALHOU', erro: desfecho.erro };
+}
+
+/**
+ * Anota o desfecho do envio automático da rotina sobre a execução já encerrada.
+ *
+ * O envio acontece DEPOIS de o modelo existir e de a execução fechar como
+ * CONCLUIDA; esta função só acrescenta o resultado dessa etapa extra. Falha no
+ * envio não reabre nem muda a situação — a geração de fato terminou — mas fica
+ * registrada onde o operador olha, com o modelo pronto para disparo manual.
+ */
+export function registrarEnvioAutomatico(
+  execucao: ExecucaoBoletim,
+  resultado: { readonly campaignId: CampaignId } | { readonly erro: string },
+  agora: Date,
+): ExecucaoBoletim {
+  const base = { ...execucao, atualizadaEm: agora };
+  return 'campaignId' in resultado
+    ? { ...base, envioCampaignId: resultado.campaignId }
+    : { ...base, envioErro: resultado.erro };
 }

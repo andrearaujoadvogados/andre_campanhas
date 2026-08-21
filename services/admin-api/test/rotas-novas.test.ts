@@ -15,6 +15,7 @@ import {
   type ExecucaoBoletim,
   type FonteBoletim,
   type Lista,
+  type RotinaBoletim,
   type Template,
   type TipoEmail,
   type UsuarioDoPainel,
@@ -94,6 +95,10 @@ interface Estado {
   fontesSalvas: FonteBoletim[];
   geracoesDisparadas: number;
   execucoes: ExecucaoBoletim[];
+  rotinas: RotinaBoletim[];
+  rotinasSalvas: RotinaBoletim[];
+  agendasSincronizadas: RotinaBoletim[];
+  agendasRemovidas: string[];
   /** Simula a invocação da Lambda falhando — o caso que não deixava rastro nenhum. */
   falharDisparo: boolean;
 }
@@ -270,6 +275,21 @@ function montarDeps(): Dependencias {
         estado.geracoesDisparadas += 1;
       },
     },
+    rotinasBoletim: {
+      buscarPorId: async (_t, id) => estado.rotinas.find((r) => r.rotinaId === id) ?? null,
+      listar: async () => estado.rotinas,
+      salvar: async (r) => {
+        estado.rotinasSalvas.push(r);
+        estado.rotinas = [r, ...estado.rotinas.filter((x) => x.rotinaId !== r.rotinaId)];
+      },
+      excluir: async (_t, id) => {
+        estado.rotinas = estado.rotinas.filter((r) => r.rotinaId !== id);
+      },
+    },
+    agendadorRotinas: {
+      sincronizar: async (r) => void estado.agendasSincronizadas.push(r),
+      remover: async (_t, id) => void estado.agendasRemovidas.push(String(id)),
+    },
   };
 }
 
@@ -302,6 +322,10 @@ beforeEach(() => {
     fontesSalvas: [],
     geracoesDisparadas: 0,
     execucoes: [],
+    rotinas: [],
+    rotinasSalvas: [],
+    agendasSincronizadas: [],
+    agendasRemovidas: [],
     falharDisparo: false,
   };
   definirDependenciasParaTeste(montarDeps());
@@ -1330,5 +1354,95 @@ describe('fontes do boletim automatizado — §11, item 12', () => {
     expect(r.status).toBe(200);
     expect(estado.fontes).toHaveLength(0);
     expect(estado.auditados.some((a) => a.acao === 'EXCLUIU')).toBe(true);
+  });
+});
+
+describe('rotina de envio automático do boletim', () => {
+  const corpoValido = {
+    periodicidade: 'SEMANAL',
+    horario: '08:00',
+    diaDaSemana: 1,
+    listId: 'l-1',
+    ativa: true,
+  };
+
+  it('cria a rotina e sincroniza a agenda recorrente', async () => {
+    const r = await req('/boletim/rotinas', json(corpoValido));
+    expect(r.status).toBe(201);
+    const corpo = (await r.json()) as Record<string, unknown>;
+    expect(corpo['periodicidade']).toBe('SEMANAL');
+    expect(corpo['diaDaSemana']).toBe(1);
+    expect(corpo['listId']).toBe('l-1');
+
+    expect(estado.rotinasSalvas).toHaveLength(1);
+    // Banco primeiro, agenda depois — e a agenda recebe a mesma rotina gravada.
+    expect(estado.agendasSincronizadas).toHaveLength(1);
+    expect(String(estado.agendasSincronizadas[0]?.rotinaId)).toBe('id-novo');
+    expect(estado.auditados).toContainEqual({ acao: 'CRIOU', recursoTipo: 'RotinaBoletim' });
+  });
+
+  it('recusa semanal sem dia da semana — nenhum padrão decide em silêncio', async () => {
+    const r = await req('/boletim/rotinas', json({ ...corpoValido, diaDaSemana: undefined }));
+    expect(r.status).toBe(400);
+    const corpo = (await r.json()) as Record<string, unknown>;
+    expect(corpo['code']).toBe('RECORRENCIA_INVALIDA');
+    expect(estado.agendasSincronizadas).toHaveLength(0);
+  });
+
+  it('recusa lista inexistente no cadastro, não no primeiro disparo', async () => {
+    estado.lista = null;
+    const r = await req('/boletim/rotinas', json(corpoValido));
+    expect(r.status).toBe(400);
+    expect(estado.rotinasSalvas).toHaveLength(0);
+  });
+
+  it('mudar a periodicidade descarta o dia da configuração anterior', async () => {
+    await req('/boletim/rotinas', json(corpoValido));
+
+    const r = await req(
+      '/boletim/rotinas/id-novo',
+      json(
+        { periodicidade: 'MENSAL', horario: '09:30', diaDoMes: 15, listId: 'l-1', ativa: true },
+        'PATCH',
+      ),
+    );
+    expect(r.status).toBe(200);
+    const corpo = (await r.json()) as Record<string, unknown>;
+    expect(corpo['diaDoMes']).toBe(15);
+    // O dia da semana da versão semanal não sobrevive escondido no banco.
+    expect(corpo['diaDaSemana']).toBeNull();
+  });
+
+  it('desativar mantém o cadastro e entrega a rotina inativa ao sincronizador', async () => {
+    await req('/boletim/rotinas', json(corpoValido));
+
+    const r = await req(
+      '/boletim/rotinas/id-novo',
+      json({ ...corpoValido, ativa: false }, 'PATCH'),
+    );
+    expect(r.status).toBe(200);
+    // O adaptador é quem traduz "inativa" em remover a agenda; a rota só
+    // precisa entregar o estado desejado.
+    expect(estado.agendasSincronizadas[1]?.ativa).toBe(false);
+    expect(estado.rotinas[0]?.ativa).toBe(false);
+  });
+
+  it('excluir remove a agenda ANTES do cadastro — nunca fica gatilho sem rotina', async () => {
+    await req('/boletim/rotinas', json(corpoValido));
+
+    const r = await req('/boletim/rotinas/id-novo', { method: 'DELETE' });
+    expect(r.status).toBe(200);
+    expect(estado.agendasRemovidas).toEqual(['id-novo']);
+    expect(estado.rotinas).toHaveLength(0);
+    expect(estado.auditados).toContainEqual({ acao: 'EXCLUIU', recursoTipo: 'RotinaBoletim' });
+  });
+
+  it('listagem devolve as rotinas cadastradas', async () => {
+    await req('/boletim/rotinas', json(corpoValido));
+    const r = await req('/boletim/rotinas');
+    expect(r.status).toBe(200);
+    const corpo = (await r.json()) as { itens: Record<string, unknown>[] };
+    expect(corpo.itens).toHaveLength(1);
+    expect(corpo.itens[0]?.['horario']).toBe('08:00');
   });
 });

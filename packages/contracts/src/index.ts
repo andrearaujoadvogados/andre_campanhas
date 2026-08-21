@@ -214,6 +214,26 @@ export const salvarFonteBoletimSchema = z.object({
 });
 export type SalvarFonteBoletimInput = z.infer<typeof salvarFonteBoletimSchema>;
 
+/**
+ * Rotina de envio automático do boletim.
+ *
+ * Aqui só a forma de cada campo; a coerência entre eles (semanal exige dia da
+ * semana, mensal exige dia do mês) é regra de domínio — `validarRecorrencia`
+ * roda na rota, para o erro sair com a mensagem do negócio e não a do zod.
+ */
+export const salvarRotinaBoletimSchema = z.object({
+  periodicidade: z.enum(['DIARIA', 'SEMANAL', 'MENSAL']),
+  /** Horário local de São Paulo, HH:mm. */
+  horario: z.string().regex(/^\d{2}:\d{2}$/, 'Horário deve estar no formato HH:mm.'),
+  /** 1 = segunda … 7 = domingo. */
+  diaDaSemana: z.number().int().min(1).max(7).optional(),
+  /** 1 a 28 — dias 29 a 31 não existem em todos os meses. */
+  diaDoMes: z.number().int().min(1).max(28).optional(),
+  listId: z.string().min(1),
+  ativa: z.boolean().default(true),
+});
+export type SalvarRotinaBoletimInput = z.infer<typeof salvarRotinaBoletimSchema>;
+
 // ── Campanha / Campanha ───────────────────────────────────────────────────────
 
 export const criarCampanhaSchema = z.object({

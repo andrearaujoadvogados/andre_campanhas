@@ -9,11 +9,12 @@
     "test": "exit 0"
   },
   "dependencies": {
+    "@aws-sdk/client-sfn": "^3.700.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0",
     "@emailmkt/adapters-aws": "workspace:*",
     "@emailmkt/core": "workspace:*",
     "@emailmkt/criador": "workspace:*",
     "@emailmkt/email-render": "workspace:*",
-    "@aws-sdk/lib-dynamodb": "^3.700.0",
     "mjml": "^5.4.0"
   },
   "devDependencies": {

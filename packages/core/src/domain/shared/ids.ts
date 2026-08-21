@@ -16,6 +16,7 @@ export type SendId = Marcado<string, 'SendId'>;
 export type TipoEmailId = Marcado<string, 'TipoEmailId'>;
 export type FonteId = Marcado<string, 'FonteId'>;
 export type ExecucaoBoletimId = Marcado<string, 'ExecucaoBoletimId'>;
+export type RotinaId = Marcado<string, 'RotinaId'>;
 
 export const tenantId = (v: string): TenantId => v as TenantId;
 export const contactId = (v: string): ContactId => v as ContactId;
@@ -27,6 +28,7 @@ export const sendId = (v: string): SendId => v as SendId;
 export const tipoEmailId = (v: string): TipoEmailId => v as TipoEmailId;
 export const fonteId = (v: string): FonteId => v as FonteId;
 export const execucaoBoletimId = (v: string): ExecucaoBoletimId => v as ExecucaoBoletimId;
+export const rotinaId = (v: string): RotinaId => v as RotinaId;
 
 /**
  * Tenant único hoje — §12, V3. O campo existe em toda chave desde o dia 1

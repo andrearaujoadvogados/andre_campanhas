@@ -1,26 +1,38 @@
 import {
+  CanonicalContentHasher,
+  DynamoCampaignRepository,
   DynamoExecucaoBoletimRepository,
   DynamoFonteBoletimRepository,
+  DynamoRotinaBoletimRepository,
   DynamoTemplateRepository,
   SecretsProvider,
   dynamoDoc,
   secrets,
 } from '@emailmkt/adapters-aws';
+import { SFNClient, StartExecutionCommand } from '@aws-sdk/client-sfn';
 import {
+  REMETENTE_ROTINA,
   TENANT_PADRAO,
+  TIPO_EMAIL_PADRAO,
   coletarNoticias,
   encerrarExecucao,
   iniciarExecucao,
+  campaignId as novoCampaignId,
   execucaoBoletimId as novoExecucaoId,
+  rotinaId as novoRotinaId,
   templateId as novoTemplateId,
   userId as novoUserId,
+  registrarDisparo,
+  registrarEnvioAutomatico,
   type BuscadorDePagina,
+  type Campaign,
   type ExecucaoBoletim,
   type ExecucaoBoletimRepository,
   type ExtratorPorIa,
   type ResultadoColeta,
   type Template,
 } from '@emailmkt/core';
+import { DynamoTipoEmailRepository } from '@emailmkt/adapters-aws';
 import { compileDesignToMjml, criarBoletimColetado } from '@emailmkt/criador';
 import { paginaParaTexto } from '@emailmkt/email-render';
 import mjml2html from 'mjml';
@@ -32,11 +44,11 @@ import mjml2html from 'mjml';
  * design do boletim (as MESMAS fábricas do painel, via @emailmkt/criador) →
  * MJML → HTML → **modelo novo** na categoria Boletim.
  *
- * Termina no modelo, deliberadamente: o disparo continua humano. O operador
- * abre o assistente, escolhe o tipo Boletim, e o modelo gerado aparece
- * recomendado — revisão editorial antes de qualquer envio, que é a regra do
- * sistema para tudo (§10.3). Automatizar o envio seria automatizar a parte
- * que o escritório mais precisa controlar.
+ * Nos caminhos manual e agendado, termina no modelo: o disparo continua
+ * humano, com revisão editorial antes de qualquer envio (§10.3). A exceção é a
+ * **rotina de envio automático** (`origem: 'rotina'`): por decisão explícita
+ * do escritório, o boletim gerado vira campanha e sai para a lista da rotina
+ * sem revisão — a exceção é um cadastro consciente, nunca o padrão.
  */
 
 function env(nome: string): string {
@@ -155,12 +167,13 @@ function criarExtrator(chave: string, modelos: readonly string[]): ExtratorPorIa
 export interface ResultadoBoletim {
   readonly gerado: boolean;
   readonly templateId?: string;
+  readonly templateNome?: string;
   readonly totalNoticias: number;
   readonly avisos: readonly string[];
 }
 
 export const handler = async (
-  evento: { origem?: string; execucaoId?: string } = {},
+  evento: { origem?: string; execucaoId?: string; rotinaId?: string } = {},
 ): Promise<ResultadoBoletim> => {
   const doc = dynamoDoc();
   const tabela = env('TABELA_PRINCIPAL');
@@ -257,7 +270,35 @@ export const handler = async (
       totalNoticias: coleta.totalNoticias,
     });
 
-    return await montarModelo({ coleta, templates, execucoes, execucao, origem: evento.origem });
+    const resultado = await montarModelo({
+      coleta,
+      templates,
+      execucoes,
+      execucao,
+      origem: evento.origem,
+    });
+
+    /**
+     * Rotina de envio automático: o modelo virou campanha e sai agora.
+     *
+     * Roda DEPOIS de a execução fechar como CONCLUIDA, e qualquer falha aqui
+     * fica no campo `envioErro` da execução em vez de derrubar o resultado da
+     * geração — o modelo existe e pode ser disparado à mão; o que o operador
+     * precisa é saber que o automático não saiu, não perder o trabalho feito.
+     */
+    if (evento.origem === 'rotina' && resultado.gerado && resultado.templateId !== undefined) {
+      await enviarPelaRotina({
+        doc,
+        tabela,
+        execucoes,
+        execucaoId: execucao.execucaoId,
+        rotinaId: evento.rotinaId,
+        templateId: resultado.templateId,
+        templateNome: resultado.templateNome ?? 'Boletim automático',
+      });
+    }
+
+    return resultado;
   } catch (erro) {
     /**
      * Falha inesperada vira registro, não exceção propagada — de propósito.
@@ -285,7 +326,8 @@ async function obterExecucao(
   const nova = iniciarExecucao({
     tenantId: TENANT_PADRAO,
     execucaoId: novoExecucaoId(evento.execucaoId ?? crypto.randomUUID()),
-    origem: evento.origem === 'manual' ? 'MANUAL' : 'AGENDADA',
+    origem:
+      evento.origem === 'manual' ? 'MANUAL' : evento.origem === 'rotina' ? 'ROTINA' : 'AGENDADA',
     agora: new Date(),
   });
   await execucoes.salvar(nova);
@@ -375,9 +417,129 @@ async function montarModelo(ctx: {
   return {
     gerado: true,
     templateId: String(template.templateId),
+    templateNome: template.nome,
     totalNoticias: coleta.totalNoticias,
     avisos: coleta.avisos,
   };
+}
+
+/** Identidade do envio automático nos registros — não há pessoa apertando botão. */
+const USUARIO_ROTINA = 'rotina-boletim';
+
+/**
+ * Cria a campanha do boletim recém-gerado e dispara para a lista da rotina.
+ *
+ * Espelha o caminho do painel de ponta a ponta — mesma auditoria de disparo
+ * (`registrarDisparo` com o fingerprint do conteúdo), mesmo orquestrador — para
+ * o envio automático não ser um atalho com menos registro que o manual. O
+ * `campaign-launcher` aceita RASCUNHO e resolve a audiência com todas as
+ * guardas de sempre (supressão, classificação de vínculo, idempotência).
+ */
+async function enviarPelaRotina(ctx: {
+  doc: ReturnType<typeof dynamoDoc>;
+  tabela: string;
+  execucoes: ExecucaoBoletimRepository;
+  execucaoId: ExecucaoBoletim['execucaoId'];
+  rotinaId: string | undefined;
+  templateId: string;
+  templateNome: string;
+}): Promise<void> {
+  const anotar = async (
+    resultado: { campaignId: Campaign['campaignId'] } | { erro: string },
+  ): Promise<void> => {
+    // A execução já foi encerrada por `montarModelo`; recarrega para anotar o
+    // desfecho do envio sobre o registro final, não sobre uma cópia velha.
+    const atual = await ctx.execucoes.buscarPorId(TENANT_PADRAO, ctx.execucaoId);
+    if (atual === null) return;
+    await ctx.execucoes.salvar(registrarEnvioAutomatico(atual, resultado, new Date()));
+  };
+
+  try {
+    if (ctx.rotinaId === undefined || ctx.rotinaId === '') {
+      throw new Error('A invocação da rotina veio sem o identificador da rotina.');
+    }
+
+    const rotinas = new DynamoRotinaBoletimRepository(ctx.doc, ctx.tabela);
+    const rotina = await rotinas.buscarPorId(TENANT_PADRAO, novoRotinaId(ctx.rotinaId));
+    if (rotina === null) {
+      // Agenda órfã: a rotina foi excluída mas a agenda sobreviveu (falha na
+      // remoção). Não envia — e o registro diz por quê, para alguém remover a
+      // agenda em vez de conviver com um disparo fantasma.
+      throw new Error('A rotina que originou este disparo não existe mais. Nada foi enviado.');
+    }
+    if (!rotina.ativa) {
+      // Desligada entre o gatilho e agora — corrida rara, resultado correto.
+      log.info('rotina inativa; envio não realizado', { rotinaId: ctx.rotinaId });
+      return;
+    }
+
+    const agora = new Date();
+    const campanhas = new DynamoCampaignRepository(ctx.doc, ctx.tabela);
+    const tipos = new DynamoTipoEmailRepository(ctx.doc, ctx.tabela);
+
+    // O tipo "Boletim" cataloga a campanha como as criadas pelo assistente;
+    // se o catálogo ainda não foi semeado, a campanha sai sem tipo — envio
+    // primeiro, taxonomia depois.
+    const tipoBoletim = (await tipos.listar(TENANT_PADRAO)).find(
+      (t) => t.nome === TIPO_EMAIL_PADRAO,
+    );
+
+    const campanha: Campaign = {
+      tenantId: TENANT_PADRAO,
+      campaignId: novoCampaignId(crypto.randomUUID()),
+      nome: ctx.templateNome,
+      ...(tipoBoletim === undefined ? {} : { tipoEmailId: tipoBoletim.tipoEmailId }),
+      templateId: novoTemplateId(ctx.templateId),
+      // Recém-criado pelo passo anterior: a versão vigente é a 1 por construção.
+      templateVersao: 1,
+      listId: rotina.listId,
+      status: 'RASCUNHO',
+      remetenteNome: REMETENTE_ROTINA.nome,
+      remetenteEmail: REMETENTE_ROTINA.email,
+      criadoPor: novoUserId(USUARIO_ROTINA),
+      criadoEm: agora,
+    };
+
+    const hash = new CanonicalContentHasher().hash({
+      templateId: campanha.templateId,
+      templateVersao: campanha.templateVersao,
+      listId: campanha.listId,
+      remetenteNome: campanha.remetenteNome,
+      remetenteEmail: campanha.remetenteEmail,
+      replyTo: undefined,
+    });
+    await campanhas.salvar(registrarDisparo(campanha, novoUserId(USUARIO_ROTINA), hash));
+
+    /**
+     * Mesmo orquestrador do botão "Disparar". O nome carrega o minuto: se a
+     * Lambda for reexecutada dentro da janela, o Step Functions recusa o nome
+     * repetido — e, atrás dessa guarda, o `sendId` determinístico impediria o
+     * e-mail duplicado de qualquer forma (§5.4).
+     */
+    const janela = agora.toISOString().slice(0, 16).replace(/[-:T]/g, '');
+    await new SFNClient({}).send(
+      new StartExecutionCommand({
+        stateMachineArn: env('ORQUESTRADOR_ARN'),
+        name: `rotina-${String(campanha.campaignId)}-${janela}`.slice(0, 80),
+        input: JSON.stringify({
+          tenantId: String(TENANT_PADRAO),
+          campaignId: String(campanha.campaignId),
+          origem: 'rotina',
+        }),
+      }),
+    );
+
+    log.info('boletim disparado pela rotina', {
+      rotinaId: ctx.rotinaId,
+      campaignId: String(campanha.campaignId),
+      listId: String(rotina.listId),
+    });
+    await anotar({ campaignId: campanha.campaignId });
+  } catch (erro) {
+    const motivo = erro instanceof Error ? erro.message : String(erro);
+    log.error('envio automático falhou', { rotinaId: ctx.rotinaId ?? '', motivo });
+    await anotar({ erro: motivo });
+  }
 }
 
 const dataCurta = (d: Date): string =>
