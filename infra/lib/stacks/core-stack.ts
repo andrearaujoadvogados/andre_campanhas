@@ -390,6 +390,26 @@ export class CoreStack extends Stack {
     });
 
     /**
+     * O cron que faz o quota-sync existir de fato.
+     *
+     * O worker sempre prometeu "a liberação de produção vale sem deploy — este
+     * cron percebe em até 24h", mas o cron nunca foi criado: a Lambda ficou
+     * publicada, com permissões, e nunca invocada. Descoberto em 2026-08-21,
+     * quando o SES saiu do sandbox e o envio continuou na cota velha (1/s,
+     * 200/dia) até uma invocação manual pelo CloudShell.
+     *
+     * A cada 6 horas, não 24: custa quatro invocações gratuitas por dia e
+     * encurta a janela em que uma mudança de cota da AWS — para mais ou para
+     * menos — passa despercebida. Para menos importa mais: enviar acima da
+     * cota real degrada a reputação da conta (§14).
+     */
+    new Rule(this, 'AgendaQuotaSync', {
+      ruleName: nome(cfg, 'quota-sync'),
+      schedule: Schedule.rate(Duration.hours(6)),
+      targets: [new LambdaFunction(fnQuotaSync)],
+    });
+
+    /**
      * Chave do Gemini para a coleta do boletim — §11, item 12.
      *
      * Nasce com um marcador, não com valor: a chave é criada pelo usuário no
