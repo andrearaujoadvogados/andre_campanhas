@@ -22,6 +22,10 @@ interface Estado {
   sfnChamadas: { stateMachineArn?: string; name?: string; input?: string }[];
   /** Mensagem de erro para o SFN lançar — simula o orquestrador indisponível. */
   sfnFalha: string | null;
+  /** O que a IA responde a cada prompt — o roteiro de cada cenário. */
+  ia: (prompt: string) => string;
+  /** Os prompts que a IA recebeu, na ordem. */
+  prompts: string[];
 }
 
 const estado = vi.hoisted((): Estado => ({
@@ -34,6 +38,8 @@ const estado = vi.hoisted((): Estado => ({
   campanhasSalvas: [],
   sfnChamadas: [],
   sfnFalha: null,
+  ia: () => '[]',
+  prompts: [],
 }));
 
 vi.mock('@emailmkt/adapters-aws', async (importOriginal) => {
@@ -119,6 +125,15 @@ vi.mock('@aws-sdk/client-sfn', () => ({
 
 import { handler } from '../src/handler.js';
 
+const NOTICIAS_PADRAO = JSON.stringify([
+  {
+    titulo: 'STJ define tese sobre créditos de PIS/Cofins',
+    resumo: 'A decisão afeta empresas do regime não cumulativo.',
+    url: 'https://fonte.exemplo/materia',
+    tag: 'STJ',
+  },
+]);
+
 const AGORA = new Date('2026-08-21T11:00:00Z');
 
 function fonteFalsa(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -194,25 +209,22 @@ beforeEach(() => {
   estado.campanhasSalvas = [];
   estado.sfnChamadas = [];
   estado.sfnFalha = null;
+  estado.ia = () => NOTICIAS_PADRAO;
+  estado.prompts = [];
 
   vi.stubEnv('TABELA_PRINCIPAL', 'tabela-teste');
   vi.stubEnv('SEGREDO_GEMINI_ARN', 'arn:aws:secretsmanager:teste');
   vi.stubEnv('ORQUESTRADOR_ARN', 'arn:aws:states:sa-east-1:000000000000:stateMachine/disparo');
 
   // A rede inteira do worker: a página da fonte e a resposta da IA.
-  vi.stubGlobal('fetch', async (url: unknown) => {
+  vi.stubGlobal('fetch', async (url: unknown, init?: { body?: unknown }) => {
     const u = String(url);
     if (u.includes('generativelanguage.googleapis.com')) {
-      const noticias = JSON.stringify([
-        {
-          titulo: 'STJ define tese sobre créditos de PIS/Cofins',
-          resumo: 'A decisão afeta empresas do regime não cumulativo.',
-          url: 'https://fonte.exemplo/materia',
-          tag: 'STJ',
-        },
-      ]);
+      const corpo = JSON.parse(String(init?.body)) as { contents: { parts: { text: string }[] }[] };
+      const prompt = corpo.contents[0]?.parts[0]?.text ?? '';
+      estado.prompts.push(prompt);
       return new Response(
-        JSON.stringify({ candidates: [{ content: { parts: [{ text: noticias }] } }] }),
+        JSON.stringify({ candidates: [{ content: { parts: [{ text: estado.ia(prompt) }] } }] }),
         { status: 200 },
       );
     }
@@ -336,5 +348,93 @@ describe('rotina de envio automático — do gatilho ao orquestrador', () => {
     expect(estado.campanhasSalvas).toHaveLength(0);
     expect(estado.sfnChamadas).toHaveLength(0);
     expect(execucaoFinal().origem).toBe('MANUAL');
+  });
+});
+
+describe('edição de retrospectiva — o boletim sai de qualquer modo', () => {
+  it('sem novidade nas fontes, a rotina envia uma retrospectiva e avisa o leitor', async () => {
+    estado.ia = (prompt) =>
+      prompt.includes('Não há novidades')
+        ? JSON.stringify([
+            {
+              titulo: 'Tese mais lida do STJ',
+              resumo: 'Resumo.',
+              url: 'https://fonte.exemplo/mais-lida',
+              tag: 'STJ',
+            },
+          ])
+        : '[]';
+
+    const resultado = await handler({ origem: 'rotina', rotinaId: 'r-1' });
+
+    expect(resultado.gerado).toBe(true);
+    expect(resultado.edicao).toBe('RETROSPECTIVA');
+    // Duas passadas na única fonte: novidades e, depois, retrospectiva.
+    expect(estado.prompts).toHaveLength(2);
+    expect(estado.prompts[1]).toContain('mais lidas');
+
+    // A campanha sai, e o e-mail avisa o leitor antes das notícias.
+    expect(estado.campanhasSalvas).toHaveLength(1);
+    expect(estado.sfnChamadas).toHaveLength(1);
+    const corpoHtml = String(estado.templatesSalvos[0]?.versao['corpoHtml']);
+    expect(corpoHtml).toContain('Sem novidades neste período');
+    expect(corpoHtml.indexOf('Sem novidades')).toBeLessThan(
+      corpoHtml.indexOf('Tese mais lida do STJ'),
+    );
+    expect(String(estado.templatesSalvos[0]?.versao['assunto'])).toContain('retrospectiva');
+
+    const execucao = execucaoFinal();
+    expect(execucao.situacao).toBe('CONCLUIDA');
+    expect(execucao.edicao).toBe('RETROSPECTIVA');
+    expect(execucao.templateNome).toContain('retrospectiva');
+    expect(execucao.noticias).toHaveLength(1);
+  });
+
+  it('com a IA sem nada, o acervo das edições anteriores sustenta a edição', async () => {
+    estado.ia = () => '[]';
+    estado.execucoes.set('e-antiga', {
+      tenantId: 'andrearaujo',
+      execucaoId: 'e-antiga',
+      situacao: 'CONCLUIDA',
+      etapa: 'FINALIZADA',
+      origem: 'ROTINA',
+      iniciadaEm: new Date('2026-08-27T11:00:00Z'),
+      atualizadaEm: new Date('2026-08-27T11:02:00Z'),
+      concluidaEm: new Date('2026-08-27T11:02:00Z'),
+      fontesTotal: 1,
+      fontesConcluidas: 1,
+      totalNoticias: 1,
+      avisos: [],
+      edicao: 'NOVIDADES',
+      noticias: [
+        {
+          titulo: 'Matéria da edição passada',
+          resumo: 'Resumo.',
+          url: 'https://fonte.exemplo/passada',
+          tag: 'STJ',
+        },
+      ],
+    } as unknown as ExecucaoBoletim);
+
+    const resultado = await handler({ origem: 'rotina', rotinaId: 'r-1' });
+
+    expect(resultado.gerado).toBe(true);
+    expect(resultado.edicao).toBe('RETROSPECTIVA');
+    expect(estado.campanhasSalvas).toHaveLength(1);
+    const corpoHtml = String(estado.templatesSalvos[0]?.versao['corpoHtml']);
+    expect(corpoHtml).toContain('Matéria da edição passada');
+    expect(corpoHtml).toContain('edições anteriores');
+  });
+
+  it('sem nada em lugar nenhum, continua SEM_NOTICIAS — e nada é enviado', async () => {
+    estado.ia = () => '[]';
+
+    const resultado = await handler({ origem: 'rotina', rotinaId: 'r-1' });
+
+    expect(resultado.gerado).toBe(false);
+    expect(estado.prompts).toHaveLength(2);
+    expect(estado.templatesSalvos).toHaveLength(0);
+    expect(estado.campanhasSalvas).toHaveLength(0);
+    expect(execucaoFinal().situacao).toBe('SEM_NOTICIAS');
   });
 });

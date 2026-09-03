@@ -496,8 +496,13 @@ export interface RotinaBoletimScheduler {
 }
 
 /** Busca uma página e devolve o TEXTO dela — sem tags, sem script, já podado. */
+export interface OpcoesBuscaDePagina {
+  /** Traz também as laterais da página ("mais lidas", destaques) — a retrospectiva precisa delas. */
+  readonly completo?: boolean;
+}
+
 export interface BuscadorDePagina {
-  buscarTexto(url: string): Promise<string>;
+  buscarTexto(url: string, opcoes?: OpcoesBuscaDePagina): Promise<string>;
 }
 
 /**

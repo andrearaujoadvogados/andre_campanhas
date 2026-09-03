@@ -44,6 +44,12 @@ export interface TextBlock {
     color: string; // vazio = herda da configuração global
     align: 'left' | 'center' | 'right';
     padding: string;
+    /**
+     * Entrelinha, como múltiplo do tamanho da fonte. Ausente = 1.6, o padrão
+     * confortável de parágrafo; títulos de duas linhas pedem menos (1.25–1.3),
+     * senão sobra ar entre as linhas e o título parece dois.
+     */
+    lineHeight?: number;
   };
 }
 
@@ -97,6 +103,12 @@ export interface DividerBlock {
     borderColor: string;
     borderWidth: number;
     padding: string;
+    /**
+     * Largura do traço (ex.: "96px"), centralizado. Ausente = a coluna inteira.
+     * É o jeito seguro de fazer um traço curto: padding lateral grande quebra
+     * no celular, onde a coluna tem menos largura do que o recuo pedido.
+     */
+    width?: string;
   };
 }
 

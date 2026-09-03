@@ -191,7 +191,18 @@ function paraTexto(html: string): string {
  * com feed infinito renderizado no servidor) e contra o custo da chamada de
  * IA. 30 mil caracteres cobrem qualquer página de notícias razoável.
  */
-export function paginaParaTexto(html: string, limite = 30_000): string {
+export function paginaParaTexto(
+  html: string,
+  limite = 30_000,
+  opcoes: {
+    /**
+     * Mantém as laterais (`aside`). Na coleta de novidades elas só atrapalham;
+     * na retrospectiva são o que interessa: é onde os sites põem "mais lidas".
+     */
+    readonly completo?: boolean;
+  } = {},
+): string {
+  const laterais = opcoes.completo === true ? [] : [{ selector: 'aside', format: 'skip' }];
   const texto = convert(html, {
     wordwrap: false,
     selectors: [
@@ -200,7 +211,7 @@ export function paginaParaTexto(html: string, limite = 30_000): string {
       { selector: 'style', format: 'skip' },
       { selector: 'nav', format: 'skip' },
       { selector: 'footer', format: 'skip' },
-      { selector: 'aside', format: 'skip' },
+      ...laterais,
       // O href fica: é dele que o extrator tira o link da matéria.
       { selector: 'a', options: { hideLinkHrefIfSameAsText: true } },
     ],

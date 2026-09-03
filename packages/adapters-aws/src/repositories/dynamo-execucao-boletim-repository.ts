@@ -12,8 +12,10 @@ import {
   userId as novoUserId,
   type ExecucaoBoletim,
   type ExecucaoBoletimId,
+  type EdicaoBoletim,
   type ExecucaoBoletimRepository,
   type EtapaExecucaoBoletim,
+  type NoticiaColetada,
   type OrigemExecucaoBoletim,
   type SituacaoExecucaoBoletim,
   type TenantId,
@@ -87,6 +89,18 @@ export class DynamoExecucaoBoletimRepository implements ExecucaoBoletimRepositor
           ...opcional('solicitadaPor', execucao.solicitadaPor as string | undefined),
           ...opcional('envioCampaignId', execucao.envioCampaignId as string | undefined),
           ...opcional('envioErro', execucao.envioErro),
+          ...opcional('edicao', execucao.edicao),
+          // Lista de mapas: o acervo da retrospectiva. Só o que entrou na edição.
+          ...(execucao.noticias === undefined || execucao.noticias.length === 0
+            ? {}
+            : {
+                noticias: execucao.noticias.map((n) => ({
+                  titulo: n.titulo,
+                  resumo: n.resumo,
+                  url: n.url,
+                  tag: n.tag,
+                })),
+              }),
           gsi3pk: gsi3.pk,
           gsi3sk: gsi3.sk,
           /**
@@ -115,6 +129,10 @@ function paraExecucao(item: Record<string, unknown>): ExecucaoBoletim {
   const solicitadaPor = item['solicitadaPor'];
   const envioCampaignId = item['envioCampaignId'];
   const envioErro = item['envioErro'];
+  const edicao = item['edicao'];
+  const noticias = Array.isArray(item['noticias'])
+    ? item['noticias'].map(paraNoticia).filter((n): n is NoticiaColetada => n !== null)
+    : [];
 
   return {
     tenantId: novoTenantId(String(item['tenantId'])),
@@ -138,5 +156,20 @@ function paraExecucao(item: Record<string, unknown>): ExecucaoBoletim {
       : { envioCampaignId: novoCampaignId(String(envioCampaignId)) }),
     ...(envioErro === undefined ? {} : { envioErro: String(envioErro) }),
     ...(solicitadaPor === undefined ? {} : { solicitadaPor: novoUserId(String(solicitadaPor)) }),
+    ...(edicao === undefined ? {} : { edicao: String(edicao) as EdicaoBoletim }),
+    ...(noticias.length === 0 ? {} : { noticias }),
+  };
+}
+
+/** Item malformado não derruba a leitura da execução: vira notícia descartada. */
+function paraNoticia(valor: unknown): NoticiaColetada | null {
+  if (typeof valor !== 'object' || valor === null) return null;
+  const o = valor as Record<string, unknown>;
+  if (typeof o['titulo'] !== 'string' || typeof o['resumo'] !== 'string') return null;
+  return {
+    titulo: o['titulo'],
+    resumo: o['resumo'],
+    url: typeof o['url'] === 'string' ? o['url'] : '',
+    tag: typeof o['tag'] === 'string' ? o['tag'] : '',
   };
 }

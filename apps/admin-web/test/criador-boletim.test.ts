@@ -8,7 +8,13 @@ import {
   criarLinhaPrazos,
 } from '@emailmkt/criador';
 import { compileDesignToMjml, isValidDesign } from '@emailmkt/criador';
-import { createFooterModuleRow, createHeaderModuleRow, DEFAULT_SETTINGS } from '@emailmkt/criador';
+import {
+  createFooterModuleRow,
+  createHeaderModuleRow,
+  DEFAULT_SETTINGS,
+  LOGO_EMAIL,
+  createDefaultDesign,
+} from '@emailmkt/criador';
 import type { EmailDesign } from '@emailmkt/criador';
 
 describe('template do boletim de notícias', () => {
@@ -138,7 +144,7 @@ describe('boletim montado da coleta — conteúdo não confiável', () => {
 
     // O link "Leia mais" existe e aponta para a URL da matéria (o & escapado
     // em atributo é HTML correto).
-    expect(html).toContain('Leia mais');
+    expect(html).toContain('Ler a matéria completa');
     expect(html).toContain('https://site.com.br/materia?a=1&amp;b=2');
   });
 
@@ -155,6 +161,90 @@ describe('boletim montado da coleta — conteúdo não confiável', () => {
     const mjml = compileDesignToMjml(design);
     expect(mjml).toContain('<mjml>');
     expect(mjml).toContain('STJ');
-    expect(mjml).toContain('Leia mais');
+    expect(mjml).toContain('Ler a matéria completa');
+  });
+});
+
+describe('logo do escritório no topo de todo e-mail', () => {
+  it('o cabeçalho é uma imagem hospedada no painel, com texto alternativo e link para o site', () => {
+    const header = createHeaderModuleRow();
+    const primeiro = header.columns[0]?.blocks[0];
+
+    expect(primeiro?.type).toBe('image');
+    if (primeiro?.type === 'image') {
+      expect(primeiro.src).toBe(LOGO_EMAIL.src);
+      expect(primeiro.src).toMatch(/^https:\/\/campanhas\.andrearaujoadvogados\.com\.br\/marca\//);
+      expect(primeiro.alt).toBe('André Araújo Advogados');
+      expect(primeiro.href).toBe('https://andrearaujoadvogados.com.br');
+    }
+  });
+
+  it('e-mail novo e boletim compilam com o logo no topo', () => {
+    for (const design of [createDefaultDesign(), createBoletimDesign()]) {
+      // Só o corpo interessa: o cabeçalho do MJML também tem um <mj-text> (o
+      // padrão de tipografia), e ele não é conteúdo.
+      const corpo = compileDesignToMjml(design).slice(
+        compileDesignToMjml(design).indexOf('<mj-body'),
+      );
+      const posicaoLogo = corpo.indexOf(LOGO_EMAIL.src);
+      expect(posicaoLogo).toBeGreaterThan(-1);
+      // Antes de qualquer texto do corpo — o logo é a primeira coisa do e-mail.
+      expect(posicaoLogo).toBeLessThan(corpo.indexOf('<mj-text'));
+    }
+  });
+});
+
+describe('edição de retrospectiva no e-mail', () => {
+  it('avisa o leitor numa caixa antes das notícias, e diz de onde vieram', async () => {
+    const { criarBoletimColetado } = await import('@emailmkt/criador');
+    const design = criarBoletimColetado({
+      chapeu: 'Boletim Tributário',
+      titulo: 'As leituras mais relevantes',
+      periodo: '27/08 a 03/09',
+      introducao: '',
+      edicao: 'RETROSPECTIVA',
+      noticias: [{ titulo: 'Tese mais lida', resumo: 'R.', url: 'https://x.com.br/m', tag: 'STJ' }],
+      fontes: ['Migalhas', 'Conjur'],
+    });
+
+    const mjml = compileDesignToMjml(design);
+    const aviso = mjml.indexOf('Sem novidades neste período');
+    expect(aviso).toBeGreaterThan(-1);
+    expect(aviso).toBeLessThan(mjml.indexOf('Tese mais lida'));
+    expect(mjml).toContain('selecionadas de Migalhas e Conjur');
+    expect(mjml).toContain('BOLETIM TRIBUTÁRIO');
+  });
+
+  it('a edição de novidades não carrega o aviso', async () => {
+    const { criarBoletimColetado } = await import('@emailmkt/criador');
+    const design = criarBoletimColetado({
+      titulo: 'Destaques',
+      periodo: 'p',
+      introducao: '',
+      noticias: [{ titulo: 'T', resumo: 'R.', url: 'https://x.com.br/m', tag: 'STJ' }],
+      fontes: ['Migalhas'],
+    });
+
+    expect(compileDesignToMjml(design)).not.toContain('Sem novidades neste período');
+  });
+});
+
+describe('conforto de leitura', () => {
+  it('títulos têm entrelinha própria, e o traço curto sai com largura em vez de recuo', () => {
+    const mjml = compileDesignToMjml(createBoletimDesign());
+
+    // Título da abertura e das notícias: entrelinha apertada, serifada inline.
+    expect(mjml).toContain('line-height="1.25"');
+    expect(mjml).toContain('line-height="1.3"');
+    expect(mjml).toContain('font-family:Fraunces');
+    // Corpo a 16px com entrelinha folgada.
+    expect(mjml).toContain('font-size="16px"');
+    expect(mjml).toContain('line-height="1.65"');
+    // Traço curto dourado: largura fixa centralizada, que não quebra no celular.
+    expect(mjml).toContain('width="96px" align="center"');
+    // Sem web font: título invisível enquanto a fonte remota não chega é pior
+    // do que Georgia. A serifada é inline, com a de sistema logo atrás.
+    expect(mjml).not.toContain('<mj-font');
+    expect(mjml).toContain("font-family:Fraunces, Georgia, 'Times New Roman', serif");
   });
 });

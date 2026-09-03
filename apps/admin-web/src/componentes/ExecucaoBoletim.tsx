@@ -33,6 +33,8 @@ export interface ExecucaoBoletim {
   totalNoticias: number;
   templateId: string | null;
   templateNome: string | null;
+  /** Retrospectiva = as fontes não trouxeram novidade e o boletim saiu mesmo assim. */
+  edicao?: 'NOVIDADES' | 'RETROSPECTIVA';
   avisos: string[];
   erro: string | null;
   /** Campanha disparada pela rotina de envio automático, quando houve. */
@@ -240,6 +242,18 @@ export function PainelExecucaoBoletim({
 
       {execucao.situacao === 'CONCLUIDA' && (
         <div className="mt-3 space-y-3">
+          {/**
+           * A retrospectiva precisa de explicação própria: o operador vê
+           * "concluída" ao lado de avisos de "nada encontrado" e precisa
+           * entender que os dois são verdade — e que o leitor foi avisado.
+           */}
+          {execucao.edicao === 'RETROSPECTIVA' && (
+            <p className="rounded-md border border-gold/30 bg-accent-mist p-3 text-sm text-ink">
+              As fontes não trouxeram novidade neste período. Saiu uma{' '}
+              <span className="font-medium">edição de retrospectiva</span>, com as leituras mais
+              relevantes sobre os temas — e o leitor é avisado disso no próprio e-mail.
+            </p>
+          )}
           <p className="text-sm text-ink">
             {execucao.totalNoticias} notícia(s) de {execucao.fontesTotal} fonte(s) viraram o modelo{' '}
             <span className="font-medium">{execucao.templateNome}</span>.

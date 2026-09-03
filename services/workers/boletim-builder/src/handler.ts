@@ -25,16 +25,21 @@ import {
   userId as novoUserId,
   registrarDisparo,
   registrarEnvioAutomatico,
+  selecionarDoAcervo,
   type BuscadorDePagina,
   type Campaign,
+  type EdicaoBoletim,
+  type EscolhaColeta,
   type ExecucaoBoletim,
   type ExecucaoBoletimRepository,
+  type OpcoesBuscaDePagina,
+  type ProgressoColeta,
   type ResultadoColeta,
   type RotinaBoletim,
   type Template,
 } from '@emailmkt/core';
 import { DynamoListRepository, DynamoTipoEmailRepository } from '@emailmkt/adapters-aws';
-import { compileDesignToMjml, criarBoletimColetado } from '@emailmkt/criador';
+import { compileDesignToMjml, criarBoletimColetado, type NoticiaDaColeta } from '@emailmkt/criador';
 import { paginaParaTexto } from '@emailmkt/email-render';
 import mjml2html from 'mjml';
 
@@ -81,7 +86,7 @@ const CHAVE_PENDENTE = 'configure-me';
  * tempo da Lambda inteira.
  */
 const buscador: BuscadorDePagina = {
-  async buscarTexto(url: string): Promise<string> {
+  async buscarTexto(url: string, opcoes: OpcoesBuscaDePagina = {}): Promise<string> {
     const r = await fetch(url, {
       redirect: 'follow',
       signal: AbortSignal.timeout(20_000),
@@ -91,7 +96,7 @@ const buscador: BuscadorDePagina = {
       },
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return paginaParaTexto(await r.text());
+    return paginaParaTexto(await r.text(), 30_000, opcoes);
   },
 };
 
@@ -116,6 +121,8 @@ export interface ResultadoBoletim {
   readonly templateNome?: string;
   readonly totalNoticias: number;
   readonly avisos: readonly string[];
+  /** Novidades ou retrospectiva — só quando houve modelo. */
+  readonly edicao?: EdicaoBoletim;
 }
 
 export const handler = async (
@@ -244,29 +251,31 @@ export const handler = async (
 
     await relatar({ etapa: 'LENDO_FONTES' });
 
-    const coleta = await coletarNoticias(
-      {
-        fontes,
-        paginas: buscador,
-        extrator,
-        prazoMs: prazo,
-        // Um batimento por fonte. É o que sustenta a barra de progresso da tela
-        // e o que distingue "demorando" de "morreu" (LIMITE_SEM_SINAL_MS).
-        aoProgredir: async (p) => {
-          await relatar({
-            etapa: 'LENDO_FONTES',
-            fontesTotal: p.totalFontes,
-            fontesConcluidas: p.fontesConcluidas,
-            fonteAtual: p.fonteAtual,
-            totalNoticias: p.noticiasAteAgora,
-          });
-        },
+    const escolha: EscolhaColeta =
+      rotina === null ? {} : { fonteIds: rotina.fonteIds.map(String), temas: rotina.temas };
+
+    // Um batimento por fonte. É o que sustenta a barra de progresso da tela e
+    // o que distingue "demorando" de "morreu" (LIMITE_SEM_SINAL_MS). O rótulo
+    // diz à tela em qual passada a fonte está sendo lida.
+    const depsColeta = (rotulo: string) => ({
+      fontes,
+      paginas: buscador,
+      extrator,
+      prazoMs: prazo,
+      aoProgredir: async (p: ProgressoColeta) => {
+        await relatar({
+          etapa: 'LENDO_FONTES',
+          fontesTotal: p.totalFontes,
+          fontesConcluidas: p.fontesConcluidas,
+          fonteAtual: rotulo === '' ? p.fonteAtual : `${p.fonteAtual} (${rotulo})`,
+          totalNoticias: p.noticiasAteAgora,
+        });
       },
-      TENANT_PADRAO,
-      // O recorte da rotina: fontes escolhidas e temas que orientam a IA. A
-      // geração avulsa e a agendada seguem como sempre — todas as ativas.
-      rotina === null ? {} : { fonteIds: rotina.fonteIds.map(String), temas: rotina.temas },
-    );
+    });
+
+    // O recorte da rotina: fontes escolhidas e temas que orientam a IA. A
+    // geração avulsa segue como sempre — todas as ativas.
+    const coleta = await coletarNoticias(depsColeta(''), TENANT_PADRAO, escolha);
 
     for (const aviso of coleta.avisos) log.info('aviso da coleta', { aviso });
     log.info('coleta terminou', {
@@ -276,45 +285,88 @@ export const handler = async (
       fontesSemNoticia: coleta.fontesSemNoticia,
     });
 
+    let conteudo = conteudoDaColeta(coleta);
+    let edicao: EdicaoBoletim = 'NOVIDADES';
+    let avisos: readonly string[] = coleta.avisos;
+
     /**
-     * Nenhuma notícia por FALHA TÉCNICA não é "nada encontrado".
+     * O boletim sai de qualquer modo — decisão do escritório.
      *
-     * SEM_NOTICIAS aparece em âmbar e diz que as fontes não trouxeram nada que
-     * atendesse à instrução — o que manda o operador revisar instrução por
-     * instrução. Quando a coleta inteira caiu porque a IA estava fora do ar (o
-     * caso do 503), não há instrução nenhuma a revisar: o desfecho é falha, e
-     * a tela oferece "gerar de novo", que é a ação que de fato resolve.
+     * Semana sem novidade não pode virar semana sem e-mail: quem assinou
+     * espera o boletim, e silêncio parece descuido. Quando a coleta de
+     * novidades não rende nada, a edição vira RETROSPECTIVA, avisada no
+     * próprio e-mail, com o que há de mais relevante e mais lido — primeiro
+     * pedindo isso à IA sobre as mesmas fontes (com as laterais de "mais
+     * lidas", que a coleta normal ignora); depois, se a IA ou os sites
+     * estiverem fora do ar, recorrendo ao acervo das edições anteriores.
      */
-    if (coleta.totalNoticias === 0 && coleta.fontesSemNoticia === 0 && coleta.fontesComFalha > 0) {
-      return await falhar(
-        `Nenhuma fonte pôde ser lida: ${coleta.avisos.join(' ')} As fontes em si não foram descartadas — ` +
-          'quando a causa é indisponibilidade temporária (da IA ou dos sites), gerar de novo em alguns minutos costuma resolver.',
-      );
+    if (conteudo.noticias.length === 0 && coleta.fontesSemNoticia > 0) {
+      const segunda = await coletarNoticias(depsColeta('retrospectiva'), TENANT_PADRAO, {
+        ...escolha,
+        modo: 'RETROSPECTIVA',
+      });
+      for (const aviso of segunda.avisos) log.info('aviso da retrospectiva', { aviso });
+      if (segunda.totalNoticias > 0) {
+        conteudo = conteudoDaColeta(segunda);
+        edicao = 'RETROSPECTIVA';
+      } else {
+        avisos = [...avisos, ...segunda.avisos.map((a) => `Retrospectiva — ${a}`)];
+      }
     }
 
-    if (coleta.totalNoticias === 0) {
+    if (conteudo.noticias.length === 0) {
+      const acervo = selecionarDoAcervo(await execucoes.listarRecentes(TENANT_PADRAO, 20), {
+        maximo: 6,
+        temas: rotina?.temas ?? [],
+      });
+      if (acervo.length > 0) {
+        conteudo = { noticias: acervo, fontes: ['edições anteriores deste boletim'] };
+        edicao = 'RETROSPECTIVA';
+        log.info('edição montada do acervo', { noticias: acervo.length });
+      }
+    }
+
+    if (conteudo.noticias.length === 0) {
+      /**
+       * Nada em lugar nenhum — os desfechos de sempre.
+       *
+       * Nenhuma notícia por FALHA TÉCNICA não é "nada encontrado": SEM_NOTICIAS
+       * aparece em âmbar e manda revisar as instruções das fontes; quando a
+       * coleta inteira caiu porque a IA ou os sites estavam fora do ar, não há
+       * instrução a revisar — o desfecho é falha, e a tela oferece "gerar de
+       * novo", que é a ação que de fato resolve.
+       */
+      if (coleta.fontesSemNoticia === 0 && coleta.fontesComFalha > 0) {
+        return await falhar(
+          `Nenhuma fonte pôde ser lida: ${coleta.avisos.join(' ')} As fontes em si não foram descartadas — ` +
+            'quando a causa é indisponibilidade temporária (da IA ou dos sites), gerar de novo em alguns minutos costuma resolver.',
+        );
+      }
+
       log.info('nada coletado — nenhum modelo gerado', {
         origem: evento.origem ?? 'agendado',
-        avisos: coleta.avisos.length,
+        avisos: avisos.length,
       });
       await execucoes.salvar(
         encerrarExecucao(
           { ...execucao, fontesConcluidas: execucao.fontesTotal },
-          { situacao: 'SEM_NOTICIAS', avisos: coleta.avisos },
+          { situacao: 'SEM_NOTICIAS', avisos },
           new Date(),
         ),
       );
-      return { gerado: false, totalNoticias: 0, avisos: coleta.avisos };
+      return { gerado: false, totalNoticias: 0, avisos };
     }
 
     await relatar({
       etapa: 'MONTANDO_EMAIL',
       fontesConcluidas: execucao.fontesTotal,
-      totalNoticias: coleta.totalNoticias,
+      totalNoticias: conteudo.noticias.length,
     });
 
     const resultado = await montarModelo({
-      coleta,
+      conteudo,
+      edicao,
+      avisos,
       templates,
       execucoes,
       execucao,
@@ -385,8 +437,30 @@ async function obterExecucao(
   return nova;
 }
 
+interface ConteudoEdicao {
+  readonly noticias: readonly NoticiaDaColeta[];
+  readonly fontes: readonly string[];
+}
+
+/** Das fontes lidas para o conteúdo da edição — sem tag da IA, o chapéu é o nome da fonte. */
+function conteudoDaColeta(coleta: ResultadoColeta): ConteudoEdicao {
+  return {
+    noticias: coleta.porFonte.flatMap((f) =>
+      f.noticias.map((n) => ({
+        titulo: n.titulo,
+        resumo: n.resumo,
+        url: n.url,
+        tag: n.tag === '' ? f.fonte.nome : n.tag,
+      })),
+    ),
+    fontes: coleta.porFonte.map((f) => f.fonte.nome),
+  };
+}
+
 async function montarModelo(ctx: {
-  coleta: ResultadoColeta;
+  conteudo: ConteudoEdicao;
+  edicao: EdicaoBoletim;
+  avisos: readonly string[];
   templates: DynamoTemplateRepository;
   execucoes: ExecucaoBoletimRepository;
   execucao: ExecucaoBoletim;
@@ -395,14 +469,15 @@ async function montarModelo(ctx: {
   doc: ReturnType<typeof dynamoDoc>;
   tabela: string;
 }): Promise<ResultadoBoletim> {
-  const { coleta, templates, execucoes, execucao, rotina } = ctx;
+  const { conteudo, edicao, avisos, templates, execucoes, execucao, rotina } = ctx;
   const agora = new Date();
+  const retrospectiva = edicao === 'RETROSPECTIVA';
 
   /**
    * Nome e categoria vêm da rotina, quando há uma: a categoria é o NOME do
    * tipo de e-mail escolhido — a ligação categoria ↔ tipo é por nome em todo o
-   * sistema, e é ela que faz o modelo aparecer recomendado no assistente. Os
-   * caminhos manual e agendado mantêm os valores históricos.
+   * sistema, e é ela que faz o modelo aparecer recomendado no assistente. O
+   * caminho manual mantém os valores históricos.
    */
   const tipoNome =
     rotina?.tipoEmailId === undefined
@@ -416,19 +491,13 @@ async function montarModelo(ctx: {
   const nomeBase = rotina?.nome ?? 'Boletim automático';
 
   const design = criarBoletimColetado({
-    titulo: rotina?.nome ?? 'Destaques da semana',
-    periodo: `${dataCurta(new Date(agora.getTime() - 7 * 86_400_000))} a ${dataCurta(agora)} · Edição automática`,
+    chapeu: rotina?.nome ?? 'Boletim',
+    titulo: retrospectiva ? 'As leituras mais relevantes' : 'Destaques do período',
+    periodo: periodoDaEdicao(rotina, agora),
     introducao: '',
-    noticias: coleta.porFonte.flatMap((f) =>
-      f.noticias.map((n) => ({
-        titulo: n.titulo,
-        resumo: n.resumo,
-        url: n.url,
-        // Sem tag da IA, o chapéu é o nome da fonte — nunca fica vazio.
-        tag: n.tag === '' ? f.fonte.nome : n.tag,
-      })),
-    ),
-    fontes: coleta.porFonte.map((f) => f.fonte.nome),
+    edicao,
+    noticias: conteudo.noticias,
+    fontes: conteudo.fontes,
   });
 
   /**
@@ -442,7 +511,7 @@ async function montarModelo(ctx: {
   const template: Template = {
     tenantId: TENANT_PADRAO,
     templateId: novoTemplateId(crypto.randomUUID()),
-    nome: `${nomeBase} — ${dataCurta(agora)}`,
+    nome: `${nomeBase} — ${dataCurta(agora)}${retrospectiva ? ' (retrospectiva)' : ''}`,
     tipo: 'VISUAL',
     categoria: tipoNome ?? 'Boletim',
     versaoAtual: 1,
@@ -452,12 +521,17 @@ async function montarModelo(ctx: {
     atualizadoEm: agora,
   };
 
+  // O assunto da retrospectiva diz o que ela é: quem recebe o boletim toda
+  // semana não pode abrir "os destaques da semana" e encontrar matéria antiga.
+  const assunto = retrospectiva
+    ? `${nomeBase} — retrospectiva: as leituras mais relevantes`
+    : rotina === null
+      ? 'Boletim Tributário — os destaques da semana'
+      : `${rotina.nome} — ${dataCurta(agora)}`;
+
   await templates.salvarComVersao(template, {
     versao: 1,
-    assunto:
-      rotina === null
-        ? 'Boletim Tributário — os destaques da semana'
-        : `${rotina.nome} — ${dataCurta(agora)}`,
+    assunto,
     corpoHtml: compilado.html,
     estruturaVisual: JSON.stringify(design),
     criadoPor: novoUserId('boletim-builder'),
@@ -466,6 +540,7 @@ async function montarModelo(ctx: {
 
   // O desfecho é gravado DEPOIS do modelo existir. Marcar "concluída" antes
   // deixaria a tela oferecendo o link de um modelo que a gravação não salvou.
+  // As notícias vão junto: são o acervo das retrospectivas futuras.
   await execucoes.salvar(
     encerrarExecucao(
       execucao,
@@ -473,8 +548,10 @@ async function montarModelo(ctx: {
         situacao: 'CONCLUIDA',
         templateId: template.templateId,
         templateNome: template.nome,
-        totalNoticias: coleta.totalNoticias,
-        avisos: coleta.avisos,
+        totalNoticias: conteudo.noticias.length,
+        avisos,
+        edicao,
+        noticias: conteudo.noticias,
       },
       new Date(),
     ),
@@ -482,9 +559,10 @@ async function montarModelo(ctx: {
 
   log.info('boletim gerado', {
     templateId: String(template.templateId),
-    noticias: coleta.totalNoticias,
-    fontes: coleta.porFonte.length,
-    avisos: coleta.avisos.length,
+    noticias: conteudo.noticias.length,
+    fontes: conteudo.fontes.length,
+    edicao,
+    avisos: avisos.length,
     origem: ctx.origem ?? 'agendado',
     execucaoId: String(execucao.execucaoId),
   });
@@ -493,9 +571,24 @@ async function montarModelo(ctx: {
     gerado: true,
     templateId: String(template.templateId),
     templateNome: template.nome,
-    totalNoticias: coleta.totalNoticias,
-    avisos: coleta.avisos,
+    totalNoticias: conteudo.noticias.length,
+    avisos,
+    edicao,
   };
+}
+
+/** "27/08/2026 a 03/09/2026 · Edição semanal" — o recorte que a rotina cobre. */
+function periodoDaEdicao(rotina: RotinaBoletim | null, agora: Date): string {
+  const periodicidade = rotina?.periodicidade;
+  if (periodicidade === 'DIARIA') return `${dataCurta(agora)} · Edição diária`;
+  const dias = periodicidade === 'MENSAL' ? 30 : 7;
+  const rotulo =
+    periodicidade === 'MENSAL'
+      ? 'Edição mensal'
+      : periodicidade === 'SEMANAL'
+        ? 'Edição semanal'
+        : 'Edição automática';
+  return `${dataCurta(new Date(agora.getTime() - dias * 86_400_000))} a ${dataCurta(agora)} · ${rotulo}`;
 }
 
 /** Identidade do envio automático nos registros — não há pessoa apertando botão. */

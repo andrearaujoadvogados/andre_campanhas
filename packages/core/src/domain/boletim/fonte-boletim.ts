@@ -73,6 +73,16 @@ export interface NoticiaColetada {
 export const MAXIMO_NOTICIAS_POR_FONTE = 5;
 
 /**
+ * O que a coleta procura.
+ *
+ * NOVIDADES é o pedido de sempre: o que saiu no período. RETROSPECTIVA é a
+ * segunda passada, quando nada novo apareceu: as matérias mais relevantes e
+ * mais lidas sobre os temas, recentes ou não — para o boletim sair de
+ * qualquer modo, avisando o leitor.
+ */
+export type ModoColeta = 'NOVIDADES' | 'RETROSPECTIVA';
+
+/**
  * O prompt de extração, montado aqui e não no adaptador.
  *
  * A separação importa por dois motivos. Primeiro, o prompt É regra de negócio:
@@ -88,12 +98,18 @@ export function montarPromptDeExtracao(fonte: {
   readonly textoDaPagina: string;
   /** Temas da rotina — orientação do editor, com a mesma autoridade da instrução. */
   readonly temas?: readonly string[];
+  readonly modo?: ModoColeta;
 }): string {
   return [
     'Você extrai notícias de páginas para o boletim informativo de um escritório de advocacia brasileiro.',
     '',
     `Fonte: ${fonte.nome} (${fonte.url})`,
     `O que coletar, nas palavras do editor: ${fonte.instrucao}`,
+    ...(fonte.modo === 'RETROSPECTIVA'
+      ? [
+          'Não há novidades neste período. Selecione as matérias MAIS RELEVANTES e MAIS LIDAS disponíveis na página sobre o que o editor pede — inclusive as que a página apresenta como "mais lidas", "mais acessadas" ou "destaques" —, mesmo que não sejam recentes. Prefira o que mais interessa aos clientes do escritório.',
+        ]
+      : []),
     ...(fonte.temas === undefined || fonte.temas.length === 0
       ? []
       : [

@@ -1,4 +1,15 @@
 import type { CampaignId, ExecucaoBoletimId, TemplateId, TenantId, UserId } from '../shared/ids.js';
+import type { NoticiaColetada } from './fonte-boletim.js';
+
+/**
+ * Que edição a execução produziu.
+ *
+ * RETROSPECTIVA é a edição que sai quando as fontes não trouxeram novidade: o
+ * boletim vai de qualquer modo, avisa o leitor e leva o mais relevante — vindo
+ * de uma segunda passada da IA sobre as fontes ou, se nem isso houver, do
+ * acervo das edições anteriores.
+ */
+export type EdicaoBoletim = 'NOVIDADES' | 'RETROSPECTIVA';
 
 /**
  * Execução do boletim automático — o registro que torna a geração visível.
@@ -59,6 +70,13 @@ export interface ExecucaoBoletim {
   /** Modelo gerado, quando houve. */
   readonly templateId?: TemplateId;
   readonly templateNome?: string;
+  /** Novidades ou retrospectiva. Ausente nos registros antigos = novidades. */
+  readonly edicao?: EdicaoBoletim;
+  /**
+   * As notícias que entraram na edição — o acervo de que a retrospectiva se
+   * serve quando as fontes e a IA não rendem nada. Só nas concluídas.
+   */
+  readonly noticias?: readonly NoticiaColetada[];
   /** Um aviso por fonte que não rendeu — a coleta não para por causa de uma. */
   readonly avisos: readonly string[];
   /** Mensagem da falha, quando `situacao` é FALHOU. */
@@ -168,6 +186,8 @@ export function encerrarExecucao(
         readonly templateNome: string;
         readonly totalNoticias: number;
         readonly avisos: readonly string[];
+        readonly edicao?: EdicaoBoletim;
+        readonly noticias?: readonly NoticiaColetada[];
       }
     | { readonly situacao: 'SEM_NOTICIAS'; readonly avisos: readonly string[] }
     | { readonly situacao: 'FALHOU'; readonly erro: string },
@@ -192,6 +212,10 @@ export function encerrarExecucao(
       templateNome: desfecho.templateNome,
       totalNoticias: desfecho.totalNoticias,
       avisos: desfecho.avisos,
+      ...(desfecho.edicao === undefined ? {} : { edicao: desfecho.edicao }),
+      ...(desfecho.noticias === undefined || desfecho.noticias.length === 0
+        ? {}
+        : { noticias: desfecho.noticias }),
     };
   }
 

@@ -46,7 +46,8 @@ function compileBlock(block: Block, design: EmailDesign): string {
   switch (block.type) {
     case 'text': {
       const color = block.attrs.color !== '' ? block.attrs.color : design.settings.textColor;
-      return `<mj-text font-size="${String(block.attrs.fontSize)}px" color="${escAttr(color)}" align="${block.attrs.align}" line-height="1.6" padding="${escAttr(block.attrs.padding)}">${block.html}</mj-text>`;
+      const lineHeight = block.attrs.lineHeight ?? 1.6;
+      return `<mj-text font-size="${String(block.attrs.fontSize)}px" color="${escAttr(color)}" align="${block.attrs.align}" line-height="${String(lineHeight)}" padding="${escAttr(block.attrs.padding)}">${block.html}</mj-text>`;
     }
     case 'image': {
       const width =
@@ -64,8 +65,13 @@ function compileBlock(block: Block, design: EmailDesign): string {
       return `<mj-button href="${escAttr(block.href)}" background-color="${escAttr(block.attrs.backgroundColor)}" color="${escAttr(block.attrs.color)}" font-size="${String(block.attrs.fontSize)}px" font-weight="700" border-radius="${String(block.attrs.borderRadius)}px" inner-padding="12px 32px" align="${block.attrs.align}" padding="${escAttr(block.attrs.padding)}">${block.text}</mj-button>`;
     case 'spacer':
       return `<mj-spacer height="${String(block.attrs.height)}px" />`;
-    case 'divider':
-      return `<mj-divider border-color="${escAttr(block.attrs.borderColor)}" border-width="${String(block.attrs.borderWidth)}px" padding="${escAttr(block.attrs.padding)}" />`;
+    case 'divider': {
+      const width =
+        block.attrs.width !== undefined && block.attrs.width !== ''
+          ? ` width="${escAttr(block.attrs.width)}" align="center"`
+          : '';
+      return `<mj-divider border-color="${escAttr(block.attrs.borderColor)}" border-width="${String(block.attrs.borderWidth)}px"${width} padding="${escAttr(block.attrs.padding)}" />`;
+    }
     case 'social': {
       const elements = block.items
         .map(

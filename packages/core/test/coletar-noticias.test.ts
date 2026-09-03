@@ -3,6 +3,8 @@ import {
   TENANT_PADRAO,
   analisarNoticias,
   coletarNoticias,
+  execucaoBoletimId as novoExecucaoId,
+  selecionarDoAcervo,
   decidirPelaFalhaDeRedeDoExtrator,
   decidirPelaRespostaDoExtrator,
   fonteId as novoFonteId,
@@ -10,7 +12,9 @@ import {
   userId as novoUserId,
   validarUrlDeFonte,
   type DepsColeta,
+  type ExecucaoBoletim,
   type FonteBoletim,
+  type NoticiaColetada,
 } from '../src/index.js';
 
 function fonte(extra: Partial<FonteBoletim> = {}): FonteBoletim {
@@ -370,5 +374,149 @@ describe('quando a chamada à IA nem tem status', () => {
     const d = decidirPelaFalhaDeRedeDoExtrator(new Error('fetch failed'), 'm');
     expect(d.acao).toBe('TENTAR_DE_NOVO');
     expect(d.acao === 'TENTAR_DE_NOVO' && d.motivo).toContain('fetch failed');
+  });
+});
+
+describe('modo retrospectiva — o boletim sai de qualquer modo', () => {
+  const base = { nome: 'F', url: 'https://x.com.br', instrucao: 'colete', textoDaPagina: 't' };
+
+  it('o prompt pede o mais relevante e mais lido, recente ou não — só nesse modo', () => {
+    const retro = montarPromptDeExtracao({ ...base, modo: 'RETROSPECTIVA' });
+    expect(retro).toContain('Não há novidades neste período');
+    expect(retro).toContain('mais lidas');
+    expect(montarPromptDeExtracao(base)).not.toContain('Não há novidades');
+    expect(montarPromptDeExtracao({ ...base, modo: 'NOVIDADES' })).not.toContain(
+      'Não há novidades',
+    );
+  });
+
+  it('em retrospectiva a página vem inteira (com as "mais lidas") e o modo chega ao prompt', async () => {
+    const opcoes: unknown[] = [];
+    const prompts: string[] = [];
+    const r = await coletarNoticias(
+      montar({
+        paginas: {
+          buscarTexto: async (_url, o) => {
+            opcoes.push(o);
+            return 'texto';
+          },
+        },
+        extrator: {
+          completar: async (p) => {
+            prompts.push(p);
+            return RESPOSTA_VALIDA;
+          },
+        },
+      }),
+      TENANT_PADRAO,
+      { modo: 'RETROSPECTIVA' },
+    );
+
+    expect(r.totalNoticias).toBe(1);
+    expect(opcoes[0]).toEqual({ completo: true });
+    expect(prompts[0]).toContain('Não há novidades');
+  });
+
+  it('sem modo, a coleta é a de sempre: página sem laterais', async () => {
+    const opcoes: unknown[] = [];
+    await coletarNoticias(
+      montar({
+        paginas: {
+          buscarTexto: async (_url, o) => {
+            opcoes.push(o);
+            return 'texto';
+          },
+        },
+      }),
+      TENANT_PADRAO,
+    );
+
+    expect(opcoes[0]).toEqual({ completo: false });
+  });
+});
+
+describe('acervo das edições anteriores', () => {
+  const noticia = (titulo: string, extra: Partial<NoticiaColetada> = {}): NoticiaColetada => ({
+    titulo,
+    resumo: 'Resumo.',
+    url: `https://f.br/${titulo.toLowerCase().replaceAll(' ', '-')}`,
+    tag: 'STJ',
+    ...extra,
+  });
+
+  const execucao = (over: Partial<ExecucaoBoletim>): ExecucaoBoletim => ({
+    tenantId: TENANT_PADRAO,
+    execucaoId: novoExecucaoId('e'),
+    situacao: 'CONCLUIDA',
+    etapa: 'FINALIZADA',
+    origem: 'ROTINA',
+    iniciadaEm: new Date('2026-08-20T11:00:00Z'),
+    atualizadaEm: new Date('2026-08-20T11:02:00Z'),
+    fontesTotal: 1,
+    fontesConcluidas: 1,
+    totalNoticias: 1,
+    avisos: [],
+    edicao: 'NOVIDADES',
+    ...over,
+  });
+
+  it('as edições mais recentes vêm primeiro, e a mesma matéria não repete', () => {
+    const r = selecionarDoAcervo(
+      [
+        execucao({
+          iniciadaEm: new Date('2026-08-13'),
+          noticias: [noticia('Antiga'), noticia('Repetida')],
+        }),
+        execucao({
+          iniciadaEm: new Date('2026-08-27'),
+          noticias: [noticia('Recente'), noticia('Repetida')],
+        }),
+      ],
+      { maximo: 10 },
+    );
+
+    expect(r.map((n) => n.titulo)).toEqual(['Recente', 'Repetida', 'Antiga']);
+  });
+
+  it('os temas da rotina passam à frente; a recência desempata', () => {
+    const r = selecionarDoAcervo(
+      [
+        execucao({
+          iniciadaEm: new Date('2026-08-27'),
+          noticias: [
+            noticia('Sobre execução fiscal'),
+            noticia('Reforma tributária avança', { tag: 'Reforma' }),
+          ],
+        }),
+        execucao({
+          iniciadaEm: new Date('2026-08-20'),
+          noticias: [noticia('Outra da reforma tributária')],
+        }),
+      ],
+      { maximo: 10, temas: ['reforma tributária'] },
+    );
+
+    expect(r.map((n) => n.titulo)).toEqual([
+      'Reforma tributária avança',
+      'Outra da reforma tributária',
+      'Sobre execução fiscal',
+    ]);
+  });
+
+  it('retrospectivas e execuções não concluídas ficam de fora; o máximo vale', () => {
+    const r = selecionarDoAcervo(
+      [
+        execucao({ edicao: 'RETROSPECTIVA', noticias: [noticia('Reciclada')] }),
+        execucao({ situacao: 'FALHOU', noticias: [noticia('Falhou')] }),
+        execucao({ noticias: [noticia('Um'), noticia('Dois'), noticia('Três')] }),
+      ],
+      { maximo: 2 },
+    );
+
+    expect(r.map((n) => n.titulo)).toEqual(['Um', 'Dois']);
+  });
+
+  it('sem acervo, devolve vazio — e é o chamador quem decide o desfecho', () => {
+    expect(selecionarDoAcervo([], { maximo: 6 })).toEqual([]);
   });
 });

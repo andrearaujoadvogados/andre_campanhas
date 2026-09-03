@@ -31,6 +31,23 @@ const TINTA = '#16222c';
 const TINTA_SUAVE = '#4a5560';
 const PAPEL = '#f2efe8';
 const LINHA = '#e5dfd3';
+const OURO = '#d5bc80';
+
+// ─── Logo do escritório ──────────────────────────────────────────
+//
+// Hospedado no próprio painel (apps/admin-web/public/marca/), publicado pelo
+// mesmo deploy que sobe o site: não depende de arquivo de terceiros nem do
+// site institucional. O nome carrega versão porque o CloudFront guarda os
+// assets por um ano — trocar a arte é publicar `-v2` e apontar aqui, nunca
+// sobrescrever o arquivo.
+
+export const LOGO_EMAIL = {
+  src: 'https://campanhas.andrearaujoadvogados.com.br/marca/logo-email-v1.png',
+  alt: 'André Araújo Advogados',
+  href: 'https://andrearaujoadvogados.com.br',
+  /** Largura exibida, em px. O arquivo tem o dobro (1040px) para telas retina. */
+  width: 260,
+} as const;
 
 // ─── Blocos padrão ───────────────────────────────────────────────
 
@@ -138,24 +155,34 @@ export const FONT_OPTIONS = [
 // ─── Módulos de fábrica ──────────────────────────────────────────
 
 /**
- * Cabeçalho em TEXTO, não em imagem — deliberado. Não existe logo hospedado
- * para e-mails (imagem entra por URL), e um cabeçalho que depende de um arquivo
- * externo quebraria em silêncio no dia em que o arquivo sumisse.
+ * Cabeçalho com o logo do escritório — em todo e-mail que sai daqui.
+ *
+ * Era texto por falta de logo hospedado; o arquivo agora vive no painel (ver
+ * LOGO_EMAIL). O `alt` garante que, com imagens bloqueadas, o nome do
+ * escritório continua no lugar da arte; o traço dourado curto abaixo é o
+ * mesmo do site.
  */
 export function createHeaderModuleRow(): Row {
   const row = createRow([100]);
-  row.attrs.padding = '28px 24px 20px 24px';
+  row.attrs.padding = '28px 24px 8px 24px';
   (row.columns[0] as Row['columns'][0]).blocks = [
     {
       id: uid(),
-      type: 'text',
-      html: `<span style="color:${VINHO};font-weight:bold;letter-spacing:1px;">ANDRÉ ARAÚJO</span><br><span style="color:${TINTA_SUAVE};font-size:11px;letter-spacing:4px;">ADVOGADOS</span>`,
-      attrs: { fontSize: 22, color: '', align: 'center', padding: '0px 0px' },
+      type: 'image',
+      src: LOGO_EMAIL.src,
+      alt: LOGO_EMAIL.alt,
+      href: LOGO_EMAIL.href,
+      attrs: {
+        width: LOGO_EMAIL.width,
+        align: 'center',
+        borderRadius: 0,
+        padding: '0px 0px 18px 0px',
+      },
     },
     {
       id: uid(),
       type: 'divider',
-      attrs: { borderColor: LINHA, borderWidth: 1, padding: '16px 80px 0px 80px' },
+      attrs: { borderColor: OURO, borderWidth: 2, padding: '0px 0px 0px 0px', width: '96px' },
     },
   ];
   return row;
