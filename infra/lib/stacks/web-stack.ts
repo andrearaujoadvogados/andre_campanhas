@@ -222,10 +222,19 @@ export class WebStack extends Stack {
               // mensagem. Uma resposta servida do cache não chega ao SES, e o
               // clique simplesmente não é contado.
               cachePolicy: CachePolicy.CACHING_DISABLED,
-              // Repassa a query string e os cabeçalhos do visitante, menos o
-              // Host: o SES roteia pelo host da origem, e mandar o nosso faria
-              // o endpoint não reconhecer a requisição.
-              originRequestPolicy: OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+              /**
+               * Repassa a query string e TODOS os cabeçalhos do visitante,
+               * inclusive o Host. A versão anterior tirava o Host de propósito,
+               * supondo que o SES roteava pelo host da origem — e todo clique
+               * voltava HTTP 400 (03/09/2026, primeiro boletim real). A
+               * documentação do SES é explícita: para domínio HTTPS atrás de
+               * CDN, "o CDN deve repassar o cabeçalho Host do solicitante para
+               * a origem" — é pelo Host que o endpoint reconhece o domínio de
+               * rastreamento cadastrado no configuration set. Teste que a AWS
+               * sugere: `curl --head https://<dominio>/favicon.ico` deve
+               * devolver 200 com `x-amz-ses-region`.
+               */
+              originRequestPolicy: OriginRequestPolicy.ALL_VIEWER,
             },
           });
 
