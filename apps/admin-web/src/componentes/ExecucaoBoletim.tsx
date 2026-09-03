@@ -8,7 +8,8 @@ import { Selo } from './base.tsx';
 /**
  * Estado da geração do boletim, compartilhado entre as telas.
  *
- * A geração roda em segundo plano por um a dois minutos. Quem aperta o botão
+ * A geração roda em segundo plano por um a dois minutos — e por bem mais
+ * quando a IA está sobrecarregada e o worker insiste. Quem aperta o botão
  * fica em Boletim; quem espera o resultado vai para Modelos — e as duas telas
  * precisam contar a mesma história, senão o operador conclui que não aconteceu
  * nada e aperta de novo.
@@ -179,7 +180,11 @@ export function PainelExecucaoBoletim({
           )}
           <span className="font-medium text-ink">{ROTULO_SITUACAO[execucao.situacao]}</span>
           <Selo tom={tomDoSelo(execucao.situacao)}>
-            {execucao.origem === 'MANUAL' ? 'pedida por você' : 'rotina de segunda'}
+            {execucao.origem === 'MANUAL'
+              ? 'pedida por você'
+              : execucao.origem === 'ROTINA'
+                ? 'rotina de envio'
+                : 'agenda de segunda'}
           </Selo>
         </div>
         <p className="text-xs text-ink-suave">

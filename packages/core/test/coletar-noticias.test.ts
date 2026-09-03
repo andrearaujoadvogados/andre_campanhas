@@ -3,6 +3,7 @@ import {
   TENANT_PADRAO,
   analisarNoticias,
   coletarNoticias,
+  decidirPelaFalhaDeRedeDoExtrator,
   decidirPelaRespostaDoExtrator,
   fonteId as novoFonteId,
   montarPromptDeExtracao,
@@ -317,5 +318,57 @@ describe('falha técnica não se confunde com "nada encontrado"', () => {
 
     expect(r.fontesComFalha).toBe(1);
     expect(r.fontesSemNoticia).toBe(0);
+  });
+});
+
+describe('prazo da coleta', () => {
+  it('com o prazo vencido, as fontes que faltam são puladas com aviso — e contam como falha', async () => {
+    const outra = fonte({ fonteId: novoFonteId('f-2'), nome: 'Conjur' });
+    let chamadas = 0;
+    const r = await coletarNoticias(
+      montar(
+        {
+          extrator: {
+            completar: async () => {
+              chamadas += 1;
+              return RESPOSTA_VALIDA;
+            },
+          },
+          prazoMs: Date.now() - 1,
+        },
+        [fonte(), outra],
+      ),
+      TENANT_PADRAO,
+    );
+
+    expect(chamadas).toBe(0);
+    expect(r.fontesComFalha).toBe(2);
+    expect(r.fontesSemNoticia).toBe(0);
+    expect(r.avisos.every((a) => a.includes('sem tempo'))).toBe(true);
+  });
+
+  it('sem prazo, o comportamento é o de sempre', async () => {
+    const r = await coletarNoticias(montar(), TENANT_PADRAO);
+    expect(r.totalNoticias).toBe(1);
+  });
+});
+
+describe('quando a chamada à IA nem tem status', () => {
+  it('timeout é transitório — tentar de novo, não descartar a fonte', () => {
+    // 29/08/2026: as três fontes morreram em timeout tratado como erro definitivo.
+    const d = decidirPelaFalhaDeRedeDoExtrator(
+      Object.assign(new Error('The operation was aborted due to timeout'), {
+        name: 'TimeoutError',
+      }),
+      'gemini-3.5-flash-lite',
+    );
+    expect(d.acao).toBe('TENTAR_DE_NOVO');
+    expect(d.acao === 'TENTAR_DE_NOVO' && d.motivo).toContain('não respondeu a tempo');
+  });
+
+  it('queda de rede também é transitória, e a mensagem carrega o detalhe', () => {
+    const d = decidirPelaFalhaDeRedeDoExtrator(new Error('fetch failed'), 'm');
+    expect(d.acao).toBe('TENTAR_DE_NOVO');
+    expect(d.acao === 'TENTAR_DE_NOVO' && d.motivo).toContain('fetch failed');
   });
 });

@@ -29,6 +29,14 @@ export interface DepsColeta {
   readonly paginas: BuscadorDePagina;
   readonly extrator: ExtratorPorIa;
   readonly aoProgredir?: (progresso: ProgressoColeta) => Promise<void>;
+  /**
+   * Instante (ms desde a época) a partir do qual nenhuma fonte nova é lida.
+   *
+   * O worker roda com teto de tempo; sem o prazo, uma IA lenta nas primeiras
+   * fontes estourava esse teto em silêncio. Fonte pulada por falta de tempo é
+   * falha técnica com aviso nomeado — não "sem notícia".
+   */
+  readonly prazoMs?: number;
 }
 
 export interface NoticiasDaFonte {
@@ -98,6 +106,14 @@ export async function coletarNoticias(
   let fontesSemNoticia = 0;
 
   for (const [indice, fonte] of ativas.entries()) {
+    if (deps.prazoMs !== undefined && Date.now() >= deps.prazoMs) {
+      avisos.push(
+        `${fonte.nome}: não foi lida — a coleta ficou sem tempo (as fontes anteriores consumiram o prazo).`,
+      );
+      fontesComFalha += 1;
+      continue;
+    }
+
     // O relato de progresso não pode derrubar a coleta: se gravar o estado
     // falhar, o boletim ainda vale mais do que o indicador de progresso.
     try {

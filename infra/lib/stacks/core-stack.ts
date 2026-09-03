@@ -428,29 +428,48 @@ export class CoreStack extends Stack {
       cfg,
       nomeLogico: 'boletim-builder',
       entry: svc('workers', 'boletim-builder'),
-      // O tempo é dominado por rede: meia dúzia de páginas + uma chamada de IA
-      // por fonte, em sequência (o nível gratuito tem limite por minuto).
-      timeout: Duration.minutes(5),
+      /**
+       * Dez minutos, não cinco. O tempo é dominado pela IA do nível gratuito,
+       * que responde 503 em rajadas de minutos, e o worker agora insiste com
+       * esperas de 10 e 30 segundos por modelo. Ele mesmo se dá um prazo
+       * interno menor que este teto e grava o desfecho antes de estourar —
+       * o teto é a rede de segurança, não o plano.
+       */
+      timeout: Duration.minutes(10),
       memorySize: 1024,
+      /**
+       * Sem repetição automática da invocação assíncrona. O padrão da Lambda
+       * (duas repetições) reexecutava uma rodada que estourasse o tempo — em
+       * silêncio, disputando a cota da IA com a geração que o operador já
+       * tinha pedido de novo ao ver "sem resposta". Falha aqui vira registro
+       * na execução, não segunda rodada.
+       */
+      retryAttempts: 0,
       environment: {
         ...ambienteComum,
         SEGREDO_GEMINI_ARN: segredoGemini.secretArn,
+        /**
+         * Cadeia de modelos, em ordem de preferência — nomes estáveis na
+         * frente, alias por último. `gemini-flash-latest` muda de modelo a
+         * cada lançamento do Google e foi o que quebrou o boletim em
+         * agosto/2026, com os dois reservas já mortos (404). Um nome que a
+         * chave não alcança custa um 404 instantâneo, não a edição: a lista
+         * pode ser generosa. Trocar aqui não exige mexer no worker.
+         */
+        MODELOS_GEMINI:
+          'gemini-3.5-flash-lite,gemini-3.6-flash,gemini-2.5-flash-lite,gemini-flash-latest',
       },
     });
 
     /**
-     * Toda segunda às 8h (11h UTC), o boletim da semana aparece em Modelos.
+     * Não há mais agenda fixa de segunda às 8h.
      *
-     * Gerar um RASCUNHO de modelo é inofensivo por definição — nada é enviado
-     * sem passar pelo assistente e pela aprovação. Por isso o agendamento nasce
-     * ligado, sem interruptor: o pior caso com fontes vazias ou chave ausente é
-     * um log explicando por que nada foi gerado.
+     * Ela nasceu antes das rotinas de envio automático, para um rascunho
+     * semanal aparecer em Modelos. Com as rotinas no ar, em 31/08/2026 ela
+     * disparou 20 segundos antes da rotina das 8h e as duas disputaram o
+     * mesmo modelo sobrecarregado. Quem quer um boletim toda segunda cadastra
+     * uma rotina semanal; quem quer só o rascunho usa o botão.
      */
-    new Rule(this, 'AgendaBoletim', {
-      ruleName: nome(cfg, 'boletim-semanal'),
-      schedule: Schedule.cron({ minute: '0', hour: '11', weekDay: 'MON' }),
-      targets: [new LambdaFunction(fnBoletimBuilder)],
-    });
 
     // ── Permissões — menor privilégio, §10.1 ─────────────────────────────────
 

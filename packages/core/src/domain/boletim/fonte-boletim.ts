@@ -167,6 +167,26 @@ export function decidirPelaRespostaDoExtrator(status: number, modelo: string): D
 }
 
 /**
+ * O que fazer quando a chamada nem chegou a ter status — timeout ou rede.
+ *
+ * Em 29/08/2026 as três fontes morreram em "The operation was aborted due to
+ * timeout": o modelo demorou mais de um minuto e o worker tratou a exceção
+ * como erro definitivo, sem nova tentativa. Demora e queda de rede são tão
+ * transitórias quanto o 503 — a diferença fica só na mensagem.
+ */
+export function decidirPelaFalhaDeRedeDoExtrator(erro: unknown, modelo: string): DecisaoDoExtrator {
+  const nome = typeof erro === 'object' && erro !== null && 'name' in erro ? String(erro.name) : '';
+  if (nome === 'TimeoutError' || nome === 'AbortError') {
+    return { acao: 'TENTAR_DE_NOVO', motivo: `o modelo ${modelo} não respondeu a tempo` };
+  }
+  const detalhe = erro instanceof Error ? erro.message : String(erro);
+  return {
+    acao: 'TENTAR_DE_NOVO',
+    motivo: `falha de rede ao chamar o modelo ${modelo} (${detalhe})`,
+  };
+}
+
+/**
  * Interpreta a resposta da IA — tolerante no envelope, estrita no conteúdo.
  *
  * Modelos embrulham JSON em cerca de código com frequência; arrancar o
