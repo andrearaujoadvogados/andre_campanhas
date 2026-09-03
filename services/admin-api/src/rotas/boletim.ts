@@ -506,6 +506,8 @@ function paraRespostaExecucao(e: ExecucaoBoletim, agora: Date): Record<string, u
     totalNoticias: e.totalNoticias,
     templateId: e.templateId === undefined ? null : String(e.templateId),
     templateNome: e.templateNome ?? null,
+    /** Registros antigos não têm o campo: eram todos de novidades. */
+    edicao: e.edicao ?? 'NOVIDADES',
     avisos: [...e.avisos],
     erro: e.erro ?? null,
     // Desfecho do envio automático da rotina — nulo fora desse caminho.

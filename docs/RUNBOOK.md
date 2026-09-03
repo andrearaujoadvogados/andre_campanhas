@@ -154,6 +154,28 @@ falhar com 503 é sobrecarga do nível gratuito — o que resolve de vez é ativ
 cobrança no projeto do AI Studio: a edição custa centavos, e o nível pago não é
 o primeiro a ser descartado quando o modelo lota.
 
+#### Edição de retrospectiva
+
+A rotina envia de qualquer modo. Quando a coleta de novidades não rende nada,
+o worker faz uma segunda passada nas mesmas fontes pedindo à IA o mais
+relevante e mais lido (lendo também as laterais da página, onde ficam as
+"mais lidas"); se nem isso houver — IA ou sites fora do ar —, monta a edição
+com o acervo das edições anteriores, guardado em cada execução concluída. O
+e-mail avisa o leitor, numa caixa antes das notícias, que não houve novidade
+no período, e o assunto diz "retrospectiva". Só quando não há acervo é que a
+rodada termina sem envio (SEM_NOTICIAS ou FALHOU, como antes).
+
+#### Logo nos e-mails
+
+Todo e-mail sai com o logo do escritório no cabeçalho, servido pelo próprio
+painel: `apps/admin-web/public/marca/logo-email-v1.png` (1040px de largura,
+vinho, fundo transparente, exibido a 260px). Para trocar a arte, publique um
+arquivo NOVO (`-v2`) e aponte `LOGO_EMAIL` em `packages/criador/src/presets.ts`
+— o CloudFront guarda os assets por um ano, e sobrescrever o `-v1` deixaria a
+versão velha em cache. Modelos salvos antes desta mudança guardam o cabeçalho
+antigo em texto: abra-os no criador e coloque um bloco de imagem com esse
+endereço no topo, ou crie o modelo de novo.
+
 **Atenção ao nível gratuito**: os
 dados enviados ao Gemini podem ser usados pelo Google para treinamento — por
 isso o worker só envia texto de páginas públicas de notícia, nunca dados de

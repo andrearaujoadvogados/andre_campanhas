@@ -7,25 +7,58 @@
 //
 // **Cada notícia é uma LINHA do design, saída de uma fábrica.** Essa é a
 // decisão que importa aqui: o operador acrescenta uma notícia duplicando a
-// linha no canvas, e a automação futura (a rotina que vai buscar as notícias na
-// web e disparar a campanha) monta o e-mail inteiro chamando estas mesmas
-// funções com o conteúdo pesquisado — em vez de manipular HTML ou clonar JSON
-// às cegas. Por isso tudo aqui é objeto puro, sem DOM: precisa rodar igual no
-// navegador e num worker.
+// linha no canvas, e a automação (a rotina que busca as notícias na web e
+// dispara a campanha) monta o e-mail inteiro chamando estas mesmas funções com
+// o conteúdo pesquisado — em vez de manipular HTML ou clonar JSON às cegas.
+// Por isso tudo aqui é objeto puro, sem DOM: precisa rodar igual no navegador e
+// num worker.
+//
+// Tipografia e cores seguem o site do escritório: títulos serifados (Georgia,
+// a prima instalada em todo cliente da Fraunces do site — web font em e-mail
+// fica invisível enquanto não carrega, e foi testado), corpo em sans a 16px
+// com entrelinha folgada, texto em tinta escura sobre branco, vinho nos links
+// e bronze nos chapéus. É o que dá conforto de leitura num e-mail longo:
+// contraste, tamanho e respiro, não ornamento.
 
 import { createRow, uid } from './ops.js';
-import type { EmailDesign, Row } from './tipos.js';
+import type { DesignSettings, EmailDesign, Row } from './tipos.js';
 import { DEFAULT_SETTINGS, createFooterModuleRow, createHeaderModuleRow } from './presets.js';
 
-// Mesmos hex de `presets.ts` — e-mail não tem CSS custom properties.
+// Mesmos hex de `presets.ts` e do site — e-mail não tem CSS custom properties.
 const VINHO = '#721420';
 const TINTA = '#16222c';
 const TINTA_SUAVE = '#4a5560';
-const OURO = '#7d5e2c';
+/** Dourado escurecido, o único da paleta com contraste AA para texto pequeno. */
+const BRONZE = '#7d5e2c';
+const OURO = '#d5bc80';
 const LINHA = '#e5dfd3';
+const NEVOA_VINHO = '#f1e7e4';
+
+/**
+ * Serifada dos títulos. Fraunces só entra se estiver instalada na máquina do
+ * leitor; o que se desenha é para Georgia. Sem `@font-face`: um cliente que
+ * espera a fonte remota mostra o título em branco enquanto ela não chega.
+ */
+const SERIF = "Fraunces, Georgia, 'Times New Roman', serif";
+
+/**
+ * Configuração global do boletim: corpo em sans e texto em tinta.
+ *
+ * Difere do `DEFAULT_SETTINGS` (Georgia, texto suave) de propósito: um boletim
+ * são vários parágrafos seguidos, e sans a 16px sobre tinta escura cansa menos
+ * do que serifada a 14px em cinza. Os títulos trazem a serifada inline.
+ */
+export const BOLETIM_SETTINGS: DesignSettings = {
+  ...DEFAULT_SETTINGS,
+  fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+  textColor: TINTA,
+};
+
+/** Recuo lateral do conteúdo: 32px em 600px deixa ~70 caracteres por linha a 16px. */
+const RECUO = '32px';
 
 export interface Noticia {
-  /** Chapéu da notícia — ex.: "STF · PAUTA DE 26/08". Vai em maiúsculas douradas. */
+  /** Chapéu da notícia — ex.: "STF · PAUTA DE 26/08". Vai em maiúsculas bronze. */
   categoria: string;
   titulo: string;
   corpo: string;
@@ -38,7 +71,7 @@ export interface Prazo {
 }
 
 /**
- * Uma notícia do boletim: chapéu dourado, título serifado escuro, corpo, e o
+ * Uma notícia do boletim: chapéu bronze, título serifado escuro, corpo, e o
  * fio que a separa da próxima.
  *
  * O fio vive DENTRO da linha da notícia, e não como linha própria, de
@@ -47,30 +80,42 @@ export interface Prazo {
  */
 export function criarLinhaNoticia(noticia: Noticia): Row {
   const row = createRow([100]);
-  row.attrs.padding = '20px 24px 4px 24px';
+  row.attrs.padding = `22px ${RECUO} 6px ${RECUO}`;
   (row.columns[0] as Row['columns'][0]).blocks = [
     {
       id: uid(),
       type: 'text',
-      html: `<span style="color:${OURO};font-weight:bold;letter-spacing:3px;">${noticia.categoria.toUpperCase()}</span>`,
-      attrs: { fontSize: 11, color: OURO, align: 'left', padding: '0px 0px 8px 0px' },
+      html: `<span style="color:${BRONZE};font-weight:bold;letter-spacing:2px;">${noticia.categoria.toUpperCase()}</span>`,
+      attrs: { fontSize: 11, color: BRONZE, align: 'left', padding: '0px 0px 8px 0px' },
     },
     {
       id: uid(),
       type: 'text',
-      html: `<span style="font-weight:bold;color:${TINTA};">${noticia.titulo}</span>`,
-      attrs: { fontSize: 21, color: TINTA, align: 'left', padding: '0px 0px 10px 0px' },
+      html: `<span style="font-family:${SERIF};font-weight:700;color:${TINTA};">${noticia.titulo}</span>`,
+      attrs: {
+        fontSize: 21,
+        color: TINTA,
+        align: 'left',
+        padding: '0px 0px 10px 0px',
+        lineHeight: 1.3,
+      },
     },
     {
       id: uid(),
       type: 'text',
       html: noticia.corpo,
-      attrs: { fontSize: 14, color: '', align: 'left', padding: '0px 0px 16px 0px' },
+      attrs: {
+        fontSize: 16,
+        color: '',
+        align: 'left',
+        padding: '0px 0px 16px 0px',
+        lineHeight: 1.65,
+      },
     },
     {
       id: uid(),
       type: 'divider',
-      attrs: { borderColor: LINHA, borderWidth: 1, padding: '8px 0px 0px 0px' },
+      attrs: { borderColor: LINHA, borderWidth: 1, padding: '6px 0px 0px 0px' },
     },
   ];
   return row;
@@ -88,36 +133,71 @@ export function criarLinhaAbertura(edicao: {
   introducao: string;
 }): Row {
   const row = createRow([100]);
-  row.attrs.padding = '12px 24px 4px 24px';
+  row.attrs.padding = `16px ${RECUO} 4px ${RECUO}`;
   (row.columns[0] as Row['columns'][0]).blocks = [
     {
       id: uid(),
       type: 'text',
-      html: `<span style="color:${VINHO};font-weight:bold;letter-spacing:4px;">${edicao.chapeu.toUpperCase()}</span>`,
-      attrs: { fontSize: 12, color: VINHO, align: 'center', padding: '0px 0px 10px 0px' },
+      html: `<span style="color:${BRONZE};font-weight:bold;letter-spacing:3px;">${edicao.chapeu.toUpperCase()}</span>`,
+      attrs: { fontSize: 12, color: BRONZE, align: 'center', padding: '0px 0px 12px 0px' },
     },
     {
       id: uid(),
       type: 'text',
-      html: `<span style="font-weight:bold;color:${VINHO};">${edicao.titulo}</span>`,
-      attrs: { fontSize: 26, color: VINHO, align: 'center', padding: '0px 0px 10px 0px' },
+      html: `<span style="font-family:${SERIF};font-weight:700;color:${VINHO};">${edicao.titulo}</span>`,
+      attrs: {
+        fontSize: 28,
+        color: VINHO,
+        align: 'center',
+        padding: '0px 0px 10px 0px',
+        lineHeight: 1.25,
+      },
     },
     {
       id: uid(),
       type: 'text',
       html: `<span style="letter-spacing:1px;color:${TINTA_SUAVE};">${edicao.periodo}</span>`,
-      attrs: { fontSize: 12, color: TINTA_SUAVE, align: 'center', padding: '0px 0px 18px 0px' },
+      attrs: { fontSize: 13, color: TINTA_SUAVE, align: 'center', padding: '0px 0px 22px 0px' },
     },
     {
       id: uid(),
       type: 'text',
       html: edicao.introducao,
-      attrs: { fontSize: 14, color: '', align: 'left', padding: '0px 0px 8px 0px' },
+      attrs: {
+        fontSize: 16,
+        color: '',
+        align: 'left',
+        padding: '0px 0px 8px 0px',
+        lineHeight: 1.65,
+      },
     },
     {
       id: uid(),
       type: 'divider',
       attrs: { borderColor: LINHA, borderWidth: 1, padding: '12px 0px 0px 0px' },
+    },
+  ];
+  return row;
+}
+
+/**
+ * O aviso da edição de retrospectiva — a caixa que diz ao leitor, antes das
+ * notícias, que não houve novidade e o que ele está recebendo no lugar.
+ *
+ * É linha própria, com fundo, e não uma frase escondida na abertura: quem
+ * recebe o boletim toda semana percebe conteúdo repetido, e um aviso claro
+ * transforma "mandaram coisa velha" em "não houve novidade, e me avisaram".
+ */
+export function criarLinhaAvisoRetrospectiva(aviso: { destaque: string; texto: string }): Row {
+  const row = createRow([100]);
+  row.attrs.backgroundColor = NEVOA_VINHO;
+  row.attrs.padding = `18px ${RECUO} 18px ${RECUO}`;
+  (row.columns[0] as Row['columns'][0]).blocks = [
+    {
+      id: uid(),
+      type: 'text',
+      html: `<span style="font-weight:bold;color:${VINHO};">${aviso.destaque}</span> ${aviso.texto}`,
+      attrs: { fontSize: 15, color: TINTA, align: 'left', padding: '0px 0px', lineHeight: 1.6 },
     },
   ];
   return row;
@@ -132,18 +212,18 @@ export function criarLinhaAbertura(edicao: {
  */
 export function criarLinhaPrazos(titulo: string, prazos: readonly Prazo[]): Row {
   const row = createRow([100]);
-  row.attrs.padding = '20px 24px 8px 24px';
+  row.attrs.padding = `20px ${RECUO} 8px ${RECUO}`;
   const blocos: Row['columns'][0]['blocks'] = [
     {
       id: uid(),
       type: 'text',
-      html: `<span style="color:${OURO};font-weight:bold;letter-spacing:3px;">${titulo.toUpperCase()}</span>`,
-      attrs: { fontSize: 12, color: OURO, align: 'center', padding: '0px 0px 4px 0px' },
+      html: `<span style="color:${BRONZE};font-weight:bold;letter-spacing:3px;">${titulo.toUpperCase()}</span>`,
+      attrs: { fontSize: 12, color: BRONZE, align: 'center', padding: '0px 0px 4px 0px' },
     },
     {
       id: uid(),
       type: 'divider',
-      attrs: { borderColor: OURO, borderWidth: 2, padding: '4px 260px 12px 260px' },
+      attrs: { borderColor: OURO, borderWidth: 2, padding: '4px 0px 12px 0px', width: '96px' },
     },
   ];
   for (const prazo of prazos) {
@@ -151,8 +231,8 @@ export function criarLinhaPrazos(titulo: string, prazos: readonly Prazo[]): Row 
       {
         id: uid(),
         type: 'text',
-        html: `<span style="font-weight:bold;color:${VINHO};font-size:18px;">${prazo.dia}</span>&nbsp;&nbsp;${prazo.descricao}`,
-        attrs: { fontSize: 14, color: '', align: 'left', padding: '6px 0px 6px 0px' },
+        html: `<span style="font-family:${SERIF};font-weight:bold;color:${VINHO};font-size:19px;">${prazo.dia}</span>&nbsp;&nbsp;${prazo.descricao}`,
+        attrs: { fontSize: 16, color: '', align: 'left', padding: '6px 0px 6px 0px' },
       },
       {
         id: uid(),
@@ -172,19 +252,25 @@ export function criarLinhaEncerramento(assinatura: {
   registro: string;
 }): Row {
   const row = createRow([100]);
-  row.attrs.padding = '20px 24px 28px 24px';
+  row.attrs.padding = `24px ${RECUO} 28px ${RECUO}`;
   (row.columns[0] as Row['columns'][0]).blocks = [
     {
       id: uid(),
       type: 'text',
       html: `<em>${assinatura.mensagem}</em>`,
-      attrs: { fontSize: 14, color: '', align: 'center', padding: '0px 30px 16px 30px' },
+      attrs: {
+        fontSize: 15,
+        color: '',
+        align: 'center',
+        padding: '0px 24px 18px 24px',
+        lineHeight: 1.6,
+      },
     },
     {
       id: uid(),
       type: 'text',
-      html: `<span style="font-weight:bold;color:${TINTA};">${assinatura.nome}</span>`,
-      attrs: { fontSize: 15, color: TINTA, align: 'center', padding: '0px 0px 4px 0px' },
+      html: `<span style="font-family:${SERIF};font-weight:bold;color:${TINTA};">${assinatura.nome}</span>`,
+      attrs: { fontSize: 17, color: TINTA, align: 'center', padding: '0px 0px 4px 0px' },
     },
     {
       id: uid(),
@@ -202,7 +288,7 @@ export function criarLinhaEncerramento(assinatura: {
  */
 export function criarLinhaAvisoLegal(aviso: { endereco: string; fontes: string }): Row {
   const row = createRow([100]);
-  row.attrs.padding = '0px 24px 24px 24px';
+  row.attrs.padding = `0px ${RECUO} 24px ${RECUO}`;
   (row.columns[0] as Row['columns'][0]).blocks = [
     {
       id: uid(),
@@ -225,15 +311,6 @@ export function criarLinhaAvisoLegal(aviso: { endereco: string; fontes: string }
   return row;
 }
 
-/**
- * O design completo do boletim, com o conteúdo da edição de referência como
- * exemplo — o template se demonstra sozinho, e quem edita vê o que cada pedaço
- * deve conter em vez de encarar caixas com "escreva aqui".
- *
- * A automação futura NÃO parte deste design pronto: ela chama as fábricas
- * acima com o conteúdo pesquisado e monta `{ header, abertura, ...notícias,
- * prazos, encerramento, avisoLegal, footer }` — a mesma sequência daqui.
- */
 /** Uma notícia vinda da coleta automática — texto NÃO confiável, será escapado. */
 export interface NoticiaDaColeta {
   readonly titulo: string;
@@ -243,6 +320,16 @@ export interface NoticiaDaColeta {
 }
 
 /**
+ * Que edição é esta.
+ *
+ * NOVIDADES é o boletim de sempre. RETROSPECTIVA sai quando as fontes não
+ * trouxeram novidade no período: o boletim vai mesmo assim — decisão do
+ * escritório —, avisa o leitor e traz o que há de mais relevante e mais lido
+ * sobre os temas.
+ */
+export type EdicaoDoBoletim = 'NOVIDADES' | 'RETROSPECTIVA';
+
+/**
  * Monta a edição do boletim a partir do conteúdo COLETADO — o caminho da
  * automação (§11, item 12). Mesma sequência de linhas da edição de referência;
  * o que muda é a origem do conteúdo, e isso muda uma coisa fundamental:
@@ -250,37 +337,64 @@ export interface NoticiaDaColeta {
  * **Tudo aqui é escapado.** As fábricas acima interpolam HTML porque servem
  * conteúdo escrito pelo editor no painel. O que chega da coleta atravessou uma
  * página de terceiros e uma IA — um título contendo `<script>` ou um `"` no
- * lugar certo não pode virar marcação. O link "Leia mais" é o único HTML, e é
- * montado por nós com a URL escapada.
+ * lugar certo não pode virar marcação. O link para a matéria é o único HTML, e
+ * é montado por nós com a URL escapada.
  */
 export function criarBoletimColetado(edicao: {
+  /** Chapéu acima do título — o nome do boletim (a rotina). */
+  readonly chapeu?: string;
   readonly titulo: string;
   readonly periodo: string;
+  /** Vazio = o parágrafo padrão da edição (novidades ou retrospectiva). */
   readonly introducao: string;
+  readonly edicao?: EdicaoDoBoletim;
   readonly noticias: readonly NoticiaDaColeta[];
   readonly fontes: readonly string[];
 }): EmailDesign {
+  const tipo = edicao.edicao ?? 'NOVIDADES';
+  const fontes = escapar(listarFontes(edicao.fontes));
+
   const noticias = edicao.noticias.map((n) =>
     criarLinhaNoticia({
       categoria: escapar(n.tag),
       titulo: escapar(n.titulo),
-      corpo: `${escapar(n.resumo)} <a href="${escapar(n.url)}" style="color:#7d5e2c;">Leia mais</a>`,
+      corpo:
+        `${escapar(n.resumo)}<br>` +
+        `<a href="${escapar(n.url)}" style="color:${VINHO};font-weight:bold;text-decoration:none;">Ler a matéria completa &rarr;</a>`,
     }),
   );
 
+  const introducao =
+    edicao.introducao !== ''
+      ? edicao.introducao
+      : tipo === 'RETROSPECTIVA'
+        ? 'Olá {{contato.primeiroNome}}, esta edição reúne as leituras mais relevantes sobre os temas que acompanhamos para você.'
+        : `Olá {{contato.primeiroNome}}, selecionamos os destaques do período a partir das publicações de ${fontes}.`;
+
+  const avisoRetrospectiva =
+    tipo === 'RETROSPECTIVA'
+      ? [
+          criarLinhaAvisoRetrospectiva({
+            destaque: 'Sem novidades neste período.',
+            texto:
+              'As fontes que acompanhamos não publicaram nada novo sobre os temas deste boletim. ' +
+              `Para você não ficar sem leitura, reunimos abaixo as matérias mais relevantes e mais lidas sobre o assunto, selecionadas de ${fontes}.`,
+          }),
+        ]
+      : [];
+
   return {
     version: 1,
-    settings: { ...DEFAULT_SETTINGS },
+    settings: { ...BOLETIM_SETTINGS },
     rows: [
       createHeaderModuleRow(),
       criarLinhaAbertura({
-        chapeu: 'Boletim Tributário',
+        chapeu: escapar(edicao.chapeu ?? 'Boletim'),
         titulo: escapar(edicao.titulo),
         periodo: escapar(edicao.periodo),
-        introducao:
-          `Olá {{contato.primeiroNome}}, selecionamos os destaques do período a partir ` +
-          `das publicações de ${escapar(edicao.fontes.join(', '))}.`,
+        introducao,
       }),
+      ...avisoRetrospectiva,
       ...noticias,
       criarLinhaEncerramento({
         mensagem:
@@ -290,11 +404,17 @@ export function criarBoletimColetado(edicao: {
       }),
       criarLinhaAvisoLegal({
         endereco: 'Rua João Vaz, nº 2, Salas 1 e 4 · Formiga/MG · Direito Tributário e Empresarial',
-        fontes: `Fontes: ${escapar(edicao.fontes.join(', '))}. Conteúdo selecionado automaticamente e revisado pelo escritório.`,
+        fontes: `Fontes: ${fontes}. Conteúdo selecionado automaticamente e revisado pelo escritório.`,
       }),
       createFooterModuleRow(),
     ],
   };
+}
+
+/** "Migalhas, Conjur e Agência Brasil" — a enumeração como se escreve. */
+function listarFontes(fontes: readonly string[]): string {
+  if (fontes.length <= 1) return fontes[0] ?? 'nossas fontes';
+  return `${fontes.slice(0, -1).join(', ')} e ${fontes[fontes.length - 1] ?? ''}`;
 }
 
 function escapar(texto: string): string {
@@ -306,6 +426,14 @@ function escapar(texto: string): string {
     .replaceAll("'", '&#39;');
 }
 
+/**
+ * O design completo do boletim, com o conteúdo da edição de referência como
+ * exemplo — o template se demonstra sozinho, e quem edita vê o que cada pedaço
+ * deve conter em vez de encarar caixas com "escreva aqui".
+ *
+ * A automação NÃO parte deste design pronto: ela chama as fábricas acima com o
+ * conteúdo pesquisado (`criarBoletimColetado`) — a mesma sequência daqui.
+ */
 export function createBoletimDesign(): EmailDesign {
   const noticias: Noticia[] = [
     {
@@ -330,7 +458,7 @@ export function createBoletimDesign(): EmailDesign {
 
   return {
     version: 1,
-    settings: { ...DEFAULT_SETTINGS },
+    settings: { ...BOLETIM_SETTINGS },
     rows: [
       createHeaderModuleRow(),
       criarLinhaAbertura({

@@ -496,7 +496,10 @@ export function Boletim() {
           No período e horário escolhidos, o sistema gera o boletim e o{' '}
           <strong className="font-medium text-ink">envia sem revisão</strong> para a lista
           escolhida, com as guardas de sempre do disparo (descadastro, supressão, classificação de
-          vínculo). O resultado de cada envio fica no histórico desta página e em Campanhas.
+          vínculo). O resultado de cada envio fica no histórico desta página e em Campanhas. Quando
+          as fontes não trazem novidade, sai mesmo assim uma{' '}
+          <strong className="font-medium text-ink">edição de retrospectiva</strong>, com as leituras
+          mais relevantes sobre os temas — e o leitor é avisado disso no próprio e-mail.
         </p>
 
         {confirmacaoRotina !== '' && !salvarRotina.isPending && salvarRotina.error === null && (
@@ -851,8 +854,9 @@ function LinhaHistorico({ execucao }: { execucao: Execucao }) {
               ? 'manual'
               : execucao.origem === 'ROTINA'
                 ? 'rotina de envio'
-                : 'rotina de segunda'}
+                : 'agenda de segunda'}
             {duracao === null ? '' : ` · ${duracao}`}
+            {execucao.edicao === 'RETROSPECTIVA' ? ' · retrospectiva' : ''}
           </span>
         </p>
         {execucao.erro !== null && <p className="mt-1 text-sm text-ink-suave">{execucao.erro}</p>}

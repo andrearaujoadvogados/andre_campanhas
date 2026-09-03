@@ -473,3 +473,14 @@ describe('confirmação de sucesso nos formulários', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('edição de retrospectiva na tela', () => {
+  it('explica que as fontes não trouxeram novidade e que o leitor foi avisado', async () => {
+    execucoes = [execucaoFalsa({ edicao: 'RETROSPECTIVA' })];
+    montar();
+
+    expect(
+      await screen.findByText(/as fontes não trouxeram novidade neste período/i),
+    ).toBeInTheDocument();
+  });
+});

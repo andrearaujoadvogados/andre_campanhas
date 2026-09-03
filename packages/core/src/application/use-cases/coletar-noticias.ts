@@ -3,6 +3,7 @@ import {
   montarPromptDeExtracao,
   validarUrlDeFonte,
   type FonteBoletim,
+  type ModoColeta,
   type NoticiaColetada,
 } from '../../domain/boletim/fonte-boletim.js';
 import type { TenantId } from '../../domain/shared/ids.js';
@@ -73,6 +74,8 @@ export interface ResultadoColeta {
 export interface EscolhaColeta {
   readonly fonteIds?: readonly string[];
   readonly temas?: readonly string[];
+  /** Ausente = NOVIDADES. RETROSPECTIVA lê a página inteira e pede o mais relevante, recente ou não. */
+  readonly modo?: ModoColeta;
 }
 
 /**
@@ -136,9 +139,11 @@ export async function coletarNoticias(
       continue;
     }
 
+    const modo: ModoColeta = escolha.modo ?? 'NOVIDADES';
+
     let pagina: string;
     try {
-      pagina = await deps.paginas.buscarTexto(fonte.url);
+      pagina = await deps.paginas.buscarTexto(fonte.url, { completo: modo === 'RETROSPECTIVA' });
     } catch (erro) {
       avisos.push(`${fonte.nome}: não foi possível ler a página (${mensagem(erro)}).`);
       fontesComFalha += 1;
@@ -159,6 +164,7 @@ export async function coletarNoticias(
           url: fonte.url,
           instrucao: fonte.instrucao,
           textoDaPagina: pagina,
+          modo,
           ...(escolha.temas === undefined || escolha.temas.length === 0
             ? {}
             : { temas: escolha.temas }),
