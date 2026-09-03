@@ -81,12 +81,13 @@ export interface ExecucaoBoletim {
 /**
  * Silêncio tolerado antes de presumir que a execução morreu.
  *
- * A Lambda tem 5 minutos de teto e trabalha em sequência: por fonte, no pior
- * caso, 20s de página + 60s de IA. Quatro minutos sem um único batimento não
- * é lentidão — é processo morto (estouro de memória, timeout duro, invocação
- * que nunca chegou). Sem esta regra o registro ficaria `EXECUTANDO` para
- * sempre, e a tela mentiria "gerando…" indefinidamente, que é pior do que não
- * ter feedback nenhum.
+ * O worker toca o registro a cada fonte e, dentro de uma fonte, antes de cada
+ * chamada à IA e de cada espera entre tentativas — o maior silêncio legítimo é
+ * uma chamada inteira (60s) mais uma espera (30s). Quatro minutos sem um único
+ * batimento não é lentidão — é processo morto (estouro de memória, timeout
+ * duro, invocação que nunca chegou). Sem esta regra o registro ficaria
+ * `EXECUTANDO` para sempre, e a tela mentiria "gerando…" indefinidamente, que
+ * é pior do que não ter feedback nenhum.
  */
 export const LIMITE_SEM_SINAL_MS = 4 * 60_000;
 

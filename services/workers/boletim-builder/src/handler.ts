@@ -15,8 +15,8 @@ import {
   TENANT_PADRAO,
   TIPO_EMAIL_PADRAO,
   coletarNoticias,
-  decidirPelaRespostaDoExtrator,
   encerrarExecucao,
+  estaEmAndamento,
   iniciarExecucao,
   campaignId as novoCampaignId,
   execucaoBoletimId as novoExecucaoId,
@@ -29,7 +29,6 @@ import {
   type Campaign,
   type ExecucaoBoletim,
   type ExecucaoBoletimRepository,
-  type ExtratorPorIa,
   type ResultadoColeta,
   type RotinaBoletim,
   type Template,
@@ -38,6 +37,8 @@ import { DynamoListRepository, DynamoTipoEmailRepository } from '@emailmkt/adapt
 import { compileDesignToMjml, criarBoletimColetado } from '@emailmkt/criador';
 import { paginaParaTexto } from '@emailmkt/email-render';
 import mjml2html from 'mjml';
+
+import { TIMEOUT_CHAMADA_MS, criarExtratorGemini, lerCadeiaDoAmbiente } from './extrator-gemini.js';
 
 /**
  * Monta o boletim automaticamente — §11, item 12.
@@ -95,103 +96,19 @@ const buscador: BuscadorDePagina = {
 };
 
 /**
- * Modelos tentados nesta ordem quando `MODELO_GEMINI` não está definido.
+ * Orçamento de tempo da rodada.
  *
- * O primeiro é um **alias** que o Google mantém apontando para o flash atual —
- * a lição veio de produção: o nome fixo `gemini-2.0-flash` devolveu 404 no
- * primeiro uso real, porque o Google aposenta modelos nomeados e o boletim
- * não pode quebrar a cada aposentadoria. Os demais são a rede para o caso de
- * o próprio alias mudar de forma.
+ * O prazo da coleta vem do tempo que a Lambda ainda tem, menos uma margem:
+ * uma chamada à IA já em curso pode terminar até TIMEOUT_CHAMADA_MS depois do
+ * prazo, e montar o e-mail e gravar o desfecho leva alguns segundos. Sem o
+ * prazo, uma IA lenta estourava o teto da Lambda em silêncio — o registro
+ * ficava "executando" até a tela o dar como travado, e a repetição automática
+ * da invocação reexecutava tudo por trás do operador.
  */
-const MODELOS_CANDIDATOS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+const MARGEM_FINAL_MS = TIMEOUT_CHAMADA_MS + 30_000;
 
-/** Esperas entre as tentativas no mesmo modelo — a sobrecarga do Gemini dura segundos. */
-const ESPERAS_MS = [2_000, 5_000];
-
-const dormir = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
-
-/**
- * Gemini via REST — o único trecho que conhece o provedor.
- *
- * O nível gratuito do AI Studio cobre um boletim semanal com folga (o limite
- * diário é ordens de grandeza acima de meia dúzia de fontes). Trocar de
- * provedor é reescrever esta função e nada mais: o prompt e a interpretação
- * da resposta são regra de domínio e moram no core.
- *
- * Duas defesas contra indisponibilidade momentânea, nesta ordem: retentar no
- * mesmo modelo com espera crescente e, esgotadas as tentativas, passar ao
- * próximo candidato da cadeia. `limiteMs` é o instante em que as retentativas
- * param de valer a pena — a Lambda tem 5 minutos de teto, e insistir até o
- * timeout duro perderia também as fontes que ainda seriam lidas.
- */
-function criarExtrator(chave: string, modelos: readonly string[], limiteMs: number): ExtratorPorIa {
-  // O modelo que respondeu fica valendo para as próximas fontes do mesmo
-  // lote — sem isso, cada fonte repetiria os 404 dos candidatos anteriores.
-  let indice = 0;
-
-  return {
-    async completar(prompt: string): Promise<string> {
-      let ultimoErro = 'a IA não respondeu';
-
-      while (indice < modelos.length) {
-        const modelo = modelos[indice] ?? '';
-
-        for (let tentativa = 0; tentativa <= ESPERAS_MS.length; tentativa += 1) {
-          const r = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
-            {
-              method: 'POST',
-              signal: AbortSignal.timeout(60_000),
-              headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
-              }),
-            },
-          );
-
-          const decisao = decidirPelaRespostaDoExtrator(r.status, modelo);
-
-          if (decisao.acao === 'USAR') {
-            const corpo = (await r.json()) as {
-              candidates?: { content?: { parts?: { text?: string }[] } }[];
-            };
-            const texto = corpo.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('');
-            if (texto === undefined || texto === '') throw new Error('resposta vazia do modelo');
-            return texto;
-          }
-
-          if (decisao.acao === 'DESISTIR') throw new Error(decisao.motivo);
-
-          // Modelo aposentado: ao próximo candidato, sem esperar.
-          if (decisao.acao === 'PROXIMO_MODELO') {
-            log.info('modelo indisponível, tentando o próximo', { modelo });
-            break;
-          }
-
-          ultimoErro = decisao.motivo;
-          const espera = ESPERAS_MS[tentativa];
-          // Sem tempo para mais uma espera: para de insistir aqui e deixa as
-          // fontes restantes com a chance de serem lidas.
-          if (espera === undefined || Date.now() + espera > limiteMs) break;
-
-          log.info('resposta transitória da IA; nova tentativa', {
-            modelo,
-            status: r.status,
-            esperaMs: espera,
-          });
-          await dormir(espera);
-        }
-
-        indice += 1;
-      }
-
-      throw new Error(
-        `${ultimoErro}. Nenhum modelo da lista respondeu (${modelos.join(', ')}); é indisponibilidade temporária da IA, não das fontes — gerar de novo em alguns minutos costuma resolver.`,
-      );
-    },
-  };
-}
+/** Invocação sem contexto (testes, chamada direta): assume o teto antigo da Lambda. */
+const ORCAMENTO_PADRAO_MS = 5 * 60_000;
 
 export interface ResultadoBoletim {
   readonly gerado: boolean;
@@ -203,18 +120,57 @@ export interface ResultadoBoletim {
 
 export const handler = async (
   evento: { origem?: string; execucaoId?: string; rotinaId?: string } = {},
+  contexto?: { getRemainingTimeInMillis?: () => number },
 ): Promise<ResultadoBoletim> => {
+  const prazo =
+    Date.now() + (contexto?.getRemainingTimeInMillis?.() ?? ORCAMENTO_PADRAO_MS) - MARGEM_FINAL_MS;
   const doc = dynamoDoc();
   const tabela = env('TABELA_PRINCIPAL');
   const execucoes = new DynamoExecucaoBoletimRepository(doc, tabela);
 
   /**
+   * Uma rodada de cada vez — também para as agendadas.
+   *
+   * O botão já tinha esta trava na API; as rotinas não tinham, e em 31/08 a
+   * agenda fixa de segunda e a rotina das 8h dispararam com 20 segundos de
+   * diferença, disputando o mesmo modelo sobrecarregado. A rodada pulada fica
+   * registrada como falha, com o motivo: silêncio aqui seria uma rotina que
+   * "não rodou" sem ninguém saber por quê.
+   */
+  if (evento.origem !== 'manual') {
+    const agora = new Date();
+    const emCurso = (await execucoes.listarRecentes(TENANT_PADRAO, 5)).find((e) =>
+      estaEmAndamento(e, agora),
+    );
+    if (emCurso !== undefined) {
+      const motivo = `Outra geração já estava em andamento (iniciada às ${horaCurta(emCurso.iniciadaEm)}); esta rodada foi pulada para não disputar a cota da IA. Nada foi gerado nem enviado.`;
+      log.info('rodada pulada: outra geração em andamento', {
+        emCurso: String(emCurso.execucaoId),
+        origem: evento.origem ?? 'agendado',
+      });
+      await execucoes.salvar(
+        encerrarExecucao(
+          iniciarExecucao({
+            tenantId: TENANT_PADRAO,
+            execucaoId: novoExecucaoId(evento.execucaoId ?? crypto.randomUUID()),
+            origem: evento.origem === 'rotina' ? 'ROTINA' : 'AGENDADA',
+            agora,
+          }),
+          { situacao: 'FALHOU', erro: motivo },
+          agora,
+        ),
+      );
+      return { gerado: false, totalNoticias: 0, avisos: [motivo] };
+    }
+  }
+
+  /**
    * O registro que a tela acompanha.
    *
    * Vem pronto quando o operador clicou (a API o criou antes de invocar) e
-   * nasce aqui quando é a rodada de segunda-feira — a execução agendada
-   * também precisa aparecer no histórico, senão o modelo do dia surge em
-   * Modelos sem que ninguém saiba de onde veio.
+   * nasce aqui quando é a rotina — a execução automática também precisa
+   * aparecer no histórico, senão o modelo surge em Modelos sem que ninguém
+   * saiba de onde veio.
    */
   let execucao = await obterExecucao(execucoes, evento);
 
@@ -269,16 +225,22 @@ export const handler = async (
       );
     }
 
-    const modeloFixo = process.env['MODELO_GEMINI'];
-    const extrator = criarExtrator(
+    const extrator = criarExtratorGemini({
       chave,
-      // MODELO_GEMINI definido vale sozinho — quem fixa um modelo não quer
-      // fallback silencioso para outro.
-      modeloFixo === undefined || modeloFixo === '' ? MODELOS_CANDIDATOS : [modeloFixo],
-      // Teto das retentativas: 3 min do início, dentro dos 5 min da Lambda, com
-      // folga para montar o e-mail e gravar o desfecho.
-      Date.now() + 3 * 60_000,
-    );
+      modelos: lerCadeiaDoAmbiente(process.env['MODELOS_GEMINI']),
+      prazoMs: prazo,
+      // O batimento durante as retentativas: sem ele, uma fonte que insiste
+      // por minutos pareceria morta para a tela. Gravar o pulso é acessório —
+      // falhar aqui não pode derrubar a coleta.
+      pulso: async () => {
+        try {
+          await relatar({});
+        } catch {
+          /* o batimento é acessório; a coleta é o trabalho */
+        }
+      },
+      log: (mensagem, dados) => log.info(mensagem, dados),
+    });
 
     await relatar({ etapa: 'LENDO_FONTES' });
 
@@ -287,6 +249,7 @@ export const handler = async (
         fontes,
         paginas: buscador,
         extrator,
+        prazoMs: prazo,
         // Um batimento por fonte. É o que sustenta a barra de progresso da tela
         // e o que distingue "demorando" de "morreu" (LIMITE_SEM_SINAL_MS).
         aoProgredir: async (p) => {
@@ -306,6 +269,12 @@ export const handler = async (
     );
 
     for (const aviso of coleta.avisos) log.info('aviso da coleta', { aviso });
+    log.info('coleta terminou', {
+      cadeia: extrator.cadeia(),
+      noticias: coleta.totalNoticias,
+      fontesComFalha: coleta.fontesComFalha,
+      fontesSemNoticia: coleta.fontesSemNoticia,
+    });
 
     /**
      * Nenhuma notícia por FALHA TÉCNICA não é "nada encontrado".
@@ -672,5 +641,12 @@ async function enviarPelaRotina(ctx: {
 
 const dataCurta = (d: Date): string =>
   d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+const horaCurta = (d: Date): string =>
+  d.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Sao_Paulo',
+  });
 
 export type { ResultadoColeta };

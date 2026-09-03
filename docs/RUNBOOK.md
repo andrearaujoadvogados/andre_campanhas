@@ -117,12 +117,43 @@ aws secretsmanager put-secret-value --secret-id emailmkt-prod-gemini-api-key --s
 
 3. No painel, em **Boletim**, cadastre as fontes e clique em **Gerar boletim
    agora** para testar. O modelo aparece em **Modelos**, categoria Boletim,
-   em um ou dois minutos.
+   em um ou dois minutos — ou em até uns dez, quando a IA está sobrecarregada
+   e o worker precisa insistir.
 
-A coleta agendada roda toda segunda às 8h (gera só o modelo, sem enviar).
-Além dela, as **rotinas de envio automático** na tela Boletim geram E enviam
-sem revisão, no período e horário cadastrados — cada rotina com nome, fontes,
+Não existe mais coleta agendada fixa às segundas: quem gera sozinho são as
+**rotinas de envio automático** da tela Boletim, que geram E enviam sem
+revisão, no período e horário cadastrados — cada rotina com nome, fontes,
 temas, tipo de campanha e listas de destino próprios (uma campanha por lista).
+A agenda fixa foi removida em setembro/2026 porque rodava em cima da rotina
+das 8h de segunda, disputando a mesma cota da IA.
+
+#### Modelos da IA
+
+O worker tenta uma **cadeia de modelos**, definida em `MODELOS_GEMINI` na
+stack Core (`infra/lib/stacks/core-stack.ts`): nomes estáveis na frente, o
+alias `gemini-flash-latest` por último. Por fonte, ele insiste no mesmo modelo
+com esperas de 10 e 30 segundos, passa ao próximo quando esgota, tira da
+rodada quem responder 404 e promove quem respondeu a preferido das fontes
+seguintes — tudo dentro de um prazo interno menor que o teto da Lambda, para
+o desfecho sempre ficar gravado.
+
+Quando o boletim voltar a falhar em série, dois pontos de partida:
+
+- **Qual modelo está servindo?** O log da Lambda `boletim-builder` (CloudWatch,
+  `sa-east-1`) registra `modelo da IA respondeu` na primeira resposta de cada
+  modelo na rodada, e `modelo indisponível` para os que devolveram 404.
+- **Quais modelos a chave alcança?** No CloudShell, sem imprimir a chave:
+
+```bash
+KEY=$(aws secretsmanager get-secret-value --secret-id emailmkt-prod-gemini-api-key --region sa-east-1 --query SecretString --output text)
+curl -s -H "x-goog-api-key: $KEY" "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200" | grep -o '"name": "models/gemini[^"]*"' | sort
+```
+
+Um nome que não aparecer aí não serve na cadeia. Um que aparecer e ainda assim
+falhar com 503 é sobrecarga do nível gratuito — o que resolve de vez é ativar
+cobrança no projeto do AI Studio: a edição custa centavos, e o nível pago não é
+o primeiro a ser descartado quando o modelo lota.
+
 **Atenção ao nível gratuito**: os
 dados enviados ao Gemini podem ser usados pelo Google para treinamento — por
 isso o worker só envia texto de páginas públicas de notícia, nunca dados de

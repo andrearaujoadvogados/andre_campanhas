@@ -466,7 +466,7 @@ rotasBoletim.post('/gerar', async (c) => {
     {
       iniciado: true,
       message:
-        'Geração iniciada. Acompanhe o progresso aqui — leva de um a dois minutos, e você não precisa manter a tela aberta.',
+        'Geração iniciada. Acompanhe o progresso aqui — costuma levar um ou dois minutos e, com a IA sobrecarregada, até uns dez. Você não precisa manter a tela aberta.',
       execucao: paraRespostaExecucao(execucao, agora),
     },
     202,
