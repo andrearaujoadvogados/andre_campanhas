@@ -309,6 +309,22 @@ export const enviarTesteSchema = z.object({
 });
 export type EnviarTesteInput = z.infer<typeof enviarTesteSchema>;
 
+/**
+ * Teste de um MODELO, fora de qualquer campanha.
+ *
+ * Leva o conteúdo no corpo, e não um id: o ponto é validar o que está na tela
+ * — na criação, antes mesmo de existir um modelo salvo, e na edição, antes de
+ * gravar uma versão nova só para conferir. Nome fica de fora: o e-mail de
+ * teste não o usa, e exigi-lo travaria o teste de quem ainda não batizou o
+ * modelo.
+ */
+export const enviarTesteTemplateSchema = z.object({
+  assunto: salvarTemplateSchema.shape.assunto,
+  corpoHtml: salvarTemplateSchema.shape.corpoHtml,
+  destinatarios: enviarTesteSchema.shape.destinatarios,
+});
+export type EnviarTesteTemplateInput = z.infer<typeof enviarTesteTemplateSchema>;
+
 export const agendarCampanhaSchema = z.object({
   agendadaPara: z.coerce.date(),
 });

@@ -68,6 +68,8 @@ interface CanvasProps {
   /** Edição inline de um pedaço com HTML próprio: devolve o novo `customHtml`. */
   onRowHtmlCommit: (rowId: string, html: string) => void;
   onBlockHtmlCommit: (blockId: string, html: string) => void;
+  /** Edição inline do e-mail INTEIRO com HTML próprio; ausente = só leitura. */
+  onDocumentHtmlCommit?: (html: string) => void;
   onRowAction: (rowId: string, action: RowAction) => void;
   onBlockAction: (rowId: string, colId: string, blockId: string, action: BlockAction) => void;
   onMoveBlockTo: (
@@ -712,6 +714,97 @@ function CodigoProprio({
   );
 }
 
+/** O que o iframe mede antes de ter conteúdo (jsdom, primeiro paint): um mínimo visível. */
+const ALTURA_MINIMA_DOCUMENTO = 320;
+
+/**
+ * O e-mail INTEIRO escrito à mão, editável no lugar.
+ *
+ * É o caso dos modelos do editor antigo (GrapesJS) e dos modelos de código
+ * abertos no criador: o design vem vazio e o `customHtml` do documento é o
+ * e-mail. Antes, o canvas mostrava "e-mail vazio" e a única saída era o painel
+ * de código — quem tinha um boletim pronto e queria trocar uma frase precisava
+ * achá-la no HTML. Aqui o documento aparece como na caixa de entrada e se
+ * edita com o cursor: clicar, escrever, apagar, Ctrl+B/I/U do próprio
+ * navegador.
+ *
+ * Num iframe, e não num `<div>`: o documento traz `<style>` e `body` próprios,
+ * que dentro da página do painel vazariam para a tela inteira. O iframe isola
+ * — o HTML pinta como e-mail, com as regras dele — e `designMode` faz o
+ * documento inteiro editável sem tocar no HTML de ninguém. `sandbox` sem
+ * `allow-scripts`: o HTML é autoral e passa pelo `limparHtmlDoUsuario`, mas a
+ * segunda barreira não custa nada; `allow-same-origin` é o que deixa o painel
+ * ler o documento de volta.
+ *
+ * O HTML entra de forma imperativa e SÓ quando o valor muda de fora (mesmo
+ * motivo do `EditavelHtml`): reescrever o documento a cada render mataria o
+ * caret. O commit sai no `blur` da janela do iframe — ao clicar em qualquer
+ * coisa do painel —, como nos blocos.
+ */
+function DocumentoProprio({ html, onCommit }: { html: string; onCommit?: (html: string) => void }) {
+  const ref = useRef<HTMLIFrameElement>(null);
+  /** Último HTML escrito no iframe — inclusive o que saiu do próprio commit. */
+  const ultimoHtml = useRef<string | null>(null);
+  const [altura, setAltura] = useState(ALTURA_MINIMA_DOCUMENTO);
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
+
+  useLayoutEffect(() => {
+    const iframe = ref.current;
+    const doc = iframe?.contentDocument;
+    const janela = iframe?.contentWindow;
+    if (
+      iframe === null ||
+      doc === undefined ||
+      doc === null ||
+      janela === undefined ||
+      janela === null
+    )
+      return;
+
+    if (ultimoHtml.current !== html) {
+      ultimoHtml.current = html;
+      doc.open();
+      doc.write(limparHtmlDoUsuario(html));
+      doc.close();
+      if (onCommitRef.current !== undefined) doc.designMode = 'on';
+    }
+
+    const medir = () =>
+      setAltura(Math.max(ALTURA_MINIMA_DOCUMENTO, doc.documentElement.scrollHeight));
+    medir();
+
+    const commit = () => {
+      if (onCommitRef.current === undefined) return;
+      // Preserva o doctype que veio: o `outerHTML` do documento não o inclui, e
+      // um e-mail sem ele cai no modo quirks de alguns clientes.
+      const doctype = /^\s*<!doctype[^>]*>/i.exec(html)?.[0] ?? '';
+      const serializado = limparHtmlDoUsuario(`${doctype}${doc.documentElement.outerHTML}`);
+      if (serializado === ultimoHtml.current) return;
+      ultimoHtml.current = serializado;
+      onCommitRef.current(serializado);
+    };
+
+    doc.addEventListener('input', medir);
+    janela.addEventListener('blur', commit);
+    return () => {
+      doc.removeEventListener('input', medir);
+      janela.removeEventListener('blur', commit);
+    };
+  }, [html]);
+
+  return (
+    <iframe
+      ref={ref}
+      title="E-mail com HTML próprio"
+      aria-label="E-mail com HTML próprio — edite o texto direto aqui"
+      sandbox="allow-same-origin"
+      style={{ height: altura }}
+      className="block w-full border-0 bg-white"
+    />
+  );
+}
+
 /**
  * Serializa o conteúdo editado de um bloco-wrapper (host > table > tr > td).
  *
@@ -1177,6 +1270,7 @@ export function Canvas({
   onTextCommit,
   onRowHtmlCommit,
   onBlockHtmlCommit,
+  onDocumentHtmlCommit,
   onRowAction,
   onBlockAction,
   onMoveBlockTo,
@@ -1217,7 +1311,11 @@ export function Canvas({
         </p>
       )}
       <div className="mx-auto" style={{ width: largura, zoom: escala }}>
-        {design.rows.length === 0 ? (
+        {/* Override de documento: o que é enviado é este HTML, então é ele
+            que aparece — e se edita — no canvas, no lugar das linhas. */}
+        {design.customHtml !== undefined && design.customHtml.trim() !== '' ? (
+          <DocumentoProprio html={design.customHtml} onCommit={onDocumentHtmlCommit} />
+        ) : design.rows.length === 0 ? (
           <div
             onDragOver={
               rowDragActive

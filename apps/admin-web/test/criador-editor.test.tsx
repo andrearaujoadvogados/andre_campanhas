@@ -174,7 +174,7 @@ describe('código à mão — os três níveis', () => {
     await userEvent.click(screen.getByRole('button', { name: /aplicar código/i }));
 
     expect(designAtual.customHtml).toBe('<html>documento</html>');
-    expect(screen.getByText(/o criador visual continua guardando/i)).toBeInTheDocument();
+    expect(screen.getByText(/é ele que aparece abaixo e que é enviado/i)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: /voltar ao visual/i }));
     expect(designAtual.customHtml).toBeUndefined();

@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { salvarTemplateSchema } from '@emailmkt/contracts';
+import { enviarTesteTemplateSchema, salvarTemplateSchema } from '@emailmkt/contracts';
 import {
   CONTATO_EXEMPLO,
+  EmailAddress,
+  REMETENTE_ROTINA,
   VARIAVEIS_DISPONIVEIS,
   arquivar,
   proximaVersao,
@@ -14,7 +16,11 @@ import {
 import type { Variaveis } from '../auth.js';
 import { exigirPapel } from '../auth.js';
 import { obterDependencias } from '../container.js';
+import { motivoFalhaEnvio } from '../erros.js';
 import { validarCorpo } from '../validacao.js';
+
+/** Destino inócuo para o rodapé do e-mail de teste — não descadastra nada. */
+const URL_DESCADASTRO_TESTE = 'https://campanhas.andrearaujoadvogados.com.br/teste-sem-efeito';
 
 export const rotasTemplates = new Hono<{ Variables: Variaveis }>();
 
@@ -188,7 +194,100 @@ rotasTemplates.post('/previa', validarCorpo(salvarTemplateSchema), async (c) => 
 });
 
 /**
+ * E-mail de teste do MODELO — a caixa de entrada como prévia, sem campanha.
+ *
+ * A campanha já tem o seu teste (`POST /campanhas/:id/teste`), mas ele exige
+ * uma campanha montada até a etapa 4. Quem está criando ou editando o modelo
+ * quer validar o e-mail ali mesmo — no Gmail, no Outlook do celular —, e sem
+ * isto precisava criar uma campanha de mentira só para conseguir o teste.
+ *
+ * Recebe o conteúdo que está na tela, salvo ou não: validar ANTES de gravar é
+ * o ponto, e cada gravação é uma versão nova imutável (§6.2, nota 3) — testar
+ * não pode custar uma versão. O remetente é o padrão fixo do escritório
+ * (`REMETENTE_ROTINA`, a identidade verificada no SES): o modelo não tem
+ * remetente, quem escolhe é a campanha.
+ *
+ * Mesmas regras do teste da campanha: contato de exemplo, assunto marcado
+ * como teste, descadastro inócuo, sem Configuration Set (não polui métricas),
+ * e a supressão vale — quem se descadastrou não recebe nem teste.
+ */
+rotasTemplates.post('/teste', validarCorpo(enviarTesteTemplateSchema), async (c) => {
+  const dados = c.req.valid('json');
+  const deps = await obterDependencias();
+  const usuario = c.get('usuario');
+
+  const falhas: { email: string; motivo: string }[] = [];
+
+  for (const email of dados.destinatarios) {
+    const endereco = EmailAddress.create(email);
+    if (!endereco.ok) {
+      falhas.push({ email, motivo: endereco.error.message });
+      continue;
+    }
+
+    if (await deps.supressao.estaSuprimido(usuario.tenantId, deps.hasher.hash(endereco.value))) {
+      falhas.push({
+        email,
+        motivo: 'Endereço na lista de supressão (descadastro, bounce ou reclamação).',
+      });
+      continue;
+    }
+
+    const renderizado = await deps.renderer.renderizar(
+      { assunto: `[TESTE] ${dados.assunto}`, corpoHtml: dados.corpoHtml },
+      {
+        contato: {
+          nome: CONTATO_EXEMPLO.nome,
+          email,
+          camposCustomizados: CONTATO_EXEMPLO.camposCustomizados,
+        },
+        urlDescadastro: URL_DESCADASTRO_TESTE,
+      },
+    );
+
+    const resultado = await deps.provedorEmail.enviar({
+      para: endereco.value,
+      deNome: REMETENTE_ROTINA.nome,
+      deEmail: REMETENTE_ROTINA.email,
+      assunto: renderizado.assunto,
+      corpoHtml: renderizado.corpoHtml,
+      corpoTexto: renderizado.corpoTexto,
+      listUnsubscribeUrl: URL_DESCADASTRO_TESTE,
+      configurationSet: '',
+      tags: { tipo: 'teste' },
+    });
+
+    if (!resultado.ok) {
+      falhas.push({ email, motivo: motivoFalhaEnvio(resultado.error) });
+    }
+  }
+
+  // `recursoId` fixo: o modelo pode nem existir ainda. O que a trilha precisa
+  // guardar é que alguém mandou e-mail de teste, para quem e quantos falharam.
+  await deps.auditoria.registrar({
+    tenantId: usuario.tenantId,
+    userId: usuario.userId,
+    acao: 'ENVIOU',
+    recursoTipo: 'Template',
+    recursoId: 'teste',
+    depois: { teste: true, destinatarios: dados.destinatarios.length, falhas: falhas.length },
+    ocorridoEm: deps.clock.agora(),
+  });
+
+  const enviados = dados.destinatarios.length - falhas.length;
+  return c.json({
+    enviados,
+    falhas,
+    aviso:
+      enviados > 0
+        ? `${enviados} e-mail(s) de teste enviado(s). Confira a caixa de entrada — o assunto começa com [TESTE].`
+        : 'Nenhum e-mail de teste foi enviado. Veja os motivos abaixo.',
+  });
+});
+
+/**
  * Arquiva em vez de excluir — restrito a ADMIN.
+
  *
  * O template pode ter sido usado por campanhas já enviadas. Apagá-lo quebraria a
  * trilha do que foi disparado, que é justamente o que sustenta a exigência de

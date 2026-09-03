@@ -23,7 +23,6 @@ import {
   type Campaign,
   type Contact,
   type ConteudoCampanha,
-  type FalhaEnvio,
   domainError,
   type DomainError,
   type Result,
@@ -31,7 +30,7 @@ import {
 import type { Variaveis } from '../auth.js';
 import { exigirPapel } from '../auth.js';
 import { obterDependencias, type Dependencias } from '../container.js';
-import { corpoDeErro, statusDeErro } from '../erros.js';
+import { corpoDeErro, motivoFalhaEnvio, statusDeErro } from '../erros.js';
 import { validarCorpo } from '../validacao.js';
 
 /** Destino inócuo para o rodapé do e-mail de teste — não descadastra nada. */
@@ -678,13 +677,6 @@ const naoEncontrada = (c: Ctx) =>
 
 const erroDominio = (c: Ctx, erro: DomainError) =>
   c.json(corpoDeErro(erro, c.get('correlationId')), statusDeErro(erro));
-
-/** Mensagem legível a partir da falha de envio do provedor (§5.5). */
-function motivoFalhaEnvio(falha: FalhaEnvio): string {
-  return falha.tipo === 'THROTTLED'
-    ? 'Envio limitado pela cota do provedor; tente novamente em instantes.'
-    : falha.detalhe;
-}
 
 type AcaoAuditoria = 'CRIOU' | 'EDITOU' | 'PAUSOU' | 'CANCELOU' | 'ENVIOU' | 'EXCLUIU';
 

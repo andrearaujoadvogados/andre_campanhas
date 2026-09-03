@@ -7,6 +7,7 @@ import { createBoletimDesign } from '@emailmkt/criador';
 
 import { api, type ComAviso } from '../lib/api.js';
 import { dataHora } from '../lib/formato.js';
+import { listarTemplates, type ResumoTemplate } from '../lib/templates.js';
 import { FaixaExecucaoBoletim, useExecucoesBoletim } from '../componentes/ExecucaoBoletim.tsx';
 import {
   Aviso,
@@ -22,17 +23,7 @@ import {
   classeEntrada,
 } from '../componentes/base.tsx';
 
-interface Template extends ComAviso {
-  templateId: string;
-  nome: string;
-  tipo?: 'VISUAL' | 'CODIGO';
-  categoria?: string | null;
-  thumbnail?: string | null;
-  versaoAtual: number;
-  arquivado: boolean;
-  criadoPor?: string;
-  criadoEm?: string;
-  atualizadoEm: string;
+interface Template extends ResumoTemplate, ComAviso {
   conteudo?: { assunto: string; corpoHtml: string; estruturaVisual?: string } | null;
 }
 
@@ -71,11 +62,6 @@ function gravarVisualizacao(modo: 'grade' | 'lista'): void {
   } catch {
     // Sem storage: a preferência vale só até sair da tela.
   }
-}
-
-interface Variavel {
-  chave: string;
-  descricao: string;
 }
 
 interface Previa {
@@ -186,15 +172,8 @@ export function Templates() {
   const [criadoDe, definirCriadoDe] = useState('');
   const [criadoAte, definirCriadoAte] = useState('');
 
-  const lista = useQuery({
-    queryKey: ['templates'],
-    queryFn: () =>
-      api.get<{
-        itens: Template[];
-        criadores?: Record<string, string>;
-        variaveisDisponiveis: Variavel[];
-      }>('/templates'),
-  });
+  // Todas as páginas, não só a primeira — ver `listarTemplates`.
+  const lista = useQuery({ queryKey: ['templates'], queryFn: listarTemplates });
 
   /**
    * Esta é a tela onde se espera o boletim automático aparecer — por isso ela
@@ -714,21 +693,33 @@ export function TemplateEditor() {
     { texto: string; tom: 'alerta' | 'sucesso' } | undefined
   >(undefined);
 
-  useQuery({
+  /**
+   * O modelo existente entra pelo DADO da consulta, não por efeito colateral
+   * dentro do `queryFn`.
+   *
+   * A listagem de modelos já carrega o conteúdo de cada card (a prévia) sob a
+   * mesma chave `['template', id]`. Quem clicava num card logo depois chegava
+   * aqui com o dado ainda fresco no cache — o React Query não chama o
+   * `queryFn` nesse caso —, e a versão anterior só saía do "Carregando…"
+   * dentro do `queryFn`: a tela ficava no spinner para sempre, e só um
+   * recarregar de página abria o editor.
+   */
+  const consulta = useQuery({
     queryKey: ['template', id],
     enabled: !ehNovo,
-    queryFn: async () => {
-      const t = await api.get<Template>(`/templates/${id ?? ''}`);
-      definirNome(t.nome);
-      definirTipo(t.tipo ?? 'CODIGO');
-      definirCategoria(t.categoria ?? '');
-      definirEstrutura(t.conteudo?.estruturaVisual ?? '');
-      definirAssunto(t.conteudo?.assunto ?? '');
-      definirCorpo(t.conteudo?.corpoHtml ?? '');
-      definirCarregado(true);
-      return t;
-    },
+    queryFn: () => api.get<Template>(`/templates/${id ?? ''}`),
   });
+  const modeloCarregado = consulta.data;
+  useEffect(() => {
+    if (modeloCarregado === undefined) return;
+    definirNome(modeloCarregado.nome);
+    definirTipo(modeloCarregado.tipo ?? 'CODIGO');
+    definirCategoria(modeloCarregado.categoria ?? '');
+    definirEstrutura(modeloCarregado.conteudo?.estruturaVisual ?? '');
+    definirAssunto(modeloCarregado.conteudo?.assunto ?? '');
+    definirCorpo(modeloCarregado.conteudo?.corpoHtml ?? '');
+    definirCarregado(true);
+  }, [modeloCarregado]);
 
   const salvar = useMutation({
     mutationFn: () => {
@@ -826,6 +817,10 @@ export function TemplateEditor() {
           />
         </Suspense>
 
+        <Cartao titulo="Enviar e-mail de teste">
+          <TesteDeEnvio assunto={assunto} corpoHtml={corpoHtml} />
+        </Cartao>
+
         <p className="text-sm text-ink-suave">
           Prefere escrever o HTML?{' '}
           <button
@@ -909,7 +904,11 @@ export function TemplateEditor() {
               >
                 {/* Só o modo código chega aqui: o visual ocupa a tela inteira
                     e sai antes, no `if (tipo === 'VISUAL')` acima. */}
-                <EditorEmail valor={corpoHtml} aoMudar={definirCorpo} />
+                <EditorEmail
+                  valor={corpoHtml}
+                  aoMudar={definirCorpo}
+                  aoPedirVisual={() => definirTipo('VISUAL')}
+                />
               </Suspense>
             </Campo>
 
@@ -971,7 +970,88 @@ export function TemplateEditor() {
             </div>
           )}
         </Cartao>
+
+        <Cartao titulo="Enviar e-mail de teste">
+          <TesteDeEnvio assunto={assunto} corpoHtml={corpoHtml} />
+        </Cartao>
       </div>
+    </div>
+  );
+}
+
+/**
+ * E-mail de teste do modelo — a caixa de entrada como prévia, sem campanha.
+ *
+ * A prévia na tela mostra o HTML renderizado; o que ela não mostra é como o
+ * Gmail, o Outlook ou o celular vão tratá-lo. Antes, para ver isso era preciso
+ * montar uma campanha até a etapa 4 só para chegar ao botão de teste. Aqui o
+ * teste sai com o conteúdo QUE ESTÁ NA TELA, salvo ou não: validar antes de
+ * gravar é o ponto, e cada gravação é uma versão nova.
+ *
+ * Mesma forma do teste da campanha (até 3 endereços, [TESTE] no assunto, motivo
+ * de cada falha na tela), para quem já conhece um reconhecer o outro.
+ */
+function TesteDeEnvio({ assunto, corpoHtml }: { assunto: string; corpoHtml: string }) {
+  const [texto, definirTexto] = useState('');
+  const [aviso, definirAviso] = useState<string | undefined>(undefined);
+  const [falhas, definirFalhas] = useState<{ email: string; motivo: string }[]>([]);
+
+  const teste = useMutation({
+    mutationFn: () => {
+      const destinatarios = texto
+        .split(',')
+        .map((e) => e.trim())
+        .filter((e) => e !== '');
+      return api.post<{ enviados: number; falhas: { email: string; motivo: string }[] } & ComAviso>(
+        '/templates/teste',
+        { assunto, corpoHtml, destinatarios },
+      );
+    },
+    onSuccess: (r) => {
+      definirAviso(r.aviso);
+      definirFalhas(r.falhas);
+    },
+  });
+
+  const semConteudo = assunto.trim() === '' || corpoHtml.trim() === '';
+
+  return (
+    <div className="space-y-3">
+      <Campo
+        rotulo="Enviar e-mail de teste"
+        ajuda="Até 3 endereços separados por vírgula. Sai com o conteúdo que está na tela, mesmo sem salvar, com [TESTE] no assunto e pelo remetente padrão do escritório."
+      >
+        <input
+          type="text"
+          value={texto}
+          onChange={(e) => definirTexto(e.target.value)}
+          placeholder="voce@exemplo.com, colega@exemplo.com"
+          className={classeEntrada}
+        />
+      </Campo>
+      <Botao
+        variante="secundario"
+        carregando={teste.isPending}
+        disabled={texto.trim() === '' || semConteudo}
+        onClick={() => teste.mutate()}
+      >
+        Enviar teste
+      </Botao>
+      {semConteudo && (
+        <p className="text-xs text-ink-suave">Preencha o assunto e o corpo antes de testar.</p>
+      )}
+      <Aviso texto={aviso} />
+      {falhas.length > 0 && (
+        <ul className="space-y-1 rounded-md border border-line bg-fundo-suave p-3 text-sm">
+          {falhas.map((f) => (
+            <li key={f.email}>
+              <span className="font-semibold">{f.email}</span>
+              <span className="text-ink-suave"> — {f.motivo}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <ErroCaixa erro={teste.error} />
     </div>
   );
 }

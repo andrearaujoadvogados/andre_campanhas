@@ -1,4 +1,4 @@
-import type { DomainError, DomainErrorCode } from '@emailmkt/core';
+import type { DomainError, DomainErrorCode, FalhaEnvio } from '@emailmkt/core';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 /**
@@ -55,4 +55,16 @@ export function corpoDeErroInterno(correlationId: string): CorpoErro {
     message: 'Erro inesperado. Informe o identificador de correlação ao suporte.',
     correlationId,
   };
+}
+
+/**
+ * Mensagem legível a partir da falha de envio do provedor (§5.5).
+ *
+ * Compartilhada pelos dois e-mails de teste — o da campanha e o do modelo —,
+ * para o operador ler o mesmo motivo nas duas telas.
+ */
+export function motivoFalhaEnvio(falha: FalhaEnvio): string {
+  return falha.tipo === 'THROTTLED'
+    ? 'Envio limitado pela cota do provedor; tente novamente em instantes.'
+    : falha.detalhe;
 }
