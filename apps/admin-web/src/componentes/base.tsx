@@ -9,7 +9,7 @@ import { FalhaApi } from '../lib/api.js';
  * a densidade: o site respira porque é peça de comunicação; isto é ferramenta de
  * trabalho, usada por horas seguidas, e espaço demais vira rolagem demais.
  *
- * Três regras que valem para tudo aqui:
+ * Quatro regras que valem para tudo aqui:
  *
  * 1. **Alvo de toque de 44px** em qualquer coisa clicável. É o mínimo que o
  *    WCAG 2.1 pede (2.5.5) e a diferença entre usável e frustrante no celular.
@@ -18,20 +18,32 @@ import { FalhaApi } from '../lib/api.js';
  *    verde — 8% dos homens — precisa da mesma informação.
  * 3. **O foco é visível.** O anel está declarado uma vez no `index.css`, e não
  *    se remove localmente.
+ * 4. **Hierarquia de ação acompanha a hierarquia da informação.** Um botão
+ *    cheio por contexto — o primário da tela, ou o destrutivo único de um
+ *    detalhe. Ações que se repetem a cada linha de uma lista são coadjuvantes
+ *    e usam as variantes quietas (`discreto` / `perigo-discreto`): dez
+ *    "Excluir" vinho numa lista gritam dez vezes, e quando tudo grita, nada é
+ *    hierarquia — é ruído.
  */
 
 // ── Botão ────────────────────────────────────────────────────────────────────
 
-type VarianteBotao = 'primario' | 'secundario' | 'perigo' | 'discreto';
+type VarianteBotao = 'primario' | 'secundario' | 'perigo' | 'discreto' | 'perigo-discreto';
 
 const ESTILO_BOTAO: Record<VarianteBotao, string> = {
   primario: 'bg-ink text-paper-light hover:bg-ink/90 disabled:bg-ink/40',
   secundario:
     'bg-paper-light text-ink border border-line hover:bg-accent-mist disabled:text-ink-suave/50',
   // Vinho é a cor da marca e, aqui, a de ação sem volta. Não compete com o
-  // vermelho de erro, que é outro tom e outro papel.
+  // vermelho de erro, que é outro tom e outro papel. Cheio, é reservado à
+  // ação destrutiva ÚNICA de um contexto (regra 4 do cabeçalho).
   perigo: 'bg-wine text-paper-light hover:bg-wine-escuro disabled:bg-wine/40',
   discreto: 'text-ink-suave hover:bg-accent-mist hover:text-ink',
+  // O destrutivo de linha: continua vinho — a cor É a informação de que este
+  // botão apaga — mas sem preenchimento, para dez linhas não virarem dez
+  // alarmes. O `window.confirm` que acompanha toda exclusão continua sendo a
+  // trava real; o peso visual aqui é hierarquia, não proteção.
+  'perigo-discreto': 'text-wine hover:bg-erro-fundo hover:text-wine-escuro disabled:text-wine/40',
 };
 
 export function Botao({

@@ -120,7 +120,7 @@ export function Tipos() {
                 <>
                   <span className="flex-1 font-medium text-ink">{t.nome}</span>
                   <Botao
-                    variante="secundario"
+                    variante="discreto"
                     onClick={() => {
                       definirNomeEdit(t.nome);
                       definirEditandoId(t.tipoEmailId);
@@ -128,8 +128,10 @@ export function Tipos() {
                   >
                     Renomear
                   </Botao>
+                  {/* Quieto, como toda ação de linha (regra 4 de base.tsx) — o
+                      vinho continua marcando o que apaga. */}
                   <Botao
-                    variante="perigo"
+                    variante="perigo-discreto"
                     carregando={excluir.isPending}
                     onClick={() => {
                       if (

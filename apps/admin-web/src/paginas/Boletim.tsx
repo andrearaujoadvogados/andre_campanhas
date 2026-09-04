@@ -458,19 +458,21 @@ export function Boletim() {
                 <p className="truncate text-xs text-ink-suave">{f.url}</p>
                 <p className="mt-1 text-sm text-ink-suave">{f.instrucao}</p>
               </div>
-              <div className="flex gap-2">
-                <Botao variante="secundario" onClick={() => editar(f)}>
+              {/* Ações de linha nas variantes quietas — regra 4 de base.tsx: o
+                  que se repete a cada linha não pode competir com o conteúdo. */}
+              <div className="flex gap-1">
+                <Botao variante="discreto" onClick={() => editar(f)}>
                   Editar
                 </Botao>
                 <Botao
-                  variante="secundario"
+                  variante="discreto"
                   carregando={alternarAtiva.isPending}
                   onClick={() => alternarAtiva.mutate(f)}
                 >
                   {f.ativa ? 'Pausar' : 'Reativar'}
                 </Botao>
                 <Botao
-                  variante="perigo"
+                  variante="perigo-discreto"
                   carregando={excluir.isPending}
                   onClick={() => {
                     if (window.confirm(`Excluir a fonte "${f.nome}"?`)) excluir.mutate(f.fonteId);
@@ -778,19 +780,19 @@ export function Boletim() {
                       {r.temas.length > 0 && ` · temas: ${r.temas.join(', ')}`}
                     </p>
                   </div>
-                  <div className="flex gap-2">
-                    <Botao variante="secundario" onClick={() => editarRotina(r)}>
+                  <div className="flex gap-1">
+                    <Botao variante="discreto" onClick={() => editarRotina(r)}>
                       Editar
                     </Botao>
                     <Botao
-                      variante="secundario"
+                      variante="discreto"
                       carregando={alternarRotina.isPending}
                       onClick={() => alternarRotina.mutate(r)}
                     >
                       {r.ativa ? 'Desligar' : 'Ligar'}
                     </Botao>
                     <Botao
-                      variante="perigo"
+                      variante="perigo-discreto"
                       carregando={excluirRotina.isPending}
                       onClick={() => {
                         if (window.confirm('Excluir esta rotina de envio automático?'))

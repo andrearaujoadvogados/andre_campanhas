@@ -51,8 +51,14 @@ const GRUPOS: {
   },
 ];
 
+/**
+ * Densidade responsiva: 44px de alvo onde há dedo (mobile), 36px onde há
+ * ponteiro (lg+). O alvo de toque é regra no celular; no desktop, itens de
+ * 44px somados a espaçamento generoso diluem os grupos — a lista fica tão
+ * arejada que a proximidade deixa de agrupar.
+ */
 const classeLink = ({ isActive }: { isActive: boolean }): string =>
-  `flex min-h-11 items-center rounded-md px-3 text-sm font-medium transition-colors ${
+  `flex min-h-11 items-center rounded-md px-3 text-sm font-medium transition-colors lg:min-h-9 ${
     isActive ? 'bg-ink text-paper-light' : 'text-ink-suave hover:bg-accent-mist hover:text-ink'
   }`;
 
@@ -80,7 +86,18 @@ function LogoInicio({ aoNavegar, className }: { aoNavegar?: () => void; classNam
 
 function Navegacao({ visiveis, aoNavegar }: { visiveis: typeof GRUPOS; aoNavegar?: () => void }) {
   return (
-    <nav aria-label="Seções do painel" className="flex flex-col gap-4">
+    /**
+     * A lei da proximidade, em números: 2px entre itens do mesmo grupo, 24px
+     * entre grupos — razão de ~12:1. A versão anterior tinha 4px dentro e 16px
+     * fora, e o rótulo carregava um respiro próprio para os dois lados: as
+     * distâncias ficavam parecidas demais e o olho não formava os blocos —
+     * era uma lista corrida com legendas soltas no meio.
+     *
+     * O rótulo pertence ao SEU grupo, então todo o espaço dele fica embaixo
+     * (`pb-1`) e nenhum em cima: a folga acima vem só do vão entre grupos.
+     * Assimetria é o que faz um rótulo parecer título de algo, e não divisória.
+     */
+    <nav aria-label="Seções do painel" className="flex flex-col gap-6">
       {visiveis.map((g, i) => (
         /**
          * `role="group"` + `aria-label`: quem usa leitor de tela recebe o mesmo
@@ -90,12 +107,15 @@ function Navegacao({ visiveis, aoNavegar }: { visiveis: typeof GRUPOS; aoNavegar
         <div
           key={g.rotulo ?? i}
           {...(g.rotulo === undefined ? {} : { role: 'group', 'aria-label': g.rotulo })}
-          className="flex flex-col gap-1"
+          className="flex flex-col gap-0.5"
         >
           {g.rotulo !== undefined && (
             <p
               aria-hidden="true"
-              className="px-3 pt-1 text-xs font-medium tracking-wide text-ink-suave uppercase"
+              // Menor e mais espaçado que o texto dos itens: rótulo de grupo é
+              // um degrau ABAIXO do item na hierarquia visual, embora venha
+              // antes na leitura — quem grita aqui é o destino, não a categoria.
+              className="px-3 pb-1 text-[11px] font-semibold tracking-wider text-ink-suave/80 uppercase"
             >
               {g.rotulo}
             </p>
@@ -120,21 +140,24 @@ function Navegacao({ visiveis, aoNavegar }: { visiveis: typeof GRUPOS; aoNavegar
 function BlocoUsuario({ usuario, ehAdmin }: { usuario: Usuario; ehAdmin: boolean }) {
   return (
     <div className="border-t border-line pt-3">
+      {/* Identidade (quem sou) e ações (o que faço) são dois blocos: linhas
+          coladas entre si, um vão único entre eles — a mesma proximidade da
+          navegação acima, para a barra inteira ter um só ritmo. */}
       <p className="truncate px-3 text-sm text-ink" title={usuario.email}>
         {usuario.email}
       </p>
       {/* O papel fica visível: evita a dúvida "por que não vejo esse botão?" */}
       <p className="px-3 text-xs text-ink-suave">{ehAdmin ? 'Administrador' : 'Operador'}</p>
-      <div className="mt-2">
+      <div className="mt-3 flex flex-col gap-0.5">
         <TrocarAutenticador email={usuario.email} />
+        <button
+          type="button"
+          onClick={() => void sair()}
+          className="flex min-h-11 w-full items-center rounded-md px-3 text-sm font-medium text-ink-suave transition-colors hover:bg-accent-mist hover:text-ink lg:min-h-9"
+        >
+          Sair
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={() => void sair()}
-        className="mt-2 flex min-h-11 w-full items-center rounded-md px-3 text-sm font-medium text-ink-suave transition-colors hover:bg-accent-mist hover:text-ink"
-      >
-        Sair
-      </button>
     </div>
   );
 }

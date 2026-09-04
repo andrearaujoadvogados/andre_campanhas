@@ -60,7 +60,7 @@ export function TrocarAutenticador({ email }: { email: string }) {
       <button
         type="button"
         onClick={() => void abrir()}
-        className="flex min-h-11 w-full items-center rounded-md px-3 text-sm font-medium text-ink-suave transition-colors hover:bg-accent-mist hover:text-ink"
+        className="flex min-h-11 w-full items-center rounded-md px-3 text-sm font-medium text-ink-suave transition-colors hover:bg-accent-mist hover:text-ink lg:min-h-9"
       >
         Trocar autenticador
       </button>

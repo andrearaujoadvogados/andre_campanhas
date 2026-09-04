@@ -190,10 +190,13 @@ export function Usuarios({ usuario }: { usuario: Usuario }) {
                           {dataHora(u.criadoEm)}
                         </td>
                         <td className="py-3 text-right">
-                          <div className="flex flex-wrap justify-end gap-2">
+                          {/* Ações de linha quietas (regra 4 de base.tsx): numa
+                              tabela de usuários, uma fileira de "Remover acesso"
+                              em vinho cheio leria como uma tela de alarmes. */}
+                          <div className="flex flex-wrap justify-end gap-1">
                             {u.aguardandoPrimeiroAcesso && u.habilitado && (
                               <Botao
-                                variante="secundario"
+                                variante="discreto"
                                 onClick={() => reenviar.mutate(u.id)}
                                 carregando={reenviar.isPending}
                               >
@@ -202,7 +205,7 @@ export function Usuarios({ usuario }: { usuario: Usuario }) {
                             )}
                             {!souEu && (
                               <Botao
-                                variante={u.habilitado ? 'perigo' : 'secundario'}
+                                variante={u.habilitado ? 'perigo-discreto' : 'discreto'}
                                 onClick={() => alternarAcesso.mutate(u)}
                               >
                                 {u.habilitado ? 'Remover acesso' : 'Devolver acesso'}
