@@ -423,8 +423,9 @@ export function EditorDesign({
       {value.customHtml !== undefined && value.customHtml !== '' ? (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-alerta/30 bg-alerta-fundo px-4 py-3 text-sm text-alerta">
           <span>
-            Este e-mail está com <strong>HTML próprio</strong>. O criador visual continua guardando
-            o que você monta, mas quem é enviado é o código.
+            Este e-mail está com <strong>HTML próprio</strong>: é ele que aparece abaixo e que é
+            enviado. Clique no texto para editar no lugar, ou abra o código. “Voltar ao visual”
+            descarta esse HTML e volta aos blocos.
           </span>
           <div className="flex gap-2">
             <button
@@ -497,6 +498,9 @@ export function EditorDesign({
           onBlockHtmlCommit={(blockId, html) =>
             aplicarHtmlNoBloco(blockId, html !== '' ? html : null)
           }
+          // O e-mail inteiro com HTML próprio também se edita no canvas; o
+          // HTML editado volta para o override, e vazio o derruba.
+          onDocumentHtmlCommit={(html) => apply((d) => comCustomHtml(d, html !== '' ? html : null))}
           onRowAction={handleRowAction}
           onBlockAction={handleBlockAction}
           onMoveBlockTo={handleMoveBlockTo}

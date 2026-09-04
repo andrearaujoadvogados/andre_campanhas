@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { FalhaApi, api } from '../lib/api.js';
+import { listarTemplates, modelosEscolhiveis } from '../lib/templates.js';
 import { Botao, Campo, ErroCaixa, classeEntrada } from './base.tsx';
 
 /**
@@ -53,17 +54,24 @@ export function FormularioCampanha({
 }) {
   const [tocouRemetente, definirTocouRemetente] = useState(false);
 
+  /**
+   * Lista inteira e sempre atual: o modelo pode ter acabado de ser criado em
+   * outra aba, ou gerado pela rotina do boletim — e a escolha de modelo é o
+   * lugar em que "não aparece" mais custa.
+   */
   const modelos = useQuery({
     queryKey: ['templates'],
-    queryFn: () => api.get<{ itens: { templateId: string; nome: string }[] }>('/templates'),
+    queryFn: listarTemplates,
+    refetchOnMount: 'always',
   });
   const listas = useQuery({
     queryKey: ['listas'],
     queryFn: () => api.get<{ itens: { listId: string; nome: string }[] }>('/listas'),
   });
 
-  const opcoesModelo: Opcao[] =
-    modelos.data?.itens.map((t) => ({ id: t.templateId, nome: t.nome })) ?? [];
+  const opcoesModelo: Opcao[] = modelosEscolhiveis(modelos.data?.itens ?? [], valor.templateId).map(
+    (t) => ({ id: t.templateId, nome: t.nome }),
+  );
   const opcoesLista: Opcao[] =
     listas.data?.itens.map((l) => ({ id: l.listId, nome: l.nome })) ?? [];
 

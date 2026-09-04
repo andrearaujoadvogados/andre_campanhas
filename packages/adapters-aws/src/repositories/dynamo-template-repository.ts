@@ -104,6 +104,12 @@ export class DynamoTemplateRepository implements TemplateRepository {
    *
    * Templates são poucos — dezenas, não milhares —, então a partição única não
    * é problema aqui e evita mais um índice.
+   *
+   * Do mais recente para o mais antigo. A chave de ordenação é `atualizadoEm`,
+   * e a ordem natural do índice (crescente) punha os modelos NOVOS no fim: com
+   * mais de uma página, o modelo recém-criado — e cada boletim que a rotina
+   * gera — ficava na página seguinte, que a escolha de modelo da campanha
+   * nunca pedia. "Criei o modelo e ele não aparece" era isto.
    */
   async listar(tenantId: TenantId, cursor?: string): Promise<Pagina<Template>> {
     const r = await this.doc.send(
@@ -113,6 +119,7 @@ export class DynamoTemplateRepository implements TemplateRepository {
         KeyConditionExpression: 'gsi3pk = :pk',
         ExpressionAttributeValues: { ':pk': `TENANT#${tenantId}#TEMPLATES` },
         ExclusiveStartKey: decodificarCursor(cursor),
+        ScanIndexForward: false,
         Limit: 50,
       }),
     );

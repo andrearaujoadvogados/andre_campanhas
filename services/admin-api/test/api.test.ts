@@ -723,6 +723,68 @@ describe('editar e excluir campanha', () => {
   });
 });
 
+describe('e-mail de teste do MODELO — sem campanha', () => {
+  /**
+   * Validar o modelo na criação ou na edição, antes de existir campanha — e
+   * antes de salvar: o conteúdo vai no corpo, e nada é gravado.
+   */
+  const testar = (corpo: unknown) =>
+    req(
+      '/templates/teste',
+      {
+        method: 'POST',
+        body: JSON.stringify(corpo),
+        headers: { 'content-type': 'application/json' },
+      },
+      evento({ grupos: ['operador'] }),
+    );
+
+  it('envia o conteúdo da tela, marcado como teste e pelo remetente padrão', async () => {
+    const r = await testar({
+      assunto: 'Boletim de {{contato.primeiroNome}}',
+      corpoHtml: '<p>Olá {{contato.primeiroNome}}, rascunho ainda não salvo.</p>',
+      destinatarios: ['operador@exemplo.com'],
+    });
+    const corpo = (await r.json()) as { enviados: number; aviso: string };
+
+    expect(r.status).toBe(200);
+    expect(corpo.enviados).toBe(1);
+    expect(corpo.aviso).toMatch(/\[TESTE\]/);
+    expect(estado.enviados).toEqual(['operador@exemplo.com']);
+    // O que saiu é o que estava na tela, personalizado com o contato de exemplo.
+    expect(estado.corposEnviados[0]).toContain('rascunho ainda não salvo');
+    expect(estado.corposEnviados[0]).toContain('Maria');
+    // Nada gravado: testar não pode custar uma versão do modelo.
+    expect(estado.salvos).toHaveLength(0);
+    expect(estado.auditados).toContainEqual({ acao: 'ENVIOU', recursoTipo: 'Template' });
+  });
+
+  it('a supressão vale aqui como no teste da campanha', async () => {
+    estado.suprimidosExistentes = ['h:saiu@exemplo.com'];
+
+    const r = await testar({
+      assunto: 'x',
+      corpoHtml: '<p>x</p>',
+      destinatarios: ['saiu@exemplo.com', 'fica@exemplo.com'],
+    });
+    const corpo = (await r.json()) as { enviados: number; falhas: { email: string }[] };
+
+    expect(corpo.enviados).toBe(1);
+    expect(corpo.falhas.map((f) => f.email)).toEqual(['saiu@exemplo.com']);
+    expect(estado.enviados).toEqual(['fica@exemplo.com']);
+  });
+
+  it('exige assunto, corpo e ao menos um destinatário', async () => {
+    expect(
+      (await testar({ assunto: '', corpoHtml: '<p>x</p>', destinatarios: ['a@b.co'] })).status,
+    ).toBe(400);
+    expect((await testar({ assunto: 'x', corpoHtml: '<p>x</p>', destinatarios: [] })).status).toBe(
+      400,
+    );
+    expect(estado.enviados).toEqual([]);
+  });
+});
+
 describe('o teste mostra o e-mail que vai sair', () => {
   /**
    * O bug que estes testes fecham: `templateVersao` nascia cravado em 1 e o

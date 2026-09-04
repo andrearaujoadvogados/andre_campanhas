@@ -2,6 +2,7 @@ import { Suspense, lazy, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { FalhaApi, api, type ComAviso } from '../lib/api.js';
+import { listarTemplates, modelosEscolhiveis } from '../lib/templates.js';
 import { Aviso, Botao, Campo, ErroCaixa, classeEntrada } from './base.tsx';
 
 /** O criador visual é pesado; só carrega para quem escolhe montar do zero. */
@@ -102,12 +103,11 @@ export function AssistenteCampanha({ aoCancelar }: { aoCancelar: () => void }) {
   const [desmarcados, definirDesmarcados] = useState<Set<string>>(new Set());
   const [buscaDest, definirBuscaDest] = useState('');
 
+  // Lista inteira (todas as páginas) e sempre atual — ver `listarTemplates`.
   const modelos = useQuery({
     queryKey: ['templates'],
-    queryFn: () =>
-      api.get<{ itens: { templateId: string; nome: string; categoria?: string | null }[] }>(
-        '/templates',
-      ),
+    queryFn: listarTemplates,
+    refetchOnMount: 'always',
   });
   const listas = useQuery({
     queryKey: ['listas'],
@@ -304,8 +304,9 @@ export function AssistenteCampanha({ aoCancelar }: { aoCancelar: () => void }) {
   const casaComTipo = (categoria: string | null | undefined): boolean =>
     nomeTipoEscolhido !== undefined &&
     (categoria ?? '').trim().toLowerCase() === nomeTipoEscolhido.trim().toLowerCase();
-  const modelosRecomendados = (modelos.data?.itens ?? []).filter((m) => casaComTipo(m.categoria));
-  const modelosDemais = (modelos.data?.itens ?? []).filter((m) => !casaComTipo(m.categoria));
+  const modelosDisponiveis = modelosEscolhiveis(modelos.data?.itens ?? [], dados.templateId);
+  const modelosRecomendados = modelosDisponiveis.filter((m) => casaComTipo(m.categoria));
+  const modelosDemais = modelosDisponiveis.filter((m) => !casaComTipo(m.categoria));
 
   return (
     <div className="space-y-6">

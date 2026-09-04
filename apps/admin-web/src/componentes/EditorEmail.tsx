@@ -224,6 +224,18 @@ function Barra({ editor }: { editor: Editor }) {
  * intencional e fica como está. A transformação é idempotente: ao reabrir o
  * modelo, o editor volta a embrulhar, e salvar de novo desembrulha outra vez.
  */
+/**
+ * HTML de documento inteiro — `<html>`, `<body>` ou tabelas de layout.
+ *
+ * É o que sai do criador visual, de um boletim gerado ou de uma ferramenta
+ * externa. O ProseMirror não tem tabela nem `<html>` no esquema: ao carregar,
+ * ele descarta a estrutura e guarda só o texto — e ao PRIMEIRO toque grava
+ * essa versão simplificada por cima do modelo. Bonito de ler, layout perdido.
+ */
+export function ehDocumentoCompleto(html: string): boolean {
+  return /<\s*(html|body|table)\b/i.test(html);
+}
+
 function normalizarListas(html: string): string {
   const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
 
@@ -240,11 +252,17 @@ function normalizarListas(html: string): string {
 export function EditorEmail({
   valor,
   aoMudar,
+  aoPedirVisual,
 }: {
   valor: string;
   aoMudar: (html: string) => void;
+  /** "Editar no criador visual": entrega o modelo ao criador, que edita o HTML no lugar. */
+  aoPedirVisual?: () => void;
 }) {
-  const [verHtml, definirVerHtml] = useState(false);
+  const documento = ehDocumentoCompleto(valor);
+  // Documento inteiro abre no código: no editor de texto ele já chegaria
+  // desmontado, e a pessoa não teria como saber que foi o editor que fez isso.
+  const [verHtml, definirVerHtml] = useState(documento);
 
   const editor = useEditor({
     extensions: [
@@ -296,6 +314,23 @@ export function EditorEmail({
 
   return (
     <div className="overflow-hidden rounded-md border border-line bg-paper-light">
+      {documento && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-3 border-b border-alerta/30 bg-alerta-fundo px-4 py-3 text-sm text-alerta"
+        >
+          <span>
+            Este modelo é um <strong>HTML completo</strong>, com layout próprio. O editor de texto
+            simplificaria as tabelas ao primeiro toque — por isso ele abre no código. Para editar
+            visualmente, use o criador de e-mail.
+          </span>
+          {aoPedirVisual !== undefined && (
+            <Botao variante="secundario" onClick={aoPedirVisual} className="px-3">
+              Editar no criador visual
+            </Botao>
+          )}
+        </div>
+      )}
       <Barra editor={editor} />
 
       {verHtml ? (
