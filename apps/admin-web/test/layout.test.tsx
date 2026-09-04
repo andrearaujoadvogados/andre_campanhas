@@ -73,6 +73,24 @@ describe('navegação lateral', () => {
     }
   });
 
+  it('a proximidade agrupa: vão entre grupos MUITO maior que entre itens do grupo', () => {
+    // Lei da proximidade (Gestalt): o agrupamento só existe se a razão entre as
+    // distâncias for grande. O teste fixa as classes de propósito — quem mudar
+    // o espaçamento precisa vir aqui afirmar que a razão continua agrupando,
+    // não só que "ficou bonito".
+    montar(ADMIN);
+    const barras = screen.getAllByRole('navigation', { name: /seções do painel/i });
+    const nav = barras[0] as HTMLElement;
+
+    expect(nav.className).toContain('gap-6'); // 24px entre grupos
+    const grupo = within(nav).getByRole('group', { name: 'Envio' });
+    expect(grupo.className).toContain('gap-0.5'); // 2px dentro do grupo
+
+    // O rótulo pertence ao grupo: vive DENTRO do contêiner dele, como primeiro
+    // filho — não é uma divisória solta entre listas.
+    expect(grupo.firstElementChild?.textContent).toBe('Envio');
+  });
+
   it('esconde Usuários de quem não é ADMIN', () => {
     // Esconder é conveniência, não segurança — quem barra é o `exigirPapel` da
     // API. Mas oferecer um link que devolve 403 é pior que não oferecer.
