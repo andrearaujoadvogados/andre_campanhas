@@ -890,6 +890,26 @@ function SeloDeCodigo() {
   );
 }
 
+/**
+ * A moldura da coluna no canvas — a mesma que o compilador emite (`Column.attrs`).
+ *
+ * Sem isto, o card vinho do boletim apareceria branco com texto branco: o
+ * operador editaria às cegas um pedaço que o e-mail mostra em destaque.
+ */
+function estiloDaColuna(column: Column): React.CSSProperties {
+  const attrs = column.attrs;
+  return {
+    width: `${String(column.widthPct)}%`,
+    ...(attrs?.backgroundColor !== undefined && attrs.backgroundColor !== ''
+      ? { backgroundColor: attrs.backgroundColor }
+      : {}),
+    ...(attrs?.padding !== undefined && attrs.padding !== '' ? { padding: attrs.padding } : {}),
+    ...(attrs?.borderRadius !== undefined && attrs.borderRadius > 0
+      ? { borderRadius: attrs.borderRadius }
+      : {}),
+  };
+}
+
 function ColumnView({
   row,
   column,
@@ -937,7 +957,7 @@ function ColumnView({
   }
 
   return (
-    <div style={{ width: `${String(column.widthPct)}%` }} className="min-w-0">
+    <div style={estiloDaColuna(column)} className="min-w-0">
       {column.blocks.length === 0 && columnSelected && !blockDragActive ? (
         // Seletor de blocos direto na coluna: um clique escolhe e insere.
         <div
@@ -1154,11 +1174,7 @@ export function RowView({
         <div className="flex flex-wrap">
           {row.columns.map((column) =>
             readOnly === true ? (
-              <div
-                key={column.id}
-                style={{ width: `${String(column.widthPct)}%` }}
-                className="min-w-0"
-              >
+              <div key={column.id} style={estiloDaColuna(column)} className="min-w-0">
                 {column.blocks.map((block) => (
                   <BlockView
                     key={block.id}

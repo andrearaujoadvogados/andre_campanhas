@@ -369,9 +369,11 @@ describe('edição de retrospectiva — o boletim sai de qualquer modo', () => {
 
     expect(resultado.gerado).toBe(true);
     expect(resultado.edicao).toBe('RETROSPECTIVA');
-    // Duas passadas na única fonte: novidades e, depois, retrospectiva.
-    expect(estado.prompts).toHaveLength(2);
+    // Duas passadas na única fonte (novidades e, depois, retrospectiva) e a
+    // passada editorial sobre o que a retrospectiva trouxe.
+    expect(estado.prompts).toHaveLength(3);
     expect(estado.prompts[1]).toContain('mais lidas');
+    expect(estado.prompts[2]).toContain('edição de RETROSPECTIVA');
 
     // A campanha sai, e o e-mail avisa o leitor antes das notícias.
     expect(estado.campanhasSalvas).toHaveLength(1);
@@ -436,5 +438,89 @@ describe('edição de retrospectiva — o boletim sai de qualquer modo', () => {
     expect(estado.templatesSalvos).toHaveLength(0);
     expect(estado.campanhasSalvas).toHaveLength(0);
     expect(execucaoFinal().situacao).toBe('SEM_NOTICIAS');
+  });
+});
+
+describe('passada editorial — do material coletado para a edição de referência', () => {
+  const DUAS_NOTICIAS = JSON.stringify([
+    {
+      titulo: 'CPRB continua na base do PIS e da Cofins',
+      resumo: 'Tema 1.276 julgado sob o rito dos repetitivos.',
+      url: 'https://fonte.exemplo/cprb',
+      tag: 'STJ',
+    },
+    {
+      titulo: 'ITBI na integralização de capital: julgamento começa e para',
+      resumo: 'Sessão ocupada pelas sustentações orais.',
+      url: 'https://fonte.exemplo/itbi',
+      tag: 'STF',
+    },
+  ]);
+
+  const EDICAO = JSON.stringify({
+    titulo: 'Os tribunais superiores voltaram a decidir',
+    introducao: 'Depois de um semestre de adiamentos, STF e STJ entregaram definições de peso.',
+    destaque: {
+      indice: 0,
+      chapeu: 'STJ, 03/09',
+      paragrafos: ['A Primeira Seção julgou o Tema 1.276.', 'O argumento não prevaleceu.'],
+      significa: 'Empresas da desoneração da folha precisam reavaliar a posição.',
+    },
+    demais: [{ indice: 1, chapeu: 'STF · Holdings e planejamento patrimonial' }],
+    radar: [{ quando: '01/10', texto: 'Retomada do Tema 1.348.' }],
+  });
+
+  it('a IA edita: destaque, leitura prática, chapéus e radar entram no e-mail e o título vai ao assunto', async () => {
+    estado.ia = (prompt) => (prompt.includes('--- NOTÍCIAS ---') ? EDICAO : DUAS_NOTICIAS);
+
+    const resultado = await handler({ origem: 'rotina', rotinaId: 'r-1' });
+
+    expect(resultado.gerado).toBe(true);
+    // Extração, edição e o aprofundamento do destaque com a matéria lida.
+    expect(estado.prompts).toHaveLength(3);
+    expect(estado.prompts[1]).toContain('[0] tag: STJ');
+    expect(estado.prompts[2]).toContain('TEXTO DA MATÉRIA [0]');
+
+    const corpoHtml = String(estado.templatesSalvos[0]?.versao['corpoHtml']);
+    const ordem = [
+      'BOLETIM TRIBUTÁRIO',
+      'Os tribunais superiores voltaram a decidir',
+      'DESTAQUE · STJ, 03/09',
+      'O argumento não prevaleceu.',
+      'O QUE ISSO SIGNIFICA PARA VOCÊ',
+      'TAMBÉM NESTAS SEMANAS',
+      'STF · HOLDINGS E PLANEJAMENTO PATRIMONIAL',
+      'NO RADAR',
+      'Retomada do Tema 1.348.',
+    ].map((marca) => corpoHtml.indexOf(marca));
+    for (const [i, posicao] of ordem.entries()) {
+      expect(posicao, `marca ${String(i)}`).toBeGreaterThan(-1);
+      if (i > 0) expect(posicao).toBeGreaterThan(ordem[i - 1] ?? -1);
+    }
+    expect(String(estado.templatesSalvos[0]?.versao['assunto'])).toBe(
+      'Boletim Tributário — Os tribunais superiores voltaram a decidir',
+    );
+    // O período sai por extenso, como na edição de referência.
+    expect(corpoHtml).toMatch(
+      /\d{1,2}( de [a-zç]+)? a \d{1,2} de [a-zç]+ de \d{4} · Edição semanal/,
+    );
+    expect(execucaoFinal().avisos).toEqual([]);
+  });
+
+  it('IA editora fora do formato: o boletim sai no layout padrão, com aviso — e sai', async () => {
+    estado.ia = (prompt) => (prompt.includes('--- NOTÍCIAS ---') ? 'não é json' : DUAS_NOTICIAS);
+
+    const resultado = await handler({ origem: 'rotina', rotinaId: 'r-1' });
+
+    expect(resultado.gerado).toBe(true);
+    expect(estado.campanhasSalvas).toHaveLength(1);
+    const corpoHtml = String(estado.templatesSalvos[0]?.versao['corpoHtml']);
+    // A primeira notícia sobe para o card; a outra segue abaixo; sem radar.
+    expect(corpoHtml).toContain('DESTAQUE · STJ');
+    expect(corpoHtml.indexOf('CPRB continua')).toBeLessThan(
+      corpoHtml.indexOf('TAMBÉM NESTAS SEMANAS'),
+    );
+    expect(corpoHtml).not.toContain('NO RADAR');
+    expect(execucaoFinal().avisos.join(' ')).toContain('formato padrão');
   });
 });

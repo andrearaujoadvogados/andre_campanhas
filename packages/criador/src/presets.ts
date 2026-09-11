@@ -49,6 +49,18 @@ export const LOGO_EMAIL = {
   width: 260,
 } as const;
 
+/**
+ * A mesma arte em dourado, para fundo vinho — o cabeçalho do boletim.
+ *
+ * É a arte vinho recolorida pixel a pixel (só o RGB muda; o alfa é o mesmo),
+ * não um logo diferente: sobre a faixa vinho a versão vinho sumiria, e um
+ * cliente com imagens bloqueadas mostra o `alt` de qualquer modo.
+ */
+export const LOGO_EMAIL_CLARO = {
+  ...LOGO_EMAIL,
+  src: 'https://campanhas.andrearaujoadvogados.com.br/marca/logo-email-claro-v1.png',
+} as const;
+
 // ─── Blocos padrão ───────────────────────────────────────────────
 
 export function createBlock(type: BlockType): Block {

@@ -139,6 +139,17 @@ export interface Column {
   id: string;
   widthPct: number;
   blocks: Block[];
+  /**
+   * Moldura própria da coluna — fundo, recuo interno e cantos. Ausente na
+   * maioria das colunas (o fundo é o da linha); existe para o "card" do
+   * boletim, que precisa de fundo vinho RECUADO das bordas do e-mail, o que
+   * só a coluna consegue: o fundo da linha vai de ponta a ponta.
+   */
+  attrs?: {
+    backgroundColor?: string;
+    padding?: string;
+    borderRadius?: number;
+  };
 }
 
 export interface Row {

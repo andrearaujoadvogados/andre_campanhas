@@ -29,6 +29,7 @@ import {
   type BuscadorDePagina,
   type Campaign,
   type EdicaoBoletim,
+  type EdicaoEditorial,
   type EscolhaColeta,
   type ExecucaoBoletim,
   type ExecucaoBoletimRepository,
@@ -43,14 +44,16 @@ import { compileDesignToMjml, criarBoletimColetado, type NoticiaDaColeta } from 
 import { paginaParaTexto } from '@emailmkt/email-render';
 import mjml2html from 'mjml';
 
+import { editarEdicao } from './editor.js';
 import { TIMEOUT_CHAMADA_MS, criarExtratorGemini, lerCadeiaDoAmbiente } from './extrator-gemini.js';
 
 /**
  * Monta o boletim automaticamente — §11, item 12.
  *
  * Pipeline: fontes cadastradas → texto de cada página → extrator de IA →
- * design do boletim (as MESMAS fábricas do painel, via @emailmkt/criador) →
- * MJML → HTML → **modelo novo** na categoria Boletim.
+ * passada editorial (a IA escolhe o destaque, escreve título, abertura e
+ * radar — `editor.ts`) → design do boletim (as MESMAS fábricas do painel, via
+ * @emailmkt/criador) → MJML → HTML → **modelo novo** na categoria Boletim.
  *
  * Nos caminhos manual e agendado, termina no modelo: o disparo continua
  * humano, com revisão editorial antes de qualquer envio (§10.3). A exceção é a
@@ -320,7 +323,11 @@ export const handler = async (
         temas: rotina?.temas ?? [],
       });
       if (acervo.length > 0) {
-        conteudo = { noticias: acervo, fontes: ['edições anteriores deste boletim'] };
+        conteudo = {
+          noticias: acervo,
+          fontes: ['edições anteriores deste boletim'],
+          urlsDasFontes: [],
+        };
         edicao = 'RETROSPECTIVA';
         log.info('edição montada do acervo', { noticias: acervo.length });
       }
@@ -363,8 +370,35 @@ export const handler = async (
       totalNoticias: conteudo.noticias.length,
     });
 
+    /**
+     * A passada editorial: de notícias soltas para a edição de referência —
+     * destaque desenvolvido, leitura prática, chapéus, radar. Falha aqui não
+     * segura o boletim: a edição padrão tem o mesmo layout, e o aviso conta
+     * ao operador o que a IA não fez.
+     */
+    const agoraEdicao = new Date();
+    const editada = await editarEdicao({
+      nomeDoBoletim: rotina?.nome ?? 'Boletim',
+      periodo: periodoDaEdicao(rotina, agoraEdicao),
+      noticias: conteudo.noticias,
+      ...(rotina === null || rotina.temas.length === 0 ? {} : { temas: rotina.temas }),
+      retrospectiva: edicao === 'RETROSPECTIVA',
+      urlsDasFontes: conteudo.urlsDasFontes,
+      extrator,
+      paginas: buscador,
+      prazoMs: prazo,
+      log: (mensagem, dados) => log.info(mensagem, dados),
+    });
+    for (const aviso of editada.avisos) log.info('aviso da edição', { aviso });
+    log.info('edição montada', {
+      origem: editada.origem,
+      radar: editada.edicao?.radar.length ?? 0,
+    });
+    avisos = [...avisos, ...editada.avisos];
+
     const resultado = await montarModelo({
       conteudo,
+      editorial: editada.edicao,
       edicao,
       avisos,
       templates,
@@ -440,6 +474,8 @@ async function obterExecucao(
 interface ConteudoEdicao {
   readonly noticias: readonly NoticiaDaColeta[];
   readonly fontes: readonly string[];
+  /** Páginas lidas: notícia cujo link é uma delas não tem matéria própria. */
+  readonly urlsDasFontes: readonly string[];
 }
 
 /** Das fontes lidas para o conteúdo da edição — sem tag da IA, o chapéu é o nome da fonte. */
@@ -454,11 +490,14 @@ function conteudoDaColeta(coleta: ResultadoColeta): ConteudoEdicao {
       })),
     ),
     fontes: coleta.porFonte.map((f) => f.fonte.nome),
+    urlsDasFontes: coleta.porFonte.map((f) => f.fonte.url),
   };
 }
 
 async function montarModelo(ctx: {
   conteudo: ConteudoEdicao;
+  /** A edição como a IA (ou o padrão) a organizou; null só sem notícia nenhuma. */
+  editorial: EdicaoEditorial | null;
   edicao: EdicaoBoletim;
   avisos: readonly string[];
   templates: DynamoTemplateRepository;
@@ -469,7 +508,7 @@ async function montarModelo(ctx: {
   doc: ReturnType<typeof dynamoDoc>;
   tabela: string;
 }): Promise<ResultadoBoletim> {
-  const { conteudo, edicao, avisos, templates, execucoes, execucao, rotina } = ctx;
+  const { conteudo, editorial, edicao, avisos, templates, execucoes, execucao, rotina } = ctx;
   const agora = new Date();
   const retrospectiva = edicao === 'RETROSPECTIVA';
 
@@ -490,13 +529,33 @@ async function montarModelo(ctx: {
         )?.nome;
   const nomeBase = rotina?.nome ?? 'Boletim automático';
 
+  const tituloPadrao = retrospectiva ? 'As leituras mais relevantes' : 'Destaques do período';
+  const titulo = editorial !== null && editorial.titulo !== '' ? editorial.titulo : tituloPadrao;
+
   const design = criarBoletimColetado({
     chapeu: rotina?.nome ?? 'Boletim',
-    titulo: retrospectiva ? 'As leituras mais relevantes' : 'Destaques do período',
+    titulo,
     periodo: periodoDaEdicao(rotina, agora),
-    introducao: '',
+    introducao: editorial?.introducao ?? '',
     edicao,
-    noticias: conteudo.noticias,
+    ...(editorial === null
+      ? { noticias: conteudo.noticias }
+      : {
+          destaque: {
+            noticia: editorial.destaque.noticia,
+            chapeu: editorial.destaque.chapeu,
+            paragrafos: editorial.destaque.paragrafos,
+            significa: editorial.destaque.significa,
+          },
+          // O chapéu editado entra no lugar da tag: é o que o e-mail mostra.
+          noticias: editorial.demais.map((n) => ({
+            titulo: n.titulo,
+            resumo: n.resumo,
+            url: n.url,
+            tag: n.chapeu,
+          })),
+          radar: editorial.radar,
+        }),
     fontes: conteudo.fontes,
   });
 
@@ -524,10 +583,12 @@ async function montarModelo(ctx: {
   // O assunto da retrospectiva diz o que ela é: quem recebe o boletim toda
   // semana não pode abrir "os destaques da semana" e encontrar matéria antiga.
   const assunto = retrospectiva
-    ? `${nomeBase} — retrospectiva: as leituras mais relevantes`
-    : rotina === null
-      ? 'Boletim Tributário — os destaques da semana'
-      : `${rotina.nome} — ${dataCurta(agora)}`;
+    ? `${nomeBase} — retrospectiva: ${titulo.toLowerCase() === tituloPadrao.toLowerCase() ? 'as leituras mais relevantes' : titulo}`
+    : editorial !== null && editorial.titulo !== ''
+      ? `${nomeBase} — ${editorial.titulo}`
+      : rotina === null
+        ? 'Boletim Tributário — os destaques da semana'
+        : `${rotina.nome} — ${dataCurta(agora)}`;
 
   await templates.salvarComVersao(template, {
     versao: 1,
@@ -577,10 +638,10 @@ async function montarModelo(ctx: {
   };
 }
 
-/** "27/08/2026 a 03/09/2026 · Edição semanal" — o recorte que a rotina cobre. */
+/** "26 de agosto a 11 de setembro de 2026 · Edição semanal" — o recorte que a rotina cobre. */
 function periodoDaEdicao(rotina: RotinaBoletim | null, agora: Date): string {
   const periodicidade = rotina?.periodicidade;
-  if (periodicidade === 'DIARIA') return `${dataCurta(agora)} · Edição diária`;
+  if (periodicidade === 'DIARIA') return `${dataPorExtenso(agora)} · Edição diária`;
   const dias = periodicidade === 'MENSAL' ? 30 : 7;
   const rotulo =
     periodicidade === 'MENSAL'
@@ -588,7 +649,34 @@ function periodoDaEdicao(rotina: RotinaBoletim | null, agora: Date): string {
       : periodicidade === 'SEMANAL'
         ? 'Edição semanal'
         : 'Edição automática';
-  return `${dataCurta(new Date(agora.getTime() - dias * 86_400_000))} a ${dataCurta(agora)} · ${rotulo}`;
+  return `${periodoPorExtenso(new Date(agora.getTime() - dias * 86_400_000), agora)} · ${rotulo}`;
+}
+
+const FUSO = 'America/Sao_Paulo';
+
+/** "11 de setembro de 2026". */
+function dataPorExtenso(d: Date): string {
+  return d.toLocaleDateString('pt-BR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: FUSO,
+  });
+}
+
+/**
+ * "26 de agosto a 11 de setembro de 2026" — ou "3 a 10 de setembro de 2026"
+ * quando o mês é o mesmo: repetir o mês seria ler duas vezes a mesma coisa.
+ */
+function periodoPorExtenso(inicio: Date, fim: Date): string {
+  const mesmoMes =
+    inicio.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: FUSO }) ===
+    fim.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: FUSO });
+  const diaInicio = inicio.toLocaleDateString('pt-BR', { day: 'numeric', timeZone: FUSO });
+  const inicioTexto = mesmoMes
+    ? diaInicio
+    : inicio.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', timeZone: FUSO });
+  return `${inicioTexto} a ${dataPorExtenso(fim)}`;
 }
 
 /** Identidade do envio automático nos registros — não há pessoa apertando botão. */
