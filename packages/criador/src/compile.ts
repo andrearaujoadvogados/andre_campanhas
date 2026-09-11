@@ -8,7 +8,7 @@
 // modelo neste sistema, e o Liquid resolve variável desconhecida para string
 // vazia SEM erro — um `{{titulo}}` aqui sumiria no envio sem ninguém ver.
 
-import type { Block, EmailDesign, Row } from './tipos.js';
+import type { Block, Column, EmailDesign, Row } from './tipos.js';
 
 function escAttr(value: string): string {
   return value
@@ -84,6 +84,23 @@ function compileBlock(block: Block, design: EmailDesign): string {
   }
 }
 
+/** Fundo, recuo e cantos da coluna, quando ela tem moldura própria (ver `Column.attrs`). */
+function atributosDaColuna(col: Column): string {
+  const attrs = col.attrs;
+  if (attrs === undefined) return '';
+  const partes: string[] = [];
+  if (attrs.backgroundColor !== undefined && attrs.backgroundColor !== '') {
+    partes.push(` background-color="${escAttr(attrs.backgroundColor)}"`);
+  }
+  if (attrs.padding !== undefined && attrs.padding !== '') {
+    partes.push(` padding="${escAttr(attrs.padding)}"`);
+  }
+  if (attrs.borderRadius !== undefined && attrs.borderRadius > 0) {
+    partes.push(` border-radius="${String(attrs.borderRadius)}px"`);
+  }
+  return partes.join('');
+}
+
 function compileRow(row: Row, design: EmailDesign, marca: Marca): string {
   const corpo =
     row.customHtml !== undefined && row.customHtml.trim() !== ''
@@ -104,7 +121,7 @@ function compileRow(row: Row, design: EmailDesign, marca: Marca): string {
                     )}`,
                 )
                 .join('\n');
-              return `    <mj-column width="${String(col.widthPct)}%">\n${blocks}\n    </mj-column>`;
+              return `    <mj-column width="${String(col.widthPct)}%"${atributosDaColuna(col)}>\n${blocks}\n    </mj-column>`;
             })
             .join('\n');
           return `  <mj-section background-color="${escAttr(background)}" padding="${escAttr(row.attrs.padding)}">\n${columns}\n  </mj-section>`;

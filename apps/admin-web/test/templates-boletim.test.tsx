@@ -83,9 +83,9 @@ describe('novo boletim — o atalho que abre o criador montado', () => {
 
     // O criador carrega com lazy(); as notícias de exemplo aparecem no canvas.
     expect(
-      await screen.findByText(/NF-e sem IBS e CBS/i, undefined, { timeout: 5000 }),
+      await screen.findByText(/CPRB continua na base/i, undefined, { timeout: 5000 }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/PRAZOS DE AGOSTO/i)).toBeInTheDocument();
+    expect(screen.getByText(/NO RADAR/i)).toBeInTheDocument();
 
     // Nome e assunto chegam preenchidos — editáveis, não vazios.
     expect(screen.getByLabelText(/nome do modelo/i)).toHaveValue('Boletim Tributário');
@@ -101,7 +101,7 @@ describe('novo boletim — o atalho que abre o criador montado', () => {
     chamadas.length = 0;
     montar('/templates/novo?inicio=boletim');
 
-    await screen.findByText(/NF-e sem IBS e CBS/i, undefined, { timeout: 5000 });
+    await screen.findByText(/CPRB continua na base/i, undefined, { timeout: 5000 });
     // O HTML compilado chega por debounce; espera o botão e clica.
     await userEvent.click(screen.getByRole('button', { name: /criar modelo/i }));
 
@@ -130,6 +130,6 @@ describe('novo boletim — o atalho que abre o criador montado', () => {
 
     // O fluxo padrão é o formulário de código — nada do boletim.
     expect(await screen.findByText(/nome interno/i)).toBeInTheDocument();
-    expect(screen.queryByText(/NF-e sem IBS e CBS/i)).toBeNull();
+    expect(screen.queryByText(/CPRB continua na base/i)).toBeNull();
   });
 });
