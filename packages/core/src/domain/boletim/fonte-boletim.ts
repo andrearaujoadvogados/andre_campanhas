@@ -110,16 +110,24 @@ export function montarPromptDeExtracao(fonte: {
           'Não há novidades neste período. Selecione as matérias MAIS RELEVANTES e MAIS LIDAS disponíveis na página sobre o que o editor pede — inclusive as que a página apresenta como "mais lidas", "mais acessadas" ou "destaques" —, mesmo que não sejam recentes. Prefira o que mais interessa aos clientes do escritório.',
         ]
       : []),
-    ...(fonte.temas === undefined || fonte.temas.length === 0
-      ? []
-      : [
-          `Temas prioritários desta edição: ${fonte.temas.join(', ')}. Prefira notícias desses temas e descarte o que não tiver relação com nenhum deles.`,
-        ]),
+    ...(temAlgumTema(fonte.temas)
+      ? [
+          `TEMAS DESTE BOLETIM: ${fonte.temas.join(' | ')}.`,
+          'Inclua SOMENTE notícias cujo assunto principal seja um desses temas. Qualquer notícia fora deles fica de fora, mesmo que seja relevante ou atenda ao que o editor pediu. Se nenhuma notícia for de um desses temas, responda [].',
+        ]
+      : []),
     '',
     `Responda SOMENTE com JSON válido, um array de no máximo ${MAXIMO_NOTICIAS_POR_FONTE} objetos:`,
-    '[{"titulo": "...", "resumo": "...", "url": "...", "tag": "..."}]',
+    temAlgumTema(fonte.temas)
+      ? '[{"titulo": "...", "resumo": "...", "url": "...", "tag": "...", "tema": "..."}]'
+      : '[{"titulo": "...", "resumo": "...", "url": "...", "tag": "..."}]',
     '',
     'Regras:',
+    ...(temAlgumTema(fonte.temas)
+      ? [
+          '- "tema": o tema da lista acima de que a notícia trata, copiado exatamente como está na lista.',
+        ]
+      : []),
     '- "titulo": objetivo, até 120 caracteres, em português.',
     '- "resumo": 1 a 3 frases explicando por que interessa aos clientes do escritório.',
     '- "url": o link da matéria encontrado no conteúdo; se não houver, use a URL da fonte.',
@@ -211,7 +219,16 @@ export function decidirPelaFalhaDeRedeDoExtrator(erro: unknown, modelo: string):
  * descarte da notícia, não um `undefined` atravessando o sistema até quebrar o
  * e-mail montado.
  */
-export function analisarNoticias(resposta: string, urlDaFonte: string): NoticiaColetada[] | null {
+export function analisarNoticias(
+  resposta: string,
+  urlDaFonte: string,
+  /**
+   * Temas da rotina. Presentes, a notícia só passa se a IA disser de qual
+   * tema ela trata e esse tema estiver na lista — a regra não fica só na
+   * obediência ao prompt.
+   */
+  temas: readonly string[] = [],
+): NoticiaColetada[] | null {
   const semCerca = resposta
     .trim()
     .replace(/^```(?:json)?\s*/i, '')
@@ -232,6 +249,8 @@ export function analisarNoticias(resposta: string, urlDaFonte: string): NoticiaC
     const titulo = texto(o['titulo']);
     const resumo = texto(o['resumo']);
     if (titulo === null || resumo === null) continue;
+
+    if (temAlgumTema(temas) && !temaDaLista(texto(o['tema']), temas)) continue;
 
     const url = urlSegura(texto(o['url'])) ?? urlDaFonte;
 
@@ -257,6 +276,49 @@ function urlSegura(bruta: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+/** Rotina sem tema = a instrução de cada fonte manda sozinha, como sempre foi. */
+function temAlgumTema(temas: readonly string[] | undefined): temas is readonly string[] {
+  return temas !== undefined && temas.some((t) => t.trim() !== '');
+}
+
+/**
+ * Normaliza para comparar: sem acento, sem caixa, espaços únicos. "Reforma
+ * Tributária" e "reforma tributaria" são o mesmo tema.
+ */
+export function normalizarTema(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** O tema que a IA declarou é um dos da rotina? Aceita diferença de acento e caixa. */
+function temaDaLista(declarado: string | null, temas: readonly string[]): boolean {
+  if (declarado === null) return false;
+  const d = normalizarTema(declarado);
+  return temas.some((t) => {
+    const n = normalizarTema(t);
+    return n !== '' && (d === n || d.includes(n));
+  });
+}
+
+/**
+ * A notícia fala de algum dos temas? Procura o tema no título, no resumo e
+ * na etiqueta — é o critério do acervo, onde não há IA para declarar o tema.
+ */
+export function noticiaDeAlgumTema(
+  noticia: Pick<NoticiaColetada, 'titulo' | 'resumo' | 'tag'>,
+  temas: readonly string[],
+): boolean {
+  const alvo = normalizarTema(`${noticia.tag} ${noticia.titulo} ${noticia.resumo}`);
+  return temas.some((t) => {
+    const n = normalizarTema(t);
+    return n !== '' && alvo.includes(n);
+  });
 }
 
 function texto(v: unknown): string | null {

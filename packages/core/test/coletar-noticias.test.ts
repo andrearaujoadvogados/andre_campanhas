@@ -145,7 +145,7 @@ describe('prompt de extração', () => {
     expect(prompt).toContain('Não invente');
   });
 
-  it('os temas da rotina entram como orientação do editor; sem temas, nem uma linha', () => {
+  it('com temas, o prompt manda incluir SÓ notícias deles e pede o tema de cada uma', () => {
     const comTemas = montarPromptDeExtracao({
       nome: 'Fonte',
       url: 'https://x.com.br',
@@ -153,7 +153,9 @@ describe('prompt de extração', () => {
       textoDaPagina: 'texto',
       temas: ['Reforma Tributária', 'STJ'],
     });
-    expect(comTemas).toContain('Temas prioritários desta edição: Reforma Tributária, STJ');
+    expect(comTemas).toContain('TEMAS DESTE BOLETIM: Reforma Tributária | STJ');
+    expect(comTemas).toContain('Inclua SOMENTE notícias');
+    expect(comTemas).toContain('"tema"');
 
     const semTemas = montarPromptDeExtracao({
       nome: 'Fonte',
@@ -161,7 +163,8 @@ describe('prompt de extração', () => {
       instrucao: 'colete decisões',
       textoDaPagina: 'texto',
     });
-    expect(semTemas).not.toContain('Temas prioritários');
+    expect(semTemas).not.toContain('TEMAS DESTE BOLETIM');
+    expect(semTemas).not.toContain('"tema"');
   });
 });
 
@@ -183,14 +186,31 @@ describe('recorte da rotina sobre o catálogo de fontes', () => {
     expect(r.porFonte).toHaveLength(2);
   });
 
-  it('os temas da escolha chegam ao prompt de cada fonte', async () => {
+  it('os temas da escolha chegam ao prompt, e só passa a notícia de um tema da lista', async () => {
     const prompts: string[] = [];
+    const resposta = JSON.stringify([
+      {
+        titulo: 'CBS entra em teste',
+        resumo: 'R.',
+        url: 'https://x.com.br/1',
+        tag: 'CBS',
+        tema: 'reforma tributaria',
+      },
+      {
+        titulo: 'Indenização por dano moral',
+        resumo: 'R.',
+        url: 'https://x.com.br/2',
+        tag: 'STJ',
+        tema: 'Cível',
+      },
+      { titulo: 'Sem tema declarado', resumo: 'R.', url: 'https://x.com.br/3', tag: 'STJ' },
+    ]);
     const r = await coletarNoticias(
       montar({
         extrator: {
           completar: async (p) => {
             prompts.push(p);
-            return RESPOSTA_VALIDA;
+            return resposta;
           },
         },
       }),
@@ -198,8 +218,18 @@ describe('recorte da rotina sobre o catálogo de fontes', () => {
       { temas: ['Reforma Tributária'] },
     );
 
-    expect(r.totalNoticias).toBe(1);
-    expect(prompts[0]).toContain('Temas prioritários desta edição: Reforma Tributária');
+    expect(prompts[0]).toContain('TEMAS DESTE BOLETIM: Reforma Tributária');
+    // A IA pode ter devolvido o que quis; o código só deixa passar o tema da
+    // lista (acento e caixa não importam).
+    expect(r.porFonte[0]?.noticias.map((n) => n.titulo)).toEqual(['CBS entra em teste']);
+  });
+
+  it('nada dos temas na fonte vira aviso que diz isso', async () => {
+    const r = await coletarNoticias(montar(), TENANT_PADRAO, { temas: ['Funrural'] });
+
+    expect(r.totalNoticias).toBe(0);
+    expect(r.fontesSemNoticia).toBe(1);
+    expect(r.avisos[0]).toContain('nada encontrado sobre os temas da rotina');
   });
 });
 
@@ -478,7 +508,7 @@ describe('acervo das edições anteriores', () => {
     expect(r.map((n) => n.titulo)).toEqual(['Recente', 'Repetida', 'Antiga']);
   });
 
-  it('os temas da rotina passam à frente; a recência desempata', () => {
+  it('com temas, só entram notícias deles — nada de fora completa a edição', () => {
     const r = selecionarDoAcervo(
       [
         execucao({
@@ -499,7 +529,6 @@ describe('acervo das edições anteriores', () => {
     expect(r.map((n) => n.titulo)).toEqual([
       'Reforma tributária avança',
       'Outra da reforma tributária',
-      'Sobre execução fiscal',
     ]);
   });
 
