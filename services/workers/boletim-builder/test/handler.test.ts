@@ -15,6 +15,8 @@ interface Estado {
   rotina: RotinaBoletim | null;
   fontes: Record<string, unknown>[];
   listas: Record<string, unknown>[];
+  /** Membros de cada lista, por id — o que o reparto entre listas lê. */
+  membros: Record<string, string[]>;
   tipos: Record<string, unknown>[];
   execucoes: Map<string, ExecucaoBoletim>;
   templatesSalvos: { template: Record<string, unknown>; versao: Record<string, unknown> }[];
@@ -32,6 +34,7 @@ const estado = vi.hoisted((): Estado => ({
   rotina: null,
   fontes: [],
   listas: [],
+  membros: {},
   tipos: [],
   execucoes: new Map(),
   templatesSalvos: [],
@@ -100,6 +103,16 @@ vi.mock('@emailmkt/adapters-aws', async (importOriginal) => {
       }
       async listar(): Promise<Record<string, unknown>[]> {
         return estado.tipos;
+      }
+    },
+    DynamoContactRepository: class {
+      async listarPorLista(
+        _t: unknown,
+        listId: unknown,
+      ): Promise<{ itens: { contactId: string }[] }> {
+        return {
+          itens: (estado.membros[String(listId)] ?? []).map((contactId) => ({ contactId })),
+        };
       }
     },
     DynamoListRepository: class {
@@ -194,6 +207,7 @@ beforeEach(() => {
   estado.rotina = rotinaFalsa();
   estado.fontes = [fonteFalsa()];
   estado.listas = [listaFalsa('l-1', 'Clientes')];
+  estado.membros = {};
   estado.tipos = [
     {
       tenantId: 'andrearaujo',
@@ -348,6 +362,35 @@ describe('rotina de envio automático — do gatilho ao orquestrador', () => {
     expect(estado.campanhasSalvas).toHaveLength(0);
     expect(estado.sfnChamadas).toHaveLength(0);
     expect(execucaoFinal().origem).toBe('MANUAL');
+  });
+});
+
+describe('uma edição, um e-mail por contato', () => {
+  it('quem está em duas listas da rotina recebe uma vez só', async () => {
+    estado.rotina = rotinaFalsa({ listIds: ['l-1', 'l-2'] } as Partial<RotinaBoletim>);
+    estado.listas = [listaFalsa('l-1', 'Clientes'), listaFalsa('l-2', 'Testes')];
+    estado.membros = { 'l-1': ['andre', 'cliente'], 'l-2': ['andre', 'fernando'] };
+
+    await handler({ origem: 'rotina', rotinaId: 'r-1' });
+
+    const [primeira, segunda] = estado.campanhasSalvas;
+    // A primeira lista sai inteira, como no painel.
+    expect(primeira?.destinatariosSelecionados).toBeUndefined();
+    // A segunda leva só quem não estava na primeira.
+    expect(segunda?.destinatariosSelecionados).toEqual(['fernando']);
+    expect(estado.sfnChamadas).toHaveLength(2);
+  });
+
+  it('lista inteiramente repetida não vira campanha — e não conta como falha', async () => {
+    estado.rotina = rotinaFalsa({ listIds: ['l-1', 'l-2'] } as Partial<RotinaBoletim>);
+    estado.listas = [listaFalsa('l-1', 'Clientes'), listaFalsa('l-2', 'Testes')];
+    estado.membros = { 'l-1': ['andre', 'cliente'], 'l-2': ['andre'] };
+
+    await handler({ origem: 'rotina', rotinaId: 'r-1' });
+
+    expect(estado.campanhasSalvas).toHaveLength(1);
+    expect(estado.sfnChamadas).toHaveLength(1);
+    expect(execucaoFinal().envioErro).toBeUndefined();
   });
 });
 

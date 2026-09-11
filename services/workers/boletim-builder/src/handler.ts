@@ -1,6 +1,7 @@
 import {
   CanonicalContentHasher,
   DynamoCampaignRepository,
+  DynamoContactRepository,
   DynamoExecucaoBoletimRepository,
   DynamoFonteBoletimRepository,
   DynamoRotinaBoletimRepository,
@@ -25,6 +26,7 @@ import {
   userId as novoUserId,
   registrarDisparo,
   registrarEnvioAutomatico,
+  repartirContatosEntreListas,
   selecionarDoAcervo,
   type BuscadorDePagina,
   type Campaign,
@@ -740,10 +742,41 @@ async function enviarPelaRotina(ctx: {
     const enviadas: Campaign['campaignId'][] = [];
     const falhas: string[] = [];
 
+    /**
+     * Uma edição, um e-mail por contato. Com mais de uma lista, quem aparece
+     * em duas fica só na primeira; as seguintes levam apenas quem ainda não
+     * recebe esta edição. Com uma lista só, nada muda.
+     */
+    const existentes = rotina.listIds
+      .map((listId) => listas.itens.find((l) => String(l.listId) === String(listId)))
+      .filter((l): l is NonNullable<typeof l> => l !== undefined);
+    const reparto =
+      existentes.length > 1
+        ? repartirContatosEntreListas(
+            await Promise.all(
+              existentes.map(async (l) => ({
+                listId: String(l.listId),
+                contactIds: await membrosDaLista(ctx.doc, ctx.tabela, l.listId),
+              })),
+            ),
+          )
+        : [];
+
     for (const listId of rotina.listIds) {
       const lista = listas.itens.find((l) => String(l.listId) === String(listId));
       if (lista === undefined) {
         falhas.push(`A lista ${String(listId)} não existe mais — nada enviado para ela.`);
+        continue;
+      }
+
+      const parte = reparto.find((r) => r.listId === String(lista.listId));
+      if (parte?.selecionados !== undefined && parte.selecionados.length === 0) {
+        // Todos já recebem esta edição por uma lista anterior: nenhuma campanha.
+        log.info('lista sem contato novo nesta edição; campanha não criada', {
+          rotinaId: String(rotina.rotinaId),
+          listId: String(lista.listId),
+          jaAtendidos: parte.jaAtendidos,
+        });
         continue;
       }
 
@@ -762,6 +795,9 @@ async function enviarPelaRotina(ctx: {
           // Recém-criado pelo passo anterior: a versão vigente é a 1 por construção.
           templateVersao: 1,
           listId: lista.listId,
+          ...(parte?.selecionados === undefined
+            ? {}
+            : { destinatariosSelecionados: [...parte.selecionados] }),
           status: 'RASCUNHO',
           remetenteNome: REMETENTE_ROTINA.nome,
           remetenteEmail: REMETENTE_ROTINA.email,
@@ -818,6 +854,33 @@ async function enviarPelaRotina(ctx: {
     log.error('envio automático falhou', { rotinaId: String(ctx.rotina.rotinaId), motivo });
     await anotar({ erro: motivo });
   }
+}
+
+/**
+ * Ids dos membros de uma lista — só para repartir a edição entre as listas.
+ *
+ * A listagem por lista não calcula hash de e-mail, e este worker não tem (nem
+ * precisa ter) o segredo HMAC: o hasher entregue ao repositório falha alto se
+ * alguém um dia o usar por aqui, em vez de gravar um hash errado em silêncio.
+ */
+async function membrosDaLista(
+  doc: ReturnType<typeof dynamoDoc>,
+  tabela: string,
+  listId: Parameters<DynamoContactRepository['listarPorLista']>[1],
+): Promise<string[]> {
+  const contatos = new DynamoContactRepository(doc, tabela, {
+    hash: () => {
+      throw new Error('O construtor do boletim não calcula hash de e-mail.');
+    },
+  });
+  const ids: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const pagina = await contatos.listarPorLista(TENANT_PADRAO, listId, cursor);
+    for (const c of pagina.itens) ids.push(String(c.contactId));
+    cursor = pagina.cursor;
+  } while (cursor !== undefined);
+  return ids;
 }
 
 const dataCurta = (d: Date): string =>

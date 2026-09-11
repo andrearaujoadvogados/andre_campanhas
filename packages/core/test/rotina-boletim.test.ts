@@ -114,3 +114,38 @@ describe('desfecho do envio automático na execução', () => {
     expect(depois.envioErro).toContain('Leads');
   });
 });
+
+describe('uma edição, um e-mail por contato — mesmo com várias listas', () => {
+  it('quem está em duas listas fica só na primeira', async () => {
+    const { repartirContatosEntreListas } = await import('../src/index.js');
+    const reparto = repartirContatosEntreListas([
+      { listId: 'clientes', contactIds: ['a', 'b', 'c'] },
+      { listId: 'testes', contactIds: ['b', 'd'] },
+    ]);
+
+    // Primeira lista: inteira, sem seleção — igual ao disparo do painel.
+    expect(reparto[0]).toEqual({ listId: 'clientes', jaAtendidos: 0 });
+    // Segunda: só quem ainda não recebe esta edição.
+    expect(reparto[1]).toEqual({ listId: 'testes', selecionados: ['d'], jaAtendidos: 1 });
+  });
+
+  it('lista inteiramente contida numa anterior fica vazia — a campanha não deve sair', async () => {
+    const { repartirContatosEntreListas } = await import('../src/index.js');
+    const reparto = repartirContatosEntreListas([
+      { listId: 'clientes', contactIds: ['a', 'b'] },
+      { listId: 'testes', contactIds: ['a'] },
+    ]);
+
+    expect(reparto[1]).toEqual({ listId: 'testes', selecionados: [], jaAtendidos: 1 });
+  });
+
+  it('listas sem sobreposição seguem sem seleção nenhuma', async () => {
+    const { repartirContatosEntreListas } = await import('../src/index.js');
+    const reparto = repartirContatosEntreListas([
+      { listId: 'x', contactIds: ['a'] },
+      { listId: 'y', contactIds: ['b'] },
+    ]);
+
+    expect(reparto.every((r) => r.selecionados === undefined)).toBe(true);
+  });
+});
