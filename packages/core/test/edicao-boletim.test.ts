@@ -56,7 +56,8 @@ describe('prompt da passada editorial', () => {
     expect(prompt).toContain('[0] tag: STJ');
     expect(prompt).toContain('[2] tag: CARF');
     expect(prompt).toContain('"indice"');
-    expect(prompt).toContain('Temas prioritários deste boletim: tributário');
+    expect(prompt).toContain('Temas deste boletim: tributário');
+    expect(prompt).toContain('SOMENTE desses temas');
     expect(prompt).toContain('IGNORE');
     expect(prompt).toContain('--- FIM DAS NOTÍCIAS ---');
     expect(prompt).not.toContain('TEXTO DA MATÉRIA');

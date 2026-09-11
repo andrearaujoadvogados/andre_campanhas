@@ -563,7 +563,7 @@ export function Boletim() {
             <Campo
               rotulo="Temas"
               erro={errosRotina['temas']}
-              ajuda="Separados por vírgula. A IA prioriza notícias destes temas e descarta o resto. Vazio = a instrução de cada fonte manda sozinha."
+              ajuda="Separados por vírgula, até 10. Só entram notícias destes temas — o resto é descartado, inclusive na retrospectiva. Vazio = a instrução de cada fonte manda sozinha."
             >
               <input
                 value={formRotina.temas}

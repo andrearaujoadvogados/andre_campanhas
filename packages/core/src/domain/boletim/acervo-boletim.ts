@@ -1,5 +1,5 @@
 import type { ExecucaoBoletim } from './execucao-boletim.js';
-import type { NoticiaColetada } from './fonte-boletim.js';
+import { noticiaDeAlgumTema, type NoticiaColetada } from './fonte-boletim.js';
 
 /**
  * O acervo: as notícias das edições anteriores, guardadas na própria execução.
@@ -19,7 +19,7 @@ export function selecionarDoAcervo(
   execucoes: readonly ExecucaoBoletim[],
   opcoes: {
     readonly maximo: number;
-    /** Temas da rotina: o que casa com eles vem primeiro; a recência desempata. */
+    /** Temas da rotina: presentes, só entram notícias deles, da mais recente para a mais antiga. */
     readonly temas?: readonly string[];
   },
 ): NoticiaColetada[] {
@@ -47,13 +47,10 @@ export function selecionarDoAcervo(
     }
   }
 
-  const temas = (opcoes.temas ?? []).map((t) => t.trim().toLowerCase()).filter((t) => t !== '');
-  const casaComTema = (n: NoticiaColetada): number =>
-    temas.some((t) => `${n.tag} ${n.titulo} ${n.resumo}`.toLowerCase().includes(t)) ? 1 : 0;
-
+  // Com temas, só entra o que é deles — o boletim da rotina não traz nada
+  // além dos temas escolhidos, nem para completar a retrospectiva.
+  const temas = (opcoes.temas ?? []).filter((t) => t.trim() !== '');
   return candidatas
-    .map((noticia, ordem) => ({ noticia, ordem, tema: casaComTema(noticia) }))
-    .sort((a, b) => b.tema - a.tema || a.ordem - b.ordem)
-    .slice(0, Math.max(0, opcoes.maximo))
-    .map((x) => x.noticia);
+    .filter((n) => temas.length === 0 || noticiaDeAlgumTema(n, temas))
+    .slice(0, Math.max(0, opcoes.maximo));
 }

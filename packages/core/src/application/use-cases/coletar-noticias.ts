@@ -176,7 +176,7 @@ export async function coletarNoticias(
       continue;
     }
 
-    const noticias = analisarNoticias(resposta, fonte.url);
+    const noticias = analisarNoticias(resposta, fonte.url, escolha.temas ?? []);
     if (noticias === null) {
       avisos.push(`${fonte.nome}: a resposta do extrator não veio no formato esperado.`);
       fontesComFalha += 1;
@@ -187,7 +187,11 @@ export async function coletarNoticias(
       porFonte.push({ fonte, noticias });
     } else {
       fontesSemNoticia += 1;
-      avisos.push(`${fonte.nome}: nada encontrado que atenda à instrução.`);
+      avisos.push(
+        escolha.temas !== undefined && escolha.temas.length > 0
+          ? `${fonte.nome}: nada encontrado sobre os temas da rotina.`
+          : `${fonte.nome}: nada encontrado que atenda à instrução.`,
+      );
     }
   }
 
