@@ -141,3 +141,46 @@ export const REMETENTE_ROTINA = {
   nome: 'André Araújo Advogados',
   email: 'campanhas@mail.andrearaujoadvogados.com.br',
 } as const;
+
+/** Membros de uma lista da rotina, na ordem em que a rotina as escolheu. */
+export interface MembrosDaLista {
+  readonly listId: string;
+  readonly contactIds: readonly string[];
+}
+
+/** Quem cada campanha da edição deve atingir. */
+export interface RepartoDaLista {
+  readonly listId: string;
+  /**
+   * Ausente = a lista inteira, como qualquer campanha. Presente = só estes
+   * contatos: os outros já recebem esta edição pela campanha de uma lista
+   * anterior. Vazio = nenhum contato novo, e a campanha não deve ser criada.
+   */
+  readonly selecionados?: readonly string[];
+  /** Quantos contatos desta lista já estavam numa lista anterior. */
+  readonly jaAtendidos: number;
+}
+
+/**
+ * Reparte os contatos entre as campanhas de uma mesma edição.
+ *
+ * A rotina cria uma campanha por lista, e o disparo de cada uma é
+ * independente: quem está em duas listas recebia a edição duas vezes — a
+ * idempotência do envio é por campanha, e aqui são duas campanhas. Em
+ * 11/09/2026 o escritório pediu, com razão: "tem que ser apenas 1".
+ *
+ * O contato fica com a PRIMEIRA lista em que aparece; as seguintes levam só
+ * quem ainda não foi atendido. Lista sem sobreposição segue sem seleção — o
+ * caso comum continua idêntico ao disparo do painel.
+ */
+export function repartirContatosEntreListas(listas: readonly MembrosDaLista[]): RepartoDaLista[] {
+  const atendidos = new Set<string>();
+  return listas.map((lista) => {
+    const novos = lista.contactIds.filter((id) => !atendidos.has(id));
+    const jaAtendidos = lista.contactIds.length - novos.length;
+    for (const id of novos) atendidos.add(id);
+    return jaAtendidos === 0
+      ? { listId: lista.listId, jaAtendidos }
+      : { listId: lista.listId, selecionados: novos, jaAtendidos };
+  });
+}
