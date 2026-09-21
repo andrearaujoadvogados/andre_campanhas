@@ -107,7 +107,9 @@ export interface Prazo {
 export function criarLinhaCabecalhoBoletim(): Row {
   const row = createRow([100]);
   row.attrs.backgroundColor = VINHO;
-  row.attrs.padding = '30px 24px 26px 24px';
+  // O logo claro já traz 18px de fundo vinho em volta da arte: o recuo da
+  // faixa desconta esse respiro, e a altura continua a mesma.
+  row.attrs.padding = '12px 24px 8px 24px';
   (row.columns[0] as Row['columns'][0]).blocks = [
     {
       id: uid(),
@@ -115,7 +117,12 @@ export function criarLinhaCabecalhoBoletim(): Row {
       src: LOGO_EMAIL_CLARO.src,
       alt: LOGO_EMAIL_CLARO.alt,
       href: LOGO_EMAIL_CLARO.href,
-      attrs: { width: 230, align: 'center', borderRadius: 0, padding: '0px 0px' },
+      attrs: {
+        width: LOGO_EMAIL_CLARO.width,
+        align: 'center',
+        borderRadius: 0,
+        padding: '0px 0px',
+      },
     },
   ];
   return row;
