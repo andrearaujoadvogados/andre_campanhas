@@ -114,9 +114,9 @@ export function Usuarios({ usuario }: { usuario: Usuario }) {
          * tela — por isso a resposta fica escrita nela.
          */}
         <p className="mt-4 text-xs text-ink-suave">
-          A senha é criada pela própria pessoa. Ela recebe um e-mail com uma senha provisória, e no
-          primeiro acesso define a definitiva e cadastra o aplicativo autenticador. Ninguém mais —
-          nem quem convida — chega a ver essa senha.
+          A senha é criada pela própria pessoa. Ela recebe um e-mail com uma senha provisória e
+          define a definitiva no primeiro acesso. Ninguém mais — nem quem convida — chega a ver essa
+          senha.
         </p>
       </Cartao>
 

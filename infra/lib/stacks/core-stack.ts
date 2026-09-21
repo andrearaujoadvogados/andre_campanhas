@@ -214,16 +214,22 @@ export class CoreStack extends Stack {
         requireSymbols: true,
       },
       /**
-       * MFA obrigatório para todos — desvio deliberado do §10.1.
+       * Sem segundo fator — decisão do escritório, revertendo o §10.1.
        *
-       * O documento pedia MFA obrigatório só para ADMIN. O Cognito não faz MFA
-       * por grupo nativamente: exigiria fluxo de autenticação customizado. Como
-       * são menos de 20 usuários e o sistema envia e-mail em nome de um
-       * escritório de advocacia, exigir de todos é ao mesmo tempo mais seguro e
-       * mais simples que a alternativa. Registrado para revisão.
+       * O pool exigia TOTP de todos. A exigência saiu a pedido do escritório.
+       * O que resta protegendo o painel é a política de senha acima, a ausência
+       * de autocadastro e a expiração de sessão do cliente.
+       *
+       * Vale registrar o que isso custa, porque a decisão é reversível e um dia
+       * pode ser revista: sem segundo fator, uma senha vazada é acesso completo
+       * a um painel que dispara e-mail em nome do escritório e lê a base de
+       * contatos. Recuperação de senha é por e-mail, então a caixa postal de
+       * cada usuário passa a ser o único obstáculo restante.
+       *
+       * `Mfa.OFF` é o padrão do CDK, mas está explícito: campo em branco aqui
+       * pareceria esquecimento, e isto foi escolha.
        */
-      mfa: Mfa.REQUIRED,
-      mfaSecondFactor: { sms: false, otp: true },
+      mfa: Mfa.OFF,
       removalPolicy: destruirComStack ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN,
     });
 

@@ -59,7 +59,7 @@ rotasUsuarios.post('/', exigirPapel('ADMIN'), validarCorpo(criarUsuarioSchema), 
       // precisa saber disso na hora, senão descobre quando o prazo já passou.
       aviso:
         `Convite enviado para ${criado.email}. A senha provisória expira em 7 dias — ` +
-        'até lá a pessoa precisa entrar, definir a senha e cadastrar o MFA.',
+        'até lá a pessoa precisa entrar e definir a senha.',
     },
     201,
   );

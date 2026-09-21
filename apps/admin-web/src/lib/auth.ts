@@ -6,9 +6,6 @@ import {
   confirmSignIn,
   resetPassword,
   confirmResetPassword,
-  setUpTOTP,
-  updateMFAPreference,
-  verifyTOTPSetup,
 } from 'aws-amplify/auth';
 import { useEffect, useState } from 'react';
 import { configuracao } from './configuracao.js';
@@ -104,41 +101,13 @@ export const sair = () => signOut();
 /**
  * Recuperação de senha — o pool está configurado com `AccountRecovery.EMAIL_ONLY`.
  *
- * O Cognito envia um código para o e-mail cadastrado. O MFA **não** é
- * redefinido junto: quem recupera a senha continua precisando do aplicativo
- * autenticador para entrar, e é isso que faz a recuperação por e-mail não virar
- * um caminho para contornar o segundo fator.
+ * O Cognito envia um código para o e-mail cadastrado. Sem segundo fator, este
+ * é o caminho completo para assumir uma conta: quem controla a caixa de e-mail
+ * de um usuário troca a senha e entra. A segurança do painel passou a depender
+ * da segurança do e-mail de cada pessoa da equipe.
  */
 export const pedirCodigoDeRecuperacao = resetPassword;
 export const confirmarNovaSenha = confirmResetPassword;
 
 export const temPapel = (usuario: Usuario, ...aceitos: Papel[]): boolean =>
   usuario.papeis.some((p) => aceitos.includes(p));
-
-/**
- * Troca do aplicativo autenticador — rotação do segredo TOTP.
- *
- * Existe porque um segredo TOTP exposto (numa captura de tela, por exemplo)
- * não expira sozinho: quem viu o QR consegue gerar códigos válidos para
- * sempre. O Cognito não tem API administrativa para redefinir o token de
- * outro usuário — o caminho é o próprio usuário, já autenticado, associar um
- * segredo novo. O antigo deixa de valer no momento em que o novo é
- * **verificado**; iniciar a troca e abandonar não muda nada.
- */
-export async function iniciarTrocaDeAutenticador(email: string): Promise<{
-  uri: string;
-  segredo: string;
-}> {
-  const detalhes = await setUpTOTP();
-  return {
-    uri: detalhes.getSetupUri('Campanhas AAA', email).toString(),
-    segredo: detalhes.sharedSecret,
-  };
-}
-
-export async function confirmarTrocaDeAutenticador(codigo: string): Promise<void> {
-  await verifyTOTPSetup({ code: codigo });
-  // Reafirma a preferência: sem isso, um usuário criado antes de o pool exigir
-  // TOTP poderia ficar com a preferência vazia após a troca.
-  await updateMFAPreference({ totp: 'PREFERRED' });
-}

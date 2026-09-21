@@ -382,7 +382,7 @@ sequenceDiagram
 | Roteamento         | React Router                                                  | Padrão, suficiente                                                                                                              |
 | UI                 | Tailwind + shadcn/ui                                          | Componentes acessíveis, sem lock-in de biblioteca; velocidade de entrega                                                        |
 | Formulários        | React Hook Form + Zod (mesmos schemas do backend)             | Validação idêntica nas duas pontas, sem duplicar regra                                                                          |
-| Auth               | AWS Amplify Auth (só o módulo de autenticação) contra Cognito | Fluxo OIDC, refresh de token e MFA sem escrever a mão                                                                           |
+| Auth               | AWS Amplify Auth (só o módulo de autenticação) contra Cognito | Fluxo OIDC e refresh de token sem escrever a mão                                                                                |
 | Gráficos           | Recharts                                                      | Relatórios simples; leve                                                                                                        |
 | Hospedagem         | S3 privado + CloudFront (OAC) + ACM                           | Custo praticamente zero, TLS, cache global                                                                                      |
 
@@ -833,7 +833,7 @@ flowchart LR
 - [ ] Criptografia em repouso: DynamoDB, S3, SQS e SNS com KMS (chaves gerenciadas pela AWS no MVP).
 - [ ] TLS em trânsito em toda parte; política HTTPS no domínio de rastreamento do SES.
 - [ ] Buckets S3 privados, Block Public Access, CloudFront com OAC.
-- [ ] Cognito: senha forte, MFA obrigatório para o papel `ADMIN`, expiração de sessão.
+- [ ] Cognito: senha forte, expiração de sessão, sem auto-cadastro. **Sem MFA** — a exigência de segundo fator existiu e foi retirada a pedido do escritório; a justificativa e o que ela custa estão na supressão `AwsSolutions-COG2` e no comentário do user pool na CoreStack.
 - [ ] Autorização por papel verificada **no backend** (a UI escondendo um botão não é controle de acesso).
 - [ ] Validação de entrada com Zod em toda borda, inclusive nos payloads de fila.
 - [ ] Token de descadastro: HMAC-SHA256 com segredo rotacionável, sem dados pessoais no payload, resistente a enumeração; endpoint com rate limit.

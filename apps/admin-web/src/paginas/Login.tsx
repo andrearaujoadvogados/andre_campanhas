@@ -1,5 +1,4 @@
 import { useState, type FormEvent } from 'react';
-import QRCode from 'qrcode';
 import {
   confirmarDesafio,
   confirmarNovaSenha,
@@ -19,32 +18,20 @@ import {
 /**
  * Etapas do login.
  *
- * O MFA é obrigatório no pool (decisão registrada na CoreStack), e contas são
- * criadas por administrador sem autocadastro. Isso torna as três primeiras
- * etapas o caminho **normal** do primeiro acesso de todo usuário, não caso de
- * borda: senha provisória → nova senha → cadastro do TOTP → código.
- *
- * Tratar só a primeira deixaria a equipe sem conseguir entrar.
+ * Contas são criadas por administrador, sem autocadastro, e a senha do convite
+ * é provisória. Trocar a senha no primeiro acesso é, por isso, o caminho
+ * **normal** de todo usuário, não caso de borda — tratar só as credenciais
+ * deixaria a equipe sem conseguir entrar.
  */
 type Etapa =
   | { readonly nome: 'credenciais' }
   | { readonly nome: 'nova-senha' }
-  | {
-      readonly nome: 'cadastrar-totp';
-      readonly segredo: string;
-      readonly qr: string;
-    }
-  | { readonly nome: 'codigo-totp' }
   /** Recuperação: pedir o código, e depois trocar a senha com ele. */
   | { readonly nome: 'recuperar-pedir' }
   | { readonly nome: 'recuperar-confirmar'; readonly destino: string };
 
 interface ProximaEtapa {
   signInStep: string;
-  totpSetupDetails?: {
-    sharedSecret: string;
-    getSetupUri: (appName: string, accountName?: string) => URL;
-  };
 }
 
 export function Login({ aoEntrar }: { aoEntrar: () => void }) {
@@ -64,28 +51,10 @@ export function Login({ aoEntrar }: { aoEntrar: () => void }) {
     definirEtapa(nova);
   }
 
-  async function avancar(proxima: ProximaEtapa): Promise<boolean> {
+  function avancar(proxima: ProximaEtapa): boolean {
     switch (proxima.signInStep) {
       case 'CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED':
         definirEtapa({ nome: 'nova-senha' });
-        return false;
-
-      case 'CONTINUE_SIGN_IN_WITH_TOTP_SETUP': {
-        const detalhes = proxima.totpSetupDetails;
-        if (detalhes === undefined) {
-          definirErro(new Error('O Cognito não devolveu os dados de cadastro do aplicativo.'));
-          return false;
-        }
-        const uri = detalhes.getSetupUri('Campanhas AAA', email).toString();
-        // QR gerado no próprio navegador: a URI carrega o segredo do TOTP e não
-        // deve sair da máquina do usuário para um serviço externo de imagem.
-        const qr = await QRCode.toDataURL(uri, { margin: 1, width: 220 });
-        definirEtapa({ nome: 'cadastrar-totp', segredo: detalhes.sharedSecret, qr });
-        return false;
-      }
-
-      case 'CONFIRM_SIGN_IN_WITH_TOTP_CODE':
-        definirEtapa({ nome: 'codigo-totp' });
         return false;
 
       case 'DONE':
@@ -131,11 +100,12 @@ export function Login({ aoEntrar }: { aoEntrar: () => void }) {
           confirmationCode: codigo,
           newPassword: resposta,
         });
-        // Volta para o login em vez de entrar sozinho: a senha mudou, e o
-        // Cognito ainda vai exigir o código do autenticador.
+        // Volta para o login em vez de entrar sozinho: o Cognito não devolve
+        // sessão aqui, e emendar um `entrar` automático esconderia uma falha de
+        // senha atrás de uma tela que diz "pronto".
         irPara({ nome: 'credenciais' });
         definirSenha('');
-        definirAviso('Senha alterada. Entre com a senha nova e o código do aplicativo.');
+        definirAviso('Senha alterada. Entre com a senha nova.');
         return;
       }
 
@@ -150,7 +120,7 @@ export function Login({ aoEntrar }: { aoEntrar: () => void }) {
         aoEntrar();
         return;
       }
-      if (await avancar(r.nextStep as ProximaEtapa)) aoEntrar();
+      if (avancar(r.nextStep as ProximaEtapa)) aoEntrar();
     } catch (e2) {
       definirErro(e2);
     } finally {
@@ -161,8 +131,6 @@ export function Login({ aoEntrar }: { aoEntrar: () => void }) {
   const ROTULO_BOTAO: Record<Etapa['nome'], string> = {
     credenciais: 'Entrar',
     'nova-senha': 'Salvar senha',
-    'cadastrar-totp': 'Confirmar código',
-    'codigo-totp': 'Confirmar código',
     'recuperar-pedir': 'Enviar código',
     'recuperar-confirmar': 'Alterar senha',
   };
@@ -269,15 +237,6 @@ export function Login({ aoEntrar }: { aoEntrar: () => void }) {
                     className={classeEntrada}
                   />
                 </Campo>
-                {/**
-                 * O aplicativo autenticador continua valendo, e dizer isso aqui
-                 * evita a conclusão errada de que recuperar a senha zera o MFA —
-                 * quem concluir isso vai achar que perdeu o acesso de vez.
-                 */}
-                <p className="text-xs text-ink-suave">
-                  Seu aplicativo autenticador não muda. Depois de alterar a senha, o código de seis
-                  dígitos continua sendo pedido.
-                </p>
               </>
             )}
 
@@ -294,72 +253,6 @@ export function Login({ aoEntrar }: { aoEntrar: () => void }) {
                   value={resposta}
                   onChange={(ev) => definirResposta(ev.target.value)}
                   className={classeEntrada}
-                />
-              </Campo>
-            )}
-
-            {etapa.nome === 'cadastrar-totp' && (
-              <div className="space-y-3">
-                <Aviso texto="A verificação em duas etapas é obrigatória. Cadastre o acesso no seu aplicativo autenticador." />
-
-                {/* O QR sai com 220px fixos. Sobra folga num celular de 320px, mas
-                    não num dobrável fechado de 280px, onde as bordas do cartão já
-                    comem 64px — daí o `max-w-full`. */}
-                <img
-                  src={etapa.qr}
-                  alt="Código QR para cadastrar no aplicativo autenticador"
-                  className="mx-auto h-auto max-w-full rounded-md border border-line"
-                />
-
-                {/**
-                 * A chave em texto fica disponível junto do QR.
-                 *
-                 * Quem acessa pelo celular não consegue fotografar a própria tela —
-                 * e é justamente essa pessoa que ficaria travada se o QR fosse a
-                 * única opção.
-                 */}
-                <details className="text-sm text-ink-suave">
-                  {/* O resumo é o que se toca para abrir: precisa dos 44px, e eles
-                      vêm do respiro vertical. `flex` aqui tiraria o `display:
-                      list-item` do navegador e, com ele, a setinha — a única pista
-                      de que a linha abre, já que no toque não existe `hover`. */}
-                  <summary className="min-h-11 cursor-pointer py-3">
-                    Não consigo ler o código
-                  </summary>
-                  <p className="mt-1">Cadastre manualmente com esta chave:</p>
-                  <code className="mt-1 block break-all rounded-md border border-line bg-paper p-2 font-mono text-xs text-ink">
-                    {etapa.segredo}
-                  </code>
-                </details>
-
-                <Campo rotulo="Código de 6 dígitos do aplicativo" obrigatorio>
-                  <input
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    maxLength={6}
-                    required
-                    value={resposta}
-                    onChange={(ev) => definirResposta(ev.target.value.replace(/\D/g, ''))}
-                    className={`${classeEntrada} text-center text-lg tracking-widest`}
-                  />
-                </Campo>
-              </div>
-            )}
-
-            {etapa.nome === 'codigo-totp' && (
-              <Campo
-                rotulo="Código de 6 dígitos"
-                ajuda="Abra seu aplicativo autenticador e informe o código atual."
-                obrigatorio
-              >
-                <input
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={6}
-                  required
-                  value={resposta}
-                  onChange={(ev) => definirResposta(ev.target.value.replace(/\D/g, ''))}
-                  className={`${classeEntrada} text-center text-lg tracking-widest`}
                 />
               </Campo>
             )}
