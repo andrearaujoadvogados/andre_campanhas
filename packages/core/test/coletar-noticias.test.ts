@@ -8,6 +8,7 @@ import {
   decidirPelaFalhaDeRedeDoExtrator,
   decidirPelaRespostaDoExtrator,
   fonteId as novoFonteId,
+  MAXIMO_NOTICIAS_POR_FONTE,
   montarPromptDeExtracao,
   userId as novoUserId,
   validarUrlDeFonte,
@@ -261,10 +262,16 @@ describe('interpretação da resposta da IA', () => {
   });
 
   it('respeita o teto de notícias por fonte', () => {
-    const dezena = JSON.stringify(
-      Array.from({ length: 10 }, (_, i) => ({ titulo: `t${i}`, resumo: 'r' })),
+    // O teto vem da constante, não de um número escrito aqui: quando ele
+    // mudou de 5 para 10, este teste falhou por medir a constante antiga em
+    // vez de medir o corte.
+    const acima = JSON.stringify(
+      Array.from({ length: MAXIMO_NOTICIAS_POR_FONTE + 5 }, (_, i) => ({
+        titulo: `t${i}`,
+        resumo: 'r',
+      })),
     );
-    expect(analisarNoticias(dezena, 'https://f.br')).toHaveLength(5);
+    expect(analisarNoticias(acima, 'https://f.br')).toHaveLength(MAXIMO_NOTICIAS_POR_FONTE);
   });
 
   it('lixo completo devolve null — o chamador transforma em aviso', () => {
@@ -547,5 +554,57 @@ describe('acervo das edições anteriores', () => {
 
   it('sem acervo, devolve vazio — e é o chamador quem decide o desfecho', () => {
     expect(selecionarDoAcervo([], { maximo: 6 })).toEqual([]);
+  });
+});
+
+/**
+ * O período — a reclamação do escritório em 21/09/2026.
+ *
+ * "O boletim não coletou informações completas dos últimos sete dias." A
+ * causa não estava na leitura da página nem no modelo: o prompt dizia o que
+ * procurar e nunca de quando. A IA fazia o que lhe foi pedido.
+ */
+describe('recorte de tempo no prompt de extração', () => {
+  const JANELA = {
+    inicio: new Date('2026-09-14T12:00:00Z'),
+    fim: new Date('2026-09-21T12:00:00Z'),
+    descricao: 'os últimos 7 dias',
+  };
+
+  const base = {
+    nome: 'Migalhas',
+    url: 'https://www.migalhas.com.br/tributario',
+    instrucao: 'notícias de direito tributário',
+    textoDaPagina: 'conteúdo',
+  };
+
+  it('diz à IA qual período cobrir, com datas por extenso', () => {
+    const prompt = montarPromptDeExtracao({ ...base, janela: JANELA });
+
+    expect(prompt).toContain('os últimos 7 dias');
+    // Por extenso, não 14/09: um modelo acostumado ao padrão americano leria
+    // essa data como 9 de setembro, e erraria a janela em silêncio.
+    expect(prompt).toContain('14 de setembro de 2026');
+    expect(prompt).toContain('21 de setembro de 2026');
+    expect(prompt).toMatch(/página INTEIRA/);
+  });
+
+  it('não inventa período quando não há periodicidade', () => {
+    // Geração avulsa, disparada à mão: não há recorte a cobrar, e supor uma
+    // semana faria a IA descartar material que o operador queria.
+    const prompt = montarPromptDeExtracao(base);
+
+    expect(prompt).not.toContain('PERÍODO:');
+    expect(prompt).not.toContain('página INTEIRA');
+  });
+
+  it('cala sobre o período na retrospectiva, que existe justamente por não ter novidade', () => {
+    // Pedir "os últimos 7 dias" numa passada cujo propósito é buscar material
+    // mais antigo é instrução contraditória — e contradição no prompt é o
+    // caminho mais curto para a IA devolver [].
+    const prompt = montarPromptDeExtracao({ ...base, janela: JANELA, modo: 'RETROSPECTIVA' });
+
+    expect(prompt).not.toContain('PERÍODO:');
+    expect(prompt).toContain('MAIS RELEVANTES');
   });
 });

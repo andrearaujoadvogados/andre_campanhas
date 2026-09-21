@@ -33,6 +33,7 @@ import {
   type EdicaoBoletim,
   type EdicaoEditorial,
   type EscolhaColeta,
+  janelaDaPeriodicidade,
   type ExecucaoBoletim,
   type ExecucaoBoletimRepository,
   type OpcoesBuscaDePagina,
@@ -256,8 +257,23 @@ export const handler = async (
 
     await relatar({ etapa: 'LENDO_FONTES' });
 
+    /**
+     * O recorte da rotina: fontes, temas e — desde 21/09/2026 — o período.
+     *
+     * A janela chega até o prompt de extração. Sem ela, a instrução da fonte
+     * dizia o que procurar e nunca de quando, e a IA devolvia o topo da
+     * página: um boletim semanal saía com as notícias do dia. A geração
+     * avulsa segue sem janela, porque não tem periodicidade a cobrir.
+     */
+    const janela = janelaDaPeriodicidade(rotina?.periodicidade, new Date());
     const escolha: EscolhaColeta =
-      rotina === null ? {} : { fonteIds: rotina.fonteIds.map(String), temas: rotina.temas };
+      rotina === null
+        ? {}
+        : {
+            fonteIds: rotina.fonteIds.map(String),
+            temas: rotina.temas,
+            ...(janela === null ? {} : { janela }),
+          };
 
     // Um batimento por fonte. É o que sustenta a barra de progresso da tela e
     // o que distingue "demorando" de "morreu" (LIMITE_SEM_SINAL_MS). O rótulo
@@ -640,18 +656,32 @@ async function montarModelo(ctx: {
   };
 }
 
-/** "26 de agosto a 11 de setembro de 2026 · Edição semanal" — o recorte que a rotina cobre. */
+/**
+ * "26 de agosto a 11 de setembro de 2026 · Edição semanal" — o recorte que a
+ * rotina cobre, impresso no cabeçalho do e-mail.
+ *
+ * As datas saem de `janelaDaPeriodicidade`, a mesma função que monta o
+ * recorte pedido à IA na coleta. Enquanto eram dois cálculos, um deles não
+ * existia: o cabeçalho anunciava sete dias e a coleta não pedia período
+ * nenhum. Derivar os dois da mesma origem é o que impede a promessa do
+ * cabeçalho de descolar do conteúdo de novo.
+ */
 function periodoDaEdicao(rotina: RotinaBoletim | null, agora: Date): string {
   const periodicidade = rotina?.periodicidade;
   if (periodicidade === 'DIARIA') return `${dataPorExtenso(agora)} · Edição diária`;
-  const dias = periodicidade === 'MENSAL' ? 30 : 7;
+
   const rotulo =
     periodicidade === 'MENSAL'
       ? 'Edição mensal'
       : periodicidade === 'SEMANAL'
         ? 'Edição semanal'
         : 'Edição automática';
-  return `${periodoPorExtenso(new Date(agora.getTime() - dias * 86_400_000), agora)} · ${rotulo}`;
+
+  // Sem periodicidade (geração avulsa) não há janela: o recorte padrão de uma
+  // semana continua valendo para o rótulo, que é só informativo.
+  const janela = janelaDaPeriodicidade(periodicidade ?? 'SEMANAL', agora);
+  const inicio = janela?.inicio ?? new Date(agora.getTime() - 7 * 86_400_000);
+  return `${periodoPorExtenso(inicio, agora)} · ${rotulo}`;
 }
 
 const FUSO = 'America/Sao_Paulo';

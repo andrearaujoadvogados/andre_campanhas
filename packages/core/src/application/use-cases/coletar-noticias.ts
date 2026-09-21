@@ -3,6 +3,7 @@ import {
   montarPromptDeExtracao,
   validarUrlDeFonte,
   type FonteBoletim,
+  type JanelaColeta,
   type ModoColeta,
   type NoticiaColetada,
 } from '../../domain/boletim/fonte-boletim.js';
@@ -76,6 +77,13 @@ export interface EscolhaColeta {
   readonly temas?: readonly string[];
   /** Ausente = NOVIDADES. RETROSPECTIVA lê a página inteira e pede o mais relevante, recente ou não. */
   readonly modo?: ModoColeta;
+  /**
+   * Recorte de tempo que a edição cobre.
+   *
+   * Ausente na geração avulsa, que não tem periodicidade — aí a instrução da
+   * fonte decide sozinha, como sempre decidiu.
+   */
+  readonly janela?: JanelaColeta;
 }
 
 /**
@@ -168,6 +176,7 @@ export async function coletarNoticias(
           ...(escolha.temas === undefined || escolha.temas.length === 0
             ? {}
             : { temas: escolha.temas }),
+          ...(escolha.janela === undefined ? {} : { janela: escolha.janela }),
         }),
       );
     } catch (erro) {

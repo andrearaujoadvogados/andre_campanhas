@@ -1,4 +1,5 @@
 import type { FonteId, ListId, RotinaId, TenantId, TipoEmailId, UserId } from '../shared/ids.js';
+import type { JanelaColeta } from './fonte-boletim.js';
 
 /**
  * Rotina de envio automático do boletim — geração E disparo, sem clique.
@@ -17,6 +18,42 @@ import type { FonteId, ListId, RotinaId, TenantId, TipoEmailId, UserId } from '.
  * catálogo de fontes.
  */
 export type PeriodicidadeRotina = 'DIARIA' | 'SEMANAL' | 'MENSAL';
+
+/** Quantos dias cada periodicidade cobre. Um lugar só, porque dois divergem. */
+const DIAS_COBERTOS: Record<PeriodicidadeRotina, number> = {
+  DIARIA: 1,
+  SEMANAL: 7,
+  MENSAL: 30,
+};
+
+/**
+ * O recorte de tempo que uma edição cobre.
+ *
+ * Fonte única para as duas coisas que precisam concordar: o que se pede à IA
+ * na coleta e o período impresso no cabeçalho do e-mail. Enquanto eram dois
+ * cálculos, só o segundo existia — o boletim *dizia* cobrir sete dias e
+ * coletava o que estivesse no topo da página.
+ *
+ * Sem periodicidade (geração avulsa, disparada à mão) devolve `null`: não há
+ * recorte a cobrar, e inventar uma semana seria pior que não pedir nada.
+ */
+export function janelaDaPeriodicidade(
+  periodicidade: PeriodicidadeRotina | undefined,
+  agora: Date,
+): JanelaColeta | null {
+  if (periodicidade === undefined) return null;
+  const dias = DIAS_COBERTOS[periodicidade];
+  return {
+    inicio: new Date(agora.getTime() - dias * 86_400_000),
+    fim: agora,
+    descricao:
+      periodicidade === 'DIARIA'
+        ? 'as últimas 24 horas'
+        : periodicidade === 'SEMANAL'
+          ? 'os últimos 7 dias'
+          : 'os últimos 30 dias',
+  };
+}
 
 export interface RotinaBoletim {
   readonly tenantId: TenantId;
