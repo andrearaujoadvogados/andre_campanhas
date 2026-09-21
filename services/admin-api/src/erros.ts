@@ -20,6 +20,7 @@ const STATUS: Record<DomainErrorCode, ContentfulStatusCode> = {
   CONTATO_SUPRIMIDO: 422,
   BASE_LEGAL_AUSENTE: 422,
   PERMISSAO_NEGADA: 403,
+  RECURSO_JA_EXISTE: 409,
 };
 
 export function statusDeErro(erro: DomainError): ContentfulStatusCode {

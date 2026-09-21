@@ -6,10 +6,11 @@ import {
   AdminListGroupsForUserCommand,
   AdminRemoveUserFromGroupCommand,
   ListUsersCommand,
+  UsernameExistsException,
   type CognitoIdentityProviderClient,
   type UserType,
 } from '@aws-sdk/client-cognito-identity-provider';
-import type { GestaoUsuarios, UsuarioDoPainel } from '@emailmkt/core';
+import { err, ok, type GestaoUsuarios, type Result, type UsuarioDoPainel } from '@emailmkt/core';
 
 /** Os grupos do pool são minúsculos; os papéis do domínio, maiúsculos. */
 const GRUPO: Record<'ADMIN' | 'OPERADOR', string> = {
@@ -86,26 +87,46 @@ export class CognitoGestaoUsuarios implements GestaoUsuarios {
     return [...papeis];
   }
 
-  async criar(email: string, papel: 'ADMIN' | 'OPERADOR'): Promise<UsuarioDoPainel> {
+  async criar(email: string, papel: 'ADMIN' | 'OPERADOR'): Promise<Result<UsuarioDoPainel>> {
     /**
      * Sem `TemporaryPassword`: o Cognito gera a senha e a envia por e-mail
      * direto para a pessoa. Ela não passa por esta API, nem pelo log, nem pelo
      * navegador de quem criou a conta.
      */
-    const r = await this.cliente.send(
-      new AdminCreateUserCommand({
-        UserPoolId: this.userPoolId,
-        Username: email,
-        UserAttributes: [
-          { Name: 'email', Value: email },
-          // Marcado como verificado porque quem cria a conta é um administrador
-          // que conhece o endereço — e sem isso a recuperação de senha, que é
-          // por e-mail, não funcionaria.
-          { Name: 'email_verified', Value: 'true' },
-        ],
-        DesiredDeliveryMediums: ['EMAIL'],
-      }),
-    );
+    let r;
+    try {
+      r = await this.cliente.send(
+        new AdminCreateUserCommand({
+          UserPoolId: this.userPoolId,
+          Username: email,
+          UserAttributes: [
+            { Name: 'email', Value: email },
+            // Marcado como verificado porque quem cria a conta é um administrador
+            // que conhece o endereço — e sem isso a recuperação de senha, que é
+            // por e-mail, não funcionaria.
+            { Name: 'email_verified', Value: 'true' },
+          ],
+          DesiredDeliveryMediums: ['EMAIL'],
+        }),
+      );
+    } catch (erro) {
+      /**
+       * Aqui a tradução importa: é o erro mais comum desta tela.
+       *
+       * Duas pessoas convidando a mesma, ou um clique duplo no botão. Sem
+       * este trecho, a exceção do Cognito subia até o tratador genérico e a
+       * pessoa recebia "Erro inesperado. Informe o identificador de
+       * correlação ao suporte" — que manda procurar suporte para um caso em
+       * que o sistema sabe exatamente o que houve.
+       */
+      if (erro instanceof UsernameExistsException) {
+        return err({
+          code: 'RECURSO_JA_EXISTE',
+          message: `${email} já tem conta no painel. Se o convite expirou, use "Reenviar convite" na lista abaixo.`,
+        });
+      }
+      throw erro;
+    }
 
     const id = r.User?.Username;
     if (id === undefined) {
@@ -114,7 +135,7 @@ export class CognitoGestaoUsuarios implements GestaoUsuarios {
 
     await this.definirPapel(id, papel);
 
-    return {
+    return ok({
       id,
       sub: r.User?.Attributes?.find((a) => a.Name === 'sub')?.Value ?? '',
       email,
@@ -122,7 +143,7 @@ export class CognitoGestaoUsuarios implements GestaoUsuarios {
       habilitado: r.User?.Enabled ?? true,
       aguardandoPrimeiroAcesso: true,
       criadoEm: r.User?.UserCreateDate ?? new Date(),
-    };
+    });
   }
 
   /**
