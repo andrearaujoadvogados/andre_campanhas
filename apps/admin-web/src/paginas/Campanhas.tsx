@@ -68,6 +68,39 @@ interface Listagem {
   aviso?: string;
 }
 
+/**
+ * Limite de requisições simultâneas na exclusão em massa.
+ *
+ * A conta tem teto de 10 execuções concorrentes de Lambda, compartilhado por
+ * toda a aplicação. Selecionar 27 campanhas e disparar 27 DELETE de uma vez
+ * estourava esse teto: o API Gateway devolvia 503, e a tela exibia
+ * "Service Unavailable" ao lado do nome de cada campanha — como se fosse
+ * motivo de negócio. Foi o que o escritório relatou em 21/09/2026, com as 27
+ * recusadas de uma tacada só.
+ *
+ * Três é folgado: deixa margem para o resto do sistema e mantém a exclusão
+ * de algumas dezenas em poucos segundos.
+ */
+const SIMULTANEAS = 3;
+
+/**
+ * Executa em lotes, preservando a ordem dos resultados.
+ *
+ * Mesma forma de `Promise.allSettled` — índice por índice —, porque quem
+ * chama casa o resultado com o nome da campanha pela posição.
+ */
+async function emLotes<T>(
+  itens: readonly T[],
+  tarefa: (item: T) => Promise<unknown>,
+): Promise<PromiseSettledResult<unknown>[]> {
+  const resultados: PromiseSettledResult<unknown>[] = [];
+  for (let i = 0; i < itens.length; i += SIMULTANEAS) {
+    const lote = itens.slice(i, i + SIMULTANEAS);
+    resultados.push(...(await Promise.allSettled(lote.map(tarefa))));
+  }
+  return resultados;
+}
+
 export function Campanhas() {
   const [status, definirStatus] = useState('');
   const [filtroTipo, definirFiltroTipo] = useState('');
@@ -107,9 +140,7 @@ export function Campanhas() {
   const excluirSelecionadas = useMutation({
     mutationFn: async () => {
       const alvos = itens.filter((c) => selecionadas.has(c.campaignId));
-      const resultados = await Promise.allSettled(
-        alvos.map((c) => api.delete(`/campanhas/${c.campaignId}`)),
-      );
+      const resultados = await emLotes(alvos, (c) => api.delete(`/campanhas/${c.campaignId}`));
       const recusadas = resultados.flatMap((r, i) =>
         r.status === 'rejected'
           ? [
