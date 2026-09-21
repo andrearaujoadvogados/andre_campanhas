@@ -31,7 +31,9 @@ export type DomainErrorCode =
   | 'BASE_LEGAL_AUSENTE'
   | 'TOKEN_INVALIDO'
   | 'CAMPO_OBRIGATORIO'
-  | 'PERMISSAO_NEGADA';
+  | 'PERMISSAO_NEGADA'
+  /** Já existe um recurso com essa identidade — convite para e-mail já cadastrado, por exemplo. */
+  | 'RECURSO_JA_EXISTE';
 
 export interface DomainError {
   readonly code: DomainErrorCode;

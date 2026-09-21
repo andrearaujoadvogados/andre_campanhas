@@ -1,3 +1,4 @@
+import type { Result } from '../../domain/shared/result.js';
 import type { Contact } from '../../domain/contact/contact.js';
 import type { Campaign } from '../../domain/campaign/campaign.js';
 import type {
@@ -565,7 +566,16 @@ export interface UsuarioDoPainel {
 
 export interface GestaoUsuarios {
   listar(): Promise<readonly UsuarioDoPainel[]>;
-  criar(email: string, papel: 'ADMIN' | 'OPERADOR'): Promise<UsuarioDoPainel>;
+  /**
+   * Convida alguém.
+   *
+   * Devolve `Result` porque "esse e-mail já tem conta" é desfecho de negócio,
+   * não falha do sistema: é o erro mais comum desta tela, e tratá-lo como
+   * exceção fazia a pessoa receber "Erro inesperado, informe o identificador
+   * de correlação ao suporte" — a mensagem mais inútil possível para o
+   * problema mais previsível possível.
+   */
+  criar(email: string, papel: 'ADMIN' | 'OPERADOR'): Promise<Result<UsuarioDoPainel>>;
   definirPapel(id: string, papel: 'ADMIN' | 'OPERADOR'): Promise<void>;
   /** Reenvia o convite quando a senha provisória expira — 7 dias, por padrão. */
   reenviarConvite(id: string): Promise<void>;

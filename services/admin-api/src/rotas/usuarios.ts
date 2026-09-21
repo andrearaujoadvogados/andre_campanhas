@@ -4,6 +4,7 @@ import type { Variaveis } from '../auth.js';
 import { exigirPapel } from '../auth.js';
 import { obterDependencias } from '../container.js';
 import { validarCorpo } from '../validacao.js';
+import { corpoDeErro, statusDeErro } from '../erros.js';
 
 export const rotasUsuarios = new Hono<{ Variables: Variaveis }>();
 
@@ -38,7 +39,14 @@ rotasUsuarios.post('/', exigirPapel('ADMIN'), validarCorpo(criarUsuarioSchema), 
   const dados = c.req.valid('json');
   const usuario = c.get('usuario');
 
-  const criado = await gestaoUsuarios.criar(dados.email, dados.papel);
+  const resultado = await gestaoUsuarios.criar(dados.email, dados.papel);
+  if (!resultado.ok) {
+    return c.json(
+      corpoDeErro(resultado.error, c.get('correlationId')),
+      statusDeErro(resultado.error),
+    );
+  }
+  const criado = resultado.value;
 
   await auditoria.registrar({
     tenantId: usuario.tenantId,

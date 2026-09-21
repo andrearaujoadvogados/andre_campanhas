@@ -227,6 +227,12 @@ function montarDeps(): Dependencias {
     gestaoUsuarios: {
       listar: async () => estado.usuarios,
       criar: async (email: string, papel: string) => {
+        // "Já existe" é desfecho de negócio, não exceção: o duplo devolve
+        // Result como o adaptador de verdade, senão o teste passaria por um
+        // caminho que a produção não percorre.
+        if (estado.usuarios.some((u) => u.email === email)) {
+          return { ok: false as const, error: { code: 'RECURSO_JA_EXISTE', message: 'já existe' } };
+        }
         const novo = {
           id: email,
           sub: `sub-${email}`,
@@ -237,7 +243,7 @@ function montarDeps(): Dependencias {
           criadoEm: AGORA,
         };
         estado.usuarios.push(novo);
-        return novo;
+        return { ok: true as const, value: novo };
       },
       definirPapel: async (id: string, papel: string) =>
         void estado.papeisDefinidos.push({ id, papel }),
@@ -1088,6 +1094,27 @@ describe('usuários do painel', () => {
     expect(corpo.email).toBe('novo@exemplo.com');
     expect(corpo.aviso).toMatch(/7 dias/);
     expect(JSON.stringify(corpo)).not.toMatch(/senha.{0,20}[:=]/i);
+  });
+
+  it('diz que o e-mail já tem conta, em vez de "erro inesperado"', async () => {
+    /**
+     * O erro que o escritório viu em 21/09/2026: convidar alguém já cadastrado
+     * devolvia 500 e "Informe o identificador de correlação ao suporte" — a
+     * exceção do Cognito subia até o tratador genérico.
+     *
+     * É o erro mais comum desta tela (clique duplo, ou duas pessoas
+     * convidando a mesma) e recebia a pior mensagem do sistema.
+     */
+    await comoAdmin('/usuarios', json({ email: 'repetido@exemplo.com', papel: 'OPERADOR' }));
+    const r = await comoAdmin(
+      '/usuarios',
+      json({ email: 'repetido@exemplo.com', papel: 'OPERADOR' }),
+    );
+    const corpo = (await r.json()) as { code: string; message: string };
+
+    expect(r.status).toBe(409);
+    expect(corpo.code).toBe('RECURSO_JA_EXISTE');
+    expect(corpo.message).not.toMatch(/inesperado|suporte/i);
   });
 
   it('recusa e-mail malformado', async () => {
