@@ -18,3 +18,4 @@ export * from './ops.js';
 export * from './compile.js';
 export * from './presets.js';
 export * from './boletim.js';
+export * from './modo-escuro.js';
