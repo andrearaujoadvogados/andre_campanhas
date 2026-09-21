@@ -178,3 +178,67 @@ describe('edição padrão — o mesmo layout sem editor', () => {
     expect(edicaoPadrao([])).toBeNull();
   });
 });
+
+/**
+ * O teto da edição — a outra metade do pedido de 21/09/2026.
+ *
+ * "Quando houverem muitas informações, o sistema deve limitar às 10 mais
+ * importantes." Antes disso não havia teto nenhum: toda notícia que a IA não
+ * posicionasse era despejada em `demais`, e uma semana farta com quatro
+ * fontes saía com trinta itens.
+ */
+describe('teto de notícias da edição', () => {
+  const muitas: NoticiaColetada[] = Array.from({ length: 30 }, (_, i) => ({
+    titulo: `Notícia ${String(i)}`,
+    resumo: 'resumo',
+    url: `https://fonte.com.br/${String(i)}`,
+    tag: 'STJ',
+  }));
+
+  it('corta em 10 mesmo quando a IA devolve tudo', () => {
+    const resposta = JSON.stringify({
+      titulo: 'Edição farta',
+      introducao: 'abertura',
+      destaque: { indice: 0, chapeu: 'STJ', paragrafos: ['p'], significa: 's' },
+      demais: muitas.map((_, i) => ({ indice: i, chapeu: 'STJ' })),
+      radar: [],
+    });
+
+    const edicao = analisarEdicao(resposta, muitas);
+
+    expect(edicao).not.toBeNull();
+    // Destaque + demais. O destaque ocupa uma das dez vagas.
+    expect(1 + (edicao?.demais.length ?? 0)).toBe(LIMITES_EDICAO.noticias);
+  });
+
+  it('corta também o que a IA esqueceu de posicionar', () => {
+    // O caminho que produziu o problema: a IA devolve dois itens em `demais`
+    // e o código anexava os 28 restantes ao fim, sem teto.
+    const resposta = JSON.stringify({
+      titulo: 'Edição farta',
+      introducao: 'abertura',
+      destaque: { indice: 0, chapeu: 'STJ', paragrafos: ['p'], significa: 's' },
+      demais: [{ indice: 1, chapeu: 'STJ' }],
+      radar: [],
+    });
+
+    const edicao = analisarEdicao(resposta, muitas);
+
+    expect(1 + (edicao?.demais.length ?? 0)).toBe(LIMITES_EDICAO.noticias);
+  });
+
+  it('não inventa itens quando a semana rendeu pouco', () => {
+    const poucas = muitas.slice(0, 3);
+    const resposta = JSON.stringify({
+      titulo: 'Semana curta',
+      introducao: 'abertura',
+      destaque: { indice: 0, chapeu: 'STJ', paragrafos: ['p'], significa: 's' },
+      demais: [{ indice: 1, chapeu: 'STJ' }],
+      radar: [],
+    });
+
+    const edicao = analisarEdicao(resposta, poucas);
+
+    expect(edicao?.demais).toHaveLength(2);
+  });
+});

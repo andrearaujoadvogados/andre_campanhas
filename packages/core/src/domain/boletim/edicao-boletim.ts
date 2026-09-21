@@ -1,4 +1,4 @@
-import type { NoticiaColetada } from './fonte-boletim.js';
+import { MAXIMO_NOTICIAS_DA_EDICAO, type NoticiaColetada } from './fonte-boletim.js';
 
 /**
  * A passada EDITORIAL do boletim — de uma lista de notícias para uma edição.
@@ -59,6 +59,8 @@ export const LIMITES_EDICAO = {
   radar: 6,
   radarQuando: 20,
   radarTexto: 240,
+  /** Destaque + demais. O corte fica no domínio, não na confiança na IA. */
+  noticias: MAXIMO_NOTICIAS_DA_EDICAO,
 } as const;
 
 /**
@@ -120,7 +122,7 @@ export function montarPromptDeEdicao(entrada: {
     '}',
     '',
     'Regras:',
-    '- "destaque.indice" é a notícia mais relevante para os clientes. "demais" lista as outras por ordem de relevância; omita apenas as que repetem a mesma matéria de outra fonte.',
+    `- "destaque.indice" é a notícia mais relevante para os clientes. "demais" lista as outras por ordem de relevância, no máximo ${String(LIMITES_EDICAO.noticias - 1)}; omita as que repetem a mesma matéria de outra fonte e as menos relevantes, se sobrarem.`,
     '- Escreva em português claro, sem juridiquês desnecessário; explique siglas na primeira vez.',
     '- Use SOMENTE o que está nas notícias abaixo (e no texto da matéria do destaque, se houver). Não invente fatos, números, datas ou nomes; não complete de memória.',
     '- "radar": só datas e prazos que constem EXPLICITAMENTE no material e que sejam dos temas deste boletim. Sem datas, devolva [].',
@@ -206,9 +208,19 @@ export function analisarEdicao(
       chapeu: texto(d['chapeu'])?.slice(0, LIMITES_EDICAO.chapeu) ?? noticia.tag,
     });
   }
+  /**
+   * Notícia que a IA não posicionou ainda entra — mas no fim da fila.
+   *
+   * O editor pode deixar item de fora por descuido, e perder uma notícia
+   * coletada em silêncio é pior do que mostrá-la em último lugar. O que não
+   * pode é o boletim inteiro virar despejo da coleta: sem o corte abaixo, uma
+   * semana farta com quatro fontes saía com trinta itens, que é a reclamação
+   * oposta à que originou este código.
+   */
   noticias.forEach((noticia, i) => {
     if (!usados.has(i)) demais.push({ ...noticia, chapeu: noticia.tag });
   });
+  demais.length = Math.min(demais.length, LIMITES_EDICAO.noticias - 1);
 
   const radar: ItemRadarEditorial[] = [];
   for (const item of lista(o['radar']).slice(0, LIMITES_EDICAO.radar)) {
