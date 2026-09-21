@@ -119,7 +119,7 @@ Um push na `main` dispara: verificação → deploy em dev → **aprovação man
 - [ ] As saídas do CDK: `ApiUrl`, `UserPoolId`, `UserPoolClientId`, `UrlDescadastro`
 - [ ] Publicar os registros DNS (passo 6)
 - [ ] Preencher o `.env.local` do painel com as saídas
-- [ ] Criar o primeiro usuário no Cognito e passar pelo fluxo de MFA
+- [ ] Criar o primeiro usuário no Cognito e trocar a senha provisória no primeiro acesso
 - [ ] **Confirmar a inscrição do SNS** em cada endereço de `EMAIL_ALARMES` (chega um e-mail com link)
 - [ ] Verificar no console do CloudWatch que os 7 alarmes estão em `OK`, não em `INSUFFICIENT_DATA` sem inscrição confirmada
 

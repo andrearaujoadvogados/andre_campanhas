@@ -69,12 +69,26 @@ export function aplicarSupressoes(core: Stack, sending: Stack, web: Stack, oidc:
           '(janela de duas chaves). Registrado como item de V2.',
       },
       {
+        id: 'AwsSolutions-COG2',
+        reason:
+          'MFA desligado por decisão do escritório, revertendo o §10.1 — ver o comentário no ' +
+          'user pool da CoreStack. A regra está certa e a supressão não a contesta: sem ' +
+          'segundo fator, uma senha vazada dá acesso completo a um painel que dispara e-mail ' +
+          'em nome do escritório e lê a base de contatos, e a recuperação por e-mail passa a ' +
+          'ser o caminho inteiro para assumir uma conta. O que sustenta a decisão é o ' +
+          'tamanho do alvo: menos de 20 contas, criadas uma a uma por administrador, sem ' +
+          'auto-cadastro, com senha de 12 caracteres e sessão de 1 hora. É a supressão mais ' +
+          'frágil desta lista e a primeira a rever se a equipe crescer ou se o painel passar ' +
+          'a ser acessado fora do escritório.',
+      },
+      {
         id: 'AwsSolutions-COG8',
         reason:
-          'O tier Plus do Cognito adiciona custo por usuário ativo. Com MFA obrigatório para ' +
-          'todos os usuários e menos de 20 contas criadas manualmente por administrador ' +
-          '(sem auto-cadastro), o vetor que o tier Plus cobre é pequeno. Decisão de custo a ' +
-          'revisar com o cliente — é barato nesta escala.',
+          'O tier Plus do Cognito adiciona custo por usuário ativo. Com menos de 20 contas ' +
+          'criadas manualmente por administrador (sem auto-cadastro), o vetor que o tier Plus ' +
+          'cobre é pequeno — mas menos do que era: ele detecta credencial vazada e login ' +
+          'suspeito, que é justamente o risco que cresceu quando o segundo fator saiu. ' +
+          'Decisão de custo a revisar com o escritório; é barato nesta escala.',
       },
       {
         id: 'AwsSolutions-S1',

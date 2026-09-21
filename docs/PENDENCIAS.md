@@ -41,7 +41,9 @@ A HostGator leva ~2-3 minutos para um registro novo aparecer no autoritativo. Su
 
 - [x] **Contas de acesso ao painel.** Criar conta deixou de passar pelo CloudShell: **Usuários** no painel convida por e-mail, troca papel, reenvia convite e remove acesso.
 
-  Senha nenhuma trafega — não há campo no formulário, no contrato ou na permissão da Lambda, que exclui `AdminSetUserPassword` de propósito. Quem é convidado recebe a senha provisória por e-mail, define a definitiva e cadastra o MFA. Quem esquecer a senha usa o **Esqueci minha senha** da tela de login, que envia um código por e-mail; o MFA não é redefinido junto, e continua sendo pedido depois.
+  Senha nenhuma trafega — não há campo no formulário, no contrato ou na permissão da Lambda, que exclui `AdminSetUserPassword` de propósito. Quem é convidado recebe a senha provisória por e-mail e define a definitiva no primeiro acesso. Quem esquecer a senha usa o **Esqueci minha senha** da tela de login, que envia um código por e-mail.
+
+  **Sem segundo fator desde 2026-09-21**, por decisão do escritório. A consequência prática: quem controla a caixa de e-mail de um usuário assume a conta dele pelo **Esqueci minha senha**. A segurança do painel passou a ser a segurança do e-mail de cada pessoa da equipe — o que torna o 2FA da conta de e-mail do escritório mais importante do que era.
 
   Remover acesso **desativa**, não apaga: as campanhas guardam quem as criou e quem as aprovou, e esse registro perderia sentido se a conta sumisse.
 
@@ -63,11 +65,11 @@ A HostGator leva ~2-3 minutos para um registro novo aparecer no autoritativo. Su
 
 - [ ] **Confirmar as inscrições do SNS.** Quatro e-mails, dois endereços em duas regiões. Até alguém clicar, os alarmes de bounce e reclamação disparam para o vazio — parece protegido e não está, que é pior do que não ter alarme.
 
-- [ ] **Trocar o segredo do MFA que apareceu numa captura de tela.** Aberta há três dias porque não se sabe **qual** MFA era: o da raiz da AWS ou o do usuário do Cognito.
+- [ ] **Trocar o segredo do MFA da raiz da AWS que apareceu numa captura de tela.** Não se sabia qual dos dois MFA era, o da raiz ou o do Cognito. O do Cognito deixou de existir em 2026-09-21, então resta o da raiz — e ele é o que importava.
 
   É o único item desta lista cujo risco não diminui com o tempo. Senha vazada envelhece, token é revogado, certificado vence — **segredo TOTP não expira**. Quem tiver aquela imagem gera códigos válidos hoje e daqui a dois anos, igual.
 
-  Na dúvida, troque os dois; nenhum procedimento é destrutivo, e com o usuário IAM administrador funcionando não há mais risco de se trancar para fora da conta.
+  O procedimento não é destrutivo, e com o usuário IAM administrador funcionando não há risco de se trancar para fora da conta.
 
 ### Anotado, sem urgência
 
