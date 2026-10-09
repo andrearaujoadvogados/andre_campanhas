@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   TENANT_PADRAO,
   analisarNoticias,
+  analisarRespostaDaColeta,
   coletarNoticias,
   execucaoBoletimId as novoExecucaoId,
   selecionarDoAcervo,
@@ -230,7 +231,9 @@ describe('recorte da rotina sobre o catálogo de fontes', () => {
 
     expect(r.totalNoticias).toBe(0);
     expect(r.fontesSemNoticia).toBe(1);
-    expect(r.avisos[0]).toContain('nada encontrado sobre os temas da rotina');
+    // A IA trouxe uma notícia e o filtro barrou: o aviso traz o número, para
+    // o operador saber que o problema são os temas, não a fonte.
+    expect(r.avisos[0]).toContain('a IA trouxe 1 notícia(s), mas nenhuma era dos temas');
   });
 });
 
@@ -606,5 +609,76 @@ describe('recorte de tempo no prompt de extração', () => {
 
     expect(prompt).not.toContain('PERÍODO:');
     expect(prompt).toContain('MAIS RELEVANTES');
+  });
+});
+
+describe('filtro de temas — pelo assunto, não pelo rótulo', () => {
+  it('a forma de escrever o tema não importa: palavras inteiras, sem acento, sem ligação', async () => {
+    const { textoCitaTema } = await import('../src/index.js');
+
+    expect(textoCitaTema('Base do PIS/Cofins', 'PIS e Cofins')).toBe(true);
+    expect(textoCitaTema('créditos de ICMS-ST', 'ICMS')).toBe(true);
+    expect(textoCitaTema('Reforma Tributaria (IBS/CBS)', 'reforma tributária')).toBe(true);
+    expect(textoCitaTema('Reforma Tributaria (IBS/CBS)', 'CBS')).toBe(true);
+    // Letras coladas não são a palavra.
+    expect(textoCitaTema('CBSistemas lança produto', 'CBS')).toBe(false);
+    expect(textoCitaTema('Distribuição de dividendos', 'distribuição de lucros')).toBe(false);
+    expect(textoCitaTema('qualquer coisa', 'e')).toBe(false);
+  });
+
+  it('rótulo errado da IA não derruba a notícia que cita o tema no texto', () => {
+    const resposta = JSON.stringify([
+      // Rótulo genérico, mas o título fala de ICMS: passa.
+      {
+        titulo: 'STF julga benefícios de ICMS',
+        resumo: 'R.',
+        url: 'https://x.com.br/1',
+        tag: 'STF',
+        tema: 'Tributário',
+      },
+      // Rótulo escrito de outro jeito: passa.
+      {
+        titulo: 'Base de cálculo',
+        resumo: 'R.',
+        url: 'https://x.com.br/2',
+        tag: 'STJ',
+        tema: 'PIS/Cofins',
+      },
+      // Sem rótulo, mas o resumo cita o tema: passa.
+      {
+        titulo: 'Decisão do STJ',
+        resumo: 'Trata do CARF e do voto de qualidade.',
+        url: 'https://x.com.br/3',
+        tag: 'STJ',
+      },
+      // Nem rótulo nem texto: fica de fora.
+      {
+        titulo: 'Indenização por dano moral',
+        resumo: 'Consumidor.',
+        url: 'https://x.com.br/4',
+        tag: 'STJ',
+        tema: 'Cível',
+      },
+    ]);
+    const r = analisarRespostaDaColeta(resposta, 'https://x.com.br', [
+      'ICMS',
+      'PIS e Cofins',
+      'CARF',
+    ]);
+
+    expect(r?.noticias.map((n) => n.titulo)).toEqual([
+      'STF julga benefícios de ICMS',
+      'Base de cálculo',
+      'Decisão do STJ',
+    ]);
+    expect(r?.devolvidas).toBe(4);
+    expect(r?.descartadasPorTema).toBe(1);
+  });
+
+  it('sem temas na rotina, nada é descartado e a contagem diz isso', () => {
+    const r = analisarRespostaDaColeta(RESPOSTA_VALIDA, 'https://x.com.br');
+
+    expect(r?.noticias).toHaveLength(1);
+    expect(r?.descartadasPorTema).toBe(0);
   });
 });
