@@ -62,11 +62,23 @@ export function validarUrlDeFonte(bruta: string): { ok: true } | { ok: false; mo
 /**
  * Teto de notícias da edição inteira.
  *
- * Pedido do escritório: quando o período render muito material, o boletim
- * fica nas dez mais importantes. Dez cabe numa leitura de e-mail; vinte vira
- * um feed que ninguém termina.
+ * Pedido do escritório (09/10/2026): quando o período render muito material,
+ * o boletim fica nas OITO mais importantes. Oito cabe numa leitura de e-mail;
+ * vinte vira um feed que ninguém termina.
  */
-export const MAXIMO_NOTICIAS_DA_EDICAO = 10;
+export const MAXIMO_NOTICIAS_DA_EDICAO = 8;
+
+/**
+ * Piso de notícias da edição.
+ *
+ * O escritório foi explícito: "garanta que tenha mais de uma notícia, isso é
+ * importante". Abaixo deste número a rodada completa a edição com a passada
+ * de retrospectiva (o mais relevante e mais lido das mesmas fontes) e, se
+ * ainda faltar, com o acervo das edições anteriores — sem virar edição de
+ * retrospectiva, porque houve novidade. Três, e não dois: um boletim com
+ * duas notícias ainda parece vazio.
+ */
+export const MINIMO_NOTICIAS_DA_EDICAO = 3;
 
 /** Notícia extraída de uma fonte pela IA — o insumo do boletim. */
 export interface NoticiaColetada {
