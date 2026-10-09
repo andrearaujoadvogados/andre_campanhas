@@ -682,3 +682,34 @@ describe('filtro de temas — pelo assunto, não pelo rótulo', () => {
     expect(r?.descartadasPorTema).toBe(0);
   });
 });
+
+describe('completar a edição curta sem repetir', () => {
+  it('acrescenta até o teto, pulando a matéria que já estava', async () => {
+    const { completarSemRepetir } = await import('../src/index.js');
+    const n = (titulo: string, url = `https://x.com.br/${titulo}`): NoticiaColetada => ({
+      titulo,
+      resumo: 'R.',
+      url,
+      tag: 'T',
+    });
+
+    const r = completarSemRepetir([n('A')], [n('A'), n('B'), n('C'), n('D')], 3);
+
+    expect(r.map((x) => x.titulo)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('base já no teto fica como está', async () => {
+    const { completarSemRepetir } = await import('../src/index.js');
+    const n = (t: string): NoticiaColetada => ({
+      titulo: t,
+      resumo: 'R.',
+      url: `https://x/${t}`,
+      tag: '',
+    });
+
+    expect(completarSemRepetir([n('A'), n('B')], [n('C')], 2).map((x) => x.titulo)).toEqual([
+      'A',
+      'B',
+    ]);
+  });
+});

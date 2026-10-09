@@ -28,6 +28,9 @@ import {
   registrarEnvioAutomatico,
   repartirContatosEntreListas,
   selecionarDoAcervo,
+  completarSemRepetir,
+  MAXIMO_NOTICIAS_DA_EDICAO,
+  MINIMO_NOTICIAS_DA_EDICAO,
   type BuscadorDePagina,
   type Campaign,
   type EdicaoBoletim,
@@ -265,10 +268,13 @@ export const handler = async (
      * página: um boletim semanal saía com as notícias do dia. A geração
      * avulsa segue sem janela, porque não tem periodicidade a cobrir.
      */
-    const janela = janelaDaPeriodicidade(rotina?.periodicidade, new Date());
+    // A geração avulsa (botão "gerar agora") cobre uma semana, como a rotina
+    // semanal: é com ela que o escritório testa o boletim, e um teste sem
+    // janela não diz nada sobre o que a rotina vai mandar.
+    const janela = janelaDaPeriodicidade(rotina?.periodicidade ?? 'SEMANAL', new Date());
     const escolha: EscolhaColeta =
       rotina === null
-        ? {}
+        ? { ...(janela === null ? {} : { janela }) }
         : {
             fonteIds: rotina.fonteIds.map(String),
             temas: rotina.temas,
@@ -317,43 +323,62 @@ export const handler = async (
     let avisos: readonly string[] = coleta.avisos;
 
     /**
-     * O boletim sai de qualquer modo — decisão do escritório.
+     * O boletim sai de qualquer modo, e nunca magro — decisão do escritório.
      *
      * Semana sem novidade não pode virar semana sem e-mail: quem assinou
-     * espera o boletim, e silêncio parece descuido. Quando a coleta de
-     * novidades não rende nada, a edição vira RETROSPECTIVA, avisada no
-     * próprio e-mail, com o que há de mais relevante e mais lido — primeiro
-     * pedindo isso à IA sobre as mesmas fontes (com as laterais de "mais
-     * lidas", que a coleta normal ignora); depois, se a IA ou os sites
-     * estiverem fora do ar, recorrendo ao acervo das edições anteriores.
+     * espera o boletim, e silêncio parece descuido. E "garanta que tenha mais
+     * de uma notícia" (09/10/2026): abaixo do piso, a edição é COMPLETADA —
+     * primeiro pedindo à IA o mais relevante e mais lido das mesmas fontes
+     * (com as laterais de "mais lidas", que a coleta normal ignora); depois,
+     * se ainda faltar, com o acervo das edições anteriores.
+     *
+     * A diferença entre completar e substituir: com novidade nenhuma, a
+     * edição vira RETROSPECTIVA e o leitor é avisado; com alguma novidade, a
+     * edição continua NOVIDADES e as matérias extras entram atrás — o aviso
+     * "sem novidades" seria mentira.
      */
-    if (conteudo.noticias.length === 0 && coleta.fontesSemNoticia > 0) {
+    const houveNovidade = conteudo.noticias.length > 0;
+    // Só vale insistir numa fonte que foi lida: se todas caíram por falha
+    // técnica, a segunda passada cairia do mesmo jeito.
+    const algumaFonteLida = coleta.porFonte.length + coleta.fontesSemNoticia > 0;
+    if (conteudo.noticias.length < MINIMO_NOTICIAS_DA_EDICAO && algumaFonteLida) {
       const segunda = await coletarNoticias(depsColeta('retrospectiva'), TENANT_PADRAO, {
         ...escolha,
         modo: 'RETROSPECTIVA',
       });
       for (const aviso of segunda.avisos) log.info('aviso da retrospectiva', { aviso });
       if (segunda.totalNoticias > 0) {
-        conteudo = conteudoDaColeta(segunda);
-        edicao = 'RETROSPECTIVA';
-      } else {
+        const extra = conteudoDaColeta(segunda);
+        conteudo = {
+          noticias: completarSemRepetir(
+            conteudo.noticias,
+            extra.noticias,
+            MAXIMO_NOTICIAS_DA_EDICAO,
+          ),
+          fontes: [...new Set([...conteudo.fontes, ...extra.fontes])],
+          urlsDasFontes: [...new Set([...conteudo.urlsDasFontes, ...extra.urlsDasFontes])],
+        };
+        if (!houveNovidade) edicao = 'RETROSPECTIVA';
+      } else if (!houveNovidade) {
         avisos = [...avisos, ...segunda.avisos.map((a) => `Retrospectiva — ${a}`)];
       }
     }
 
-    if (conteudo.noticias.length === 0) {
+    if (conteudo.noticias.length < MINIMO_NOTICIAS_DA_EDICAO) {
       const acervo = selecionarDoAcervo(await execucoes.listarRecentes(TENANT_PADRAO, 20), {
-        maximo: 6,
+        maximo: MAXIMO_NOTICIAS_DA_EDICAO,
         temas: rotina?.temas ?? [],
       });
-      if (acervo.length > 0) {
+      const antes = conteudo.noticias.length;
+      const completo = completarSemRepetir(conteudo.noticias, acervo, MAXIMO_NOTICIAS_DA_EDICAO);
+      if (completo.length > antes) {
         conteudo = {
-          noticias: acervo,
-          fontes: ['edições anteriores deste boletim'],
-          urlsDasFontes: [],
+          noticias: completo,
+          fontes: [...conteudo.fontes, 'edições anteriores deste boletim'],
+          urlsDasFontes: conteudo.urlsDasFontes,
         };
-        edicao = 'RETROSPECTIVA';
-        log.info('edição montada do acervo', { noticias: acervo.length });
+        if (!houveNovidade) edicao = 'RETROSPECTIVA';
+        log.info('edição completada com o acervo', { antes, depois: completo.length });
       }
     }
 
