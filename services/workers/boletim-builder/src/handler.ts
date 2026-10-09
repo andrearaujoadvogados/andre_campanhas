@@ -302,6 +302,12 @@ export const handler = async (
     log.info('coleta terminou', {
       cadeia: extrator.cadeia(),
       noticias: coleta.totalNoticias,
+      porFonte: coleta.porFonte.map((f) => ({
+        fonte: f.fonte.nome,
+        devolvidas: f.devolvidas,
+        descartadasPorTema: f.descartadasPorTema,
+        aproveitadas: f.noticias.length,
+      })),
       fontesComFalha: coleta.fontesComFalha,
       fontesSemNoticia: coleta.fontesSemNoticia,
     });

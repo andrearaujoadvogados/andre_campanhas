@@ -172,7 +172,7 @@ export function montarPromptDeExtracao(fonte: {
     'Regras:',
     ...(temAlgumTema(fonte.temas)
       ? [
-          '- "tema": o tema da lista acima de que a notícia trata, copiado exatamente como está na lista.',
+          '- "tema": o tema da lista acima de que a notícia trata, copiado exatamente como está na lista. Nunca omita este campo.',
         ]
       : []),
     '- "titulo": objetivo, até 120 caracteres, em português.',
@@ -182,7 +182,7 @@ export function montarPromptDeExtracao(fonte: {
     ...(fonte.janela === undefined || fonte.modo === 'RETROSPECTIVA'
       ? []
       : [
-          `- Cubra o período inteiro. Traga até ${MAXIMO_NOTICIAS_POR_FONTE} notícias, ordenadas da mais importante para a menos importante — quem corta o excesso é a etapa seguinte, não você.`,
+          `- Cubra o período inteiro. Traga as notícias e informações MAIS IMPORTANTES do período, até ${MAXIMO_NOTICIAS_POR_FONTE}, ordenadas da mais importante para a menos importante — quem corta o excesso é a etapa seguinte, não você. Não devolva uma só quando a página tiver várias do período.`,
         ]),
     '- Só inclua o que estiver de fato no conteúdo abaixo. Não invente nem complete de memória.',
     '- Se nada no conteúdo atender ao pedido, responda [].',
@@ -289,13 +289,36 @@ export function decidirPelaFalhaDeRedeDoExtrator(erro: unknown, modelo: string):
 export function analisarNoticias(
   resposta: string,
   urlDaFonte: string,
-  /**
-   * Temas da rotina. Presentes, a notícia só passa se a IA disser de qual
-   * tema ela trata e esse tema estiver na lista — a regra não fica só na
-   * obediência ao prompt.
-   */
   temas: readonly string[] = [],
 ): NoticiaColetada[] | null {
+  return analisarRespostaDaColeta(resposta, urlDaFonte, temas)?.noticias ?? null;
+}
+
+/** O que a IA devolveu e o que sobrou depois do filtro de temas. */
+export interface RespostaDaColeta {
+  readonly noticias: NoticiaColetada[];
+  /** Quantas a IA devolveu (válidas), antes do filtro de temas. */
+  readonly devolvidas: number;
+  /** Quantas ficaram de fora por não serem de nenhum tema da rotina. */
+  readonly descartadasPorTema: number;
+}
+
+/**
+ * Interpreta a resposta e aplica o filtro de temas — contando o que descartou.
+ *
+ * A contagem existe porque o filtro é invisível de fora: em 09/10/2026 o
+ * escritório relatou um boletim com UMA notícia, e nada no registro da
+ * execução dizia se a IA tinha trazido uma ou se tinha trazido dez e nove
+ * foram barradas. Com os temas da rotina, a notícia passa quando o tema que
+ * a IA declarou é um da lista OU quando o próprio texto dela cita um dos
+ * temas — a IA erra o rótulo com frequência ("Tributário" para uma matéria
+ * de ICMS), e a regra do escritório é sobre o ASSUNTO, não sobre o rótulo.
+ */
+export function analisarRespostaDaColeta(
+  resposta: string,
+  urlDaFonte: string,
+  temas: readonly string[] = [],
+): RespostaDaColeta | null {
   const semCerca = resposta
     .trim()
     .replace(/^```(?:json)?\s*/i, '')
@@ -310,25 +333,35 @@ export function analisarNoticias(
   if (!Array.isArray(bruto)) return null;
 
   const noticias: NoticiaColetada[] = [];
+  let devolvidas = 0;
+  let descartadasPorTema = 0;
   for (const item of bruto.slice(0, MAXIMO_NOTICIAS_POR_FONTE)) {
     if (typeof item !== 'object' || item === null) continue;
     const o = item as Record<string, unknown>;
     const titulo = texto(o['titulo']);
     const resumo = texto(o['resumo']);
     if (titulo === null || resumo === null) continue;
+    devolvidas += 1;
 
-    if (temAlgumTema(temas) && !temaDaLista(texto(o['tema']), temas)) continue;
-
-    const url = urlSegura(texto(o['url'])) ?? urlDaFonte;
-
-    noticias.push({
+    const noticia: NoticiaColetada = {
       titulo: titulo.slice(0, 200),
       resumo: resumo.slice(0, 600),
-      url,
+      url: urlSegura(texto(o['url'])) ?? urlDaFonte,
       tag: texto(o['tag'])?.slice(0, 40) ?? '',
-    });
+    };
+
+    if (
+      temAlgumTema(temas) &&
+      !temaDaLista(texto(o['tema']), temas) &&
+      !noticiaDeAlgumTema(noticia, temas)
+    ) {
+      descartadasPorTema += 1;
+      continue;
+    }
+
+    noticias.push(noticia);
   }
-  return noticias;
+  return { noticias, devolvidas, descartadasPorTema };
 }
 
 /**
@@ -363,29 +396,45 @@ export function normalizarTema(texto: string): string {
     .trim();
 }
 
-/** O tema que a IA declarou é um dos da rotina? Aceita diferença de acento e caixa. */
+/** O tema que a IA declarou é um dos da rotina? Aceita acento, caixa e a forma de escrever. */
 function temaDaLista(declarado: string | null, temas: readonly string[]): boolean {
-  if (declarado === null) return false;
-  const d = normalizarTema(declarado);
-  return temas.some((t) => {
-    const n = normalizarTema(t);
-    return n !== '' && (d === n || d.includes(n));
-  });
+  return declarado !== null && temas.some((t) => textoCitaTema(declarado, t));
 }
 
 /**
  * A notícia fala de algum dos temas? Procura o tema no título, no resumo e
- * na etiqueta — é o critério do acervo, onde não há IA para declarar o tema.
+ * na etiqueta — é o critério do acervo, onde não há IA para declarar o tema,
+ * e a segunda chance da coleta, quando a IA rotulou errado.
  */
 export function noticiaDeAlgumTema(
   noticia: Pick<NoticiaColetada, 'titulo' | 'resumo' | 'tag'>,
   temas: readonly string[],
 ): boolean {
-  const alvo = normalizarTema(`${noticia.tag} ${noticia.titulo} ${noticia.resumo}`);
-  return temas.some((t) => {
-    const n = normalizarTema(t);
-    return n !== '' && alvo.includes(n);
-  });
+  const alvo = `${noticia.tag} ${noticia.titulo} ${noticia.resumo}`;
+  return temas.some((t) => textoCitaTema(alvo, t));
+}
+
+/** Palavras de ligação que não distinguem um tema de outro. */
+const LIGACOES = new Set(['e', 'de', 'da', 'do', 'das', 'dos', 'a', 'o', 'em', 'na', 'no', 'ou']);
+
+/**
+ * O texto cita o tema? Por PALAVRAS, não pela frase inteira: "PIS/Cofins" cita
+ * "PIS e Cofins", "créditos de ICMS" cita "ICMS", "Reforma Tributária (IBS)"
+ * cita "reforma tributária". Toda palavra do tema (fora as de ligação)
+ * precisa aparecer INTEIRA no texto: "CBS" não casa com "CBSistemas", mas
+ * casa com "IBS/CBS" — hífen e barra separam palavras, letras coladas não.
+ */
+export function textoCitaTema(texto: string, tema: string): boolean {
+  const palavrasDoTema = palavras(tema).filter((p) => !LIGACOES.has(p));
+  if (palavrasDoTema.length === 0) return false;
+  const doTexto = new Set(palavras(texto));
+  return palavrasDoTema.every((p) => doTexto.has(p));
+}
+
+function palavras(texto: string): string[] {
+  return normalizarTema(texto)
+    .split(/[^a-z0-9]+/)
+    .filter((p) => p !== '');
 }
 
 function texto(v: unknown): string | null {
