@@ -42,6 +42,29 @@ describe('absorção de HTML editado num bloco de texto', () => {
     const novo = absorverHtmlEmBlocoDeTexto(blocoDeTexto(), 'só texto <i>livre</i>');
     expect(novo.html).toBe('só texto <i>livre</i>');
   });
+
+  it('texto sobre fundo escuro: as camadas de mesclagem da compilação não entram no bloco', () => {
+    // Elas são a proteção do modo escuro do Gmail, postas pela compilação.
+    // Gravadas no bloco, a próxima compilação as poria de novo, em dobro —
+    // mesmo que o código tenha sido reformatado com quebras de linha.
+    const html =
+      '<td style="padding: 0px;"><div style="font-size: 23px; color: #FFFFFF;">\n' +
+      '  <div class="gmail-blend-screen">\n    <div class="gmail-blend-difference"><b>Título</b> do card</div>\n  </div>\n' +
+      '</div></td>';
+
+    const novo = absorverHtmlEmBlocoDeTexto(blocoDeTexto(), html);
+
+    expect(novo.html).toBe('<b>Título</b> do card');
+    expect(novo.attrs.color).toBe('#FFFFFF');
+  });
+
+  it('um <div> com classe qualquer no conteúdo é do autor, e fica', () => {
+    const html = '<td><div style="font-size: 16px;"><div class="aviso">texto</div></div></td>';
+
+    expect(absorverHtmlEmBlocoDeTexto(blocoDeTexto(), html).html).toBe(
+      '<div class="aviso">texto</div>',
+    );
+  });
 });
 
 describe('higienização do texto colado', () => {

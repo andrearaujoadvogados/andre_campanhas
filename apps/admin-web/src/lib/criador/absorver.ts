@@ -17,6 +17,7 @@
 // Roda só no navegador (DOMParser); o commit da edição inline e o painel de
 // código são ambos client-side.
 
+import { CAMADAS_DE_MESCLAGEM } from '@emailmkt/criador';
 import type { Block, Row, TextBlock } from '@emailmkt/criador';
 
 /**
@@ -30,6 +31,31 @@ function propriedadeDoStyle(style: string, prop: string): string | null {
 
 function alinhamentoValido(v: string | null): v is 'left' | 'center' | 'right' {
   return v === 'left' || v === 'center' || v === 'right';
+}
+
+/**
+ * Texto sobre fundo escuro sai da compilação dentro de duas camadas de
+ * mesclagem (a proteção contra o modo escuro do Gmail). Elas são da
+ * compilação, não do conteúdo: absorvidas, voltariam em dobro na próxima.
+ */
+function semCamadasDeMesclagem(elemento: Element): Element {
+  let atual = elemento;
+  for (const classe of CAMADAS_DE_MESCLAGEM) {
+    const filhos = Array.from(atual.childNodes).filter(
+      (n) => n.nodeType !== Node.TEXT_NODE || Boolean(n.textContent?.trim()),
+    );
+    const unico = filhos[0];
+    if (
+      filhos.length !== 1 ||
+      unico === undefined ||
+      unico.nodeType !== Node.ELEMENT_NODE ||
+      !(unico as Element).classList.contains(classe)
+    ) {
+      return elemento;
+    }
+    atual = unico as Element;
+  }
+  return atual;
 }
 
 /** Absorve o HTML editado (um `<td>…</td>`, em geral) num bloco de texto. */
@@ -79,7 +105,7 @@ export function absorverHtmlEmBlocoDeTexto(bloco: TextBlock, html: string): Text
       if (cor && /^#[0-9a-f]{3,8}$/i.test(cor)) attrs.color = cor;
       const alignDiv = propriedadeDoStyle(styleDiv, 'text-align')?.toLowerCase();
       if (alinhamentoValido(alignDiv ?? null)) attrs.align = alignDiv as typeof attrs.align;
-      conteudo = div.innerHTML.trim();
+      conteudo = semCamadasDeMesclagem(div).innerHTML.trim();
     } else {
       conteudo = td.innerHTML.trim();
     }

@@ -18,9 +18,18 @@ import type { ContextoRenderizacao, EmailRenderer, EmailRenderizado } from '@ema
  *     por gente de confiança, mas HTML colado de um editor externo traz coisas
  *     que ninguém revisou.
  *  3. **CSS inline** (`juice`), porque Gmail e Outlook descartam `<style>` no
- *     head. Sem isso o e-mail chega sem formatação nenhuma.
+ *     head. Sem isso o e-mail chega sem formatação nenhuma. A exceção é o
+ *     `<style data-embed>`: regras que só valem DENTRO de um cliente (o modo
+ *     escuro do Gmail, por exemplo) não têm onde ser aplicadas aqui, e o juice
+ *     as deixa no head como estão.
  *  4. **Versão texto**, gerada do HTML já renderizado. Mensagem só-HTML pontua
  *     pior em filtro de spam e é ilegível em cliente que não renderiza HTML.
+ *
+ * A sanitização não pode levar junto o que o e-mail precisa para aparecer
+ * igual em todo cliente: o doctype (o Gmail só marca o documento para os
+ * ajustes de modo escuro quando ele existe), as metas de codificação, largura
+ * e esquema de cor, e os comentários condicionais que seguram o layout no
+ * Outlook para Windows. Esses voltam por caminhos estreitos, ver `sanitizar`.
  */
 export class LiquidEmailRenderer implements EmailRenderer {
   private readonly liquid: Liquid;
@@ -53,7 +62,7 @@ export class LiquidEmailRenderer implements EmailRenderer {
 
     return {
       assunto,
-      corpoHtml: juice(htmlComRodape),
+      corpoHtml: `${doctypeDe(htmlBruto)}${juice(htmlComRodape)}`,
       corpoTexto: paraTexto(htmlComRodape),
     };
   }
@@ -105,10 +114,35 @@ const TAGS_PERMITIDAS = [
   'th',
   'center',
   'font',
+  'meta',
+  'title',
 ];
 
+/**
+ * As metas que um e-mail usa — e só elas. Uma `http-equiv="refresh"` levaria
+ * a prévia do painel para outro endereço; nenhum cliente sente falta de uma
+ * meta fora desta lista.
+ */
+const METAS_POR_NOME = new Set([
+  'viewport',
+  'color-scheme',
+  'supported-color-schemes',
+  'x-apple-disable-message-reformatting',
+  'format-detection',
+]);
+const METAS_HTTP_EQUIV = new Set(['content-type', 'x-ua-compatible']);
+
+function metaPermitida(atributos: Record<string, string>): boolean {
+  const nome = atributos['name']?.toLowerCase();
+  const equivalente = atributos['http-equiv']?.toLowerCase();
+  if (nome !== undefined) return equivalente === undefined && METAS_POR_NOME.has(nome);
+  if (equivalente !== undefined) return METAS_HTTP_EQUIV.has(equivalente);
+  return atributos['charset'] !== undefined;
+}
+
 function sanitizar(html: string): string {
-  return sanitizeHtml(html, {
+  const { semCondicionais, devolverCondicionais } = guardarCondicionaisDoOutlook(html);
+  const limpo = sanitizeHtml(semCondicionais, {
     allowedTags: TAGS_PERMITIDAS,
     allowedAttributes: {
       '*': [
@@ -121,16 +155,105 @@ function sanitizar(html: string): string {
         'bgcolor',
         'colspan',
         'rowspan',
+        // Idioma e papel do contêiner: é o que faz o leitor de tela anunciar
+        // o e-mail em português e como um artigo, e não como tabelas soltas.
+        'lang',
+        'dir',
+        'role',
+        'aria-*',
       ],
       a: ['href', 'target', 'rel', 'style', 'class'],
       img: ['src', 'alt', 'width', 'height', 'style', 'class'],
       table: ['border', 'cellpadding', 'cellspacing', 'role', 'style', 'class', 'width'],
+      // Os namespaces valem para o Outlook ler o `<o:OfficeDocumentSettings>`
+      // do head (PNG e 96 dpi); sem eles o e-mail escala errado no Windows.
+      html: ['xmlns', 'xmlns:v', 'xmlns:o'],
+      meta: ['name', 'content', 'http-equiv', 'charset'],
+      style: ['type', 'data-embed'],
     },
+    exclusiveFilter: (frame) => frame.tag === 'meta' && !metaPermitida(frame.attribs),
     // `style` sobrevive porque o juice precisa dele; script e handlers inline,
     // não — são o vetor de XSS na prévia do painel (§10.1).
     allowedSchemes: ['http', 'https', 'mailto'],
     allowVulnerableTags: true,
   });
+  return devolverCondicionais(limpo);
+}
+
+/** O único doctype devolvido é o do HTML5, e só a quem já o trazia. */
+function doctypeDe(html: string): string {
+  return /^\s*<!doctype html>/i.test(html) ? '<!doctype html>\n' : '';
+}
+
+/**
+ * Tira do caminho do sanitizador os comentários condicionais do Outlook e os
+ * devolve depois, intactos.
+ *
+ * O MJML põe neles as "tabelas fantasma" que seguram a largura de 600px no
+ * Outlook para Windows — sem elas o e-mail estica na janela inteira — e as
+ * configurações de PNG e dpi do head. O sanitize-html descarta TODO
+ * comentário, então cada um vira um marcador de texto (que ele não toca) e
+ * volta no fim.
+ *
+ * A segurança vem de duas regras, e nenhuma depende de adivinhar o que é
+ * perigoso no miolo:
+ *  - o miolo não pode ter `--`: é o que garante que o comentário só termina no
+ *    `<![endif]-->` dele, e não antes (`-->` ou `--!>` no meio soltariam o
+ *    resto como HTML vivo na prévia do painel);
+ *  - o marcador só volta se, no HTML JÁ sanitizado, estiver em posição de
+ *    texto — fora de tag e fora de `<style>`/`<title>`. Ali o navegador lê
+ *    `<!--` sempre como comentário. Um condicional plantado dentro de um valor
+ *    de atributo (para fechar as aspas e injetar outro atributo) simplesmente
+ *    não volta.
+ * Comentário fora desse molde continua descartado, como sempre foi.
+ */
+function guardarCondicionaisDoOutlook(html: string): {
+  semCondicionais: string;
+  devolverCondicionais: (html: string) => string;
+} {
+  const guardados: string[] = [];
+  // Marcador imprevisível: um texto do template não consegue se passar por ele.
+  const prefixo = `c${crypto.randomUUID().replaceAll('-', '')}`;
+  const guardar = (trecho: string): string => {
+    guardados.push(trecho);
+    return `${prefixo}x${String(guardados.length - 1)}x`;
+  };
+
+  const semCondicionais = html
+    // Primeiro o par "revelado" (`<!--[if !mso]><!-->` … `<!--<![endif]-->`):
+    // o que fica entre os dois é HTML comum e passa pela sanitização. Precisa
+    // vir antes, senão a expressão de baixo o engoliria como um comentário só.
+    .replaceAll('<!--[if !mso]><!-->', guardar)
+    .replaceAll('<!--<![endif]-->', guardar)
+    .replace(/<!--\[if ([a-z0-9 !|&()]{1,40})\]>([\s\S]*?)<!\[endif\]-->/gi, (trecho, _c, miolo) =>
+      String(miolo).includes('--') ? '' : guardar(trecho),
+    );
+
+  const marcador = new RegExp(`${prefixo}x(\\d+)x`, 'g');
+  return {
+    semCondicionais,
+    devolverCondicionais: (limpo) => {
+      // Uma cópia em minúsculas para o documento todo, e não uma por marcador:
+      // isto roda a cada destinatário, e o boletim tem dezenas de condicionais.
+      const minusculo = limpo.toLowerCase();
+      return limpo.replace(marcador, (_, indice: string, posicao: number) =>
+        emPosicaoDeTexto(minusculo, posicao) ? (guardados[Number(indice)] ?? '') : '',
+      );
+    },
+  };
+}
+
+/**
+ * No HTML que sai do sanitize-html, `<` e `>` crus só existem como limites de
+ * tag (texto e valores de atributo saem escapados) — ou dentro de `<style>`,
+ * que ele repassa como está. Por isso bastam três contas, olhando para trás a
+ * partir do marcador.
+ */
+function emPosicaoDeTexto(minusculo: string, posicao: number): boolean {
+  const ultimo = (trecho: string): number => minusculo.lastIndexOf(trecho, posicao - 1);
+  const dentroDe = (tag: string): boolean => ultimo(`<${tag}`) > ultimo(`</${tag}`);
+  if (dentroDe('style') || dentroDe('title')) return false;
+  return ultimo('<') < ultimo('>') || ultimo('<') === -1;
 }
 
 /**
