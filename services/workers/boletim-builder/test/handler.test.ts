@@ -485,6 +485,8 @@ describe('edição de retrospectiva — o boletim sai de qualquer modo', () => {
 });
 
 describe('passada editorial — do material coletado para a edição de referência', () => {
+  // Três, o piso da edição: abaixo disso a rodada faz a segunda passada e os
+  // prompts contados aqui mudariam de lugar.
   const DUAS_NOTICIAS = JSON.stringify([
     {
       titulo: 'CPRB continua na base do PIS e da Cofins',
@@ -497,6 +499,12 @@ describe('passada editorial — do material coletado para a edição de referên
       resumo: 'Sessão ocupada pelas sustentações orais.',
       url: 'https://fonte.exemplo/itbi',
       tag: 'STF',
+    },
+    {
+      titulo: 'CARF adia o voto de qualidade',
+      resumo: 'Retirado de pauta.',
+      url: 'https://fonte.exemplo/carf',
+      tag: 'CARF',
     },
   ]);
 
@@ -566,4 +574,72 @@ describe('passada editorial — do material coletado para a edição de referên
     expect(corpoHtml).not.toContain('NO RADAR');
     expect(execucaoFinal().avisos.join(' ')).toContain('formato padrão');
   });
+});
+
+describe('a edição nunca sai magra — piso de notícias', () => {
+  const UMA = JSON.stringify([
+    {
+      titulo: 'Única novidade da semana',
+      resumo: 'R.',
+      url: 'https://fonte.exemplo/nova',
+      tag: 'STJ',
+    },
+  ]);
+  const MAIS_LIDAS = JSON.stringify([
+    // A mesma da coleta volta na retrospectiva: não pode repetir.
+    {
+      titulo: 'Única novidade da semana',
+      resumo: 'R.',
+      url: 'https://fonte.exemplo/nova',
+      tag: 'STJ',
+    },
+    {
+      titulo: 'Tese mais lida do ano',
+      resumo: 'R.',
+      url: 'https://fonte.exemplo/lida-1',
+      tag: 'STJ',
+    },
+    {
+      titulo: 'Outra muito acessada',
+      resumo: 'R.',
+      url: 'https://fonte.exemplo/lida-2',
+      tag: 'STF',
+    },
+  ]);
+
+  it('com uma novidade só, completa com o mais lido — e continua edição de novidades', async () => {
+    estado.ia = (prompt) =>
+      prompt.includes('--- NOTÍCIAS ---')
+        ? 'não é json'
+        : prompt.includes('Não há novidades')
+          ? MAIS_LIDAS
+          : UMA;
+
+    const resultado = await handler({ origem: 'rotina', rotinaId: 'r-1' });
+
+    expect(resultado.gerado).toBe(true);
+    expect(resultado.edicao).toBe('NOVIDADES');
+    expect(resultado.totalNoticias).toBe(3);
+    const corpoHtml = String(estado.templatesSalvos[0]?.versao['corpoHtml']);
+    expect(corpoHtml).toContain('Única novidade da semana');
+    expect(corpoHtml).toContain('Tese mais lida do ano');
+    expect(corpoHtml).toContain('Outra muito acessada');
+    // Houve novidade: o aviso de retrospectiva seria mentira.
+    expect(corpoHtml).not.toContain('Sem novidades neste período');
+    expect(execucaoFinal().noticias).toHaveLength(3);
+  });
+
+  it('a geração avulsa também cobre os últimos sete dias', async () => {
+    estado.ia = () => DUAS_NOTICIAS_AVULSA;
+
+    await handler({ origem: 'manual', execucaoId: 'e-manual' });
+
+    expect(estado.prompts[0]).toContain('PERÍODO: os últimos 7 dias');
+  });
+
+  const DUAS_NOTICIAS_AVULSA = JSON.stringify([
+    { titulo: 'A', resumo: 'R.', url: 'https://fonte.exemplo/a', tag: 'STJ' },
+    { titulo: 'B', resumo: 'R.', url: 'https://fonte.exemplo/b', tag: 'STJ' },
+    { titulo: 'C', resumo: 'R.', url: 'https://fonte.exemplo/c', tag: 'STJ' },
+  ]);
 });

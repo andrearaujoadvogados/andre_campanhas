@@ -1,5 +1,5 @@
 import {
-  analisarNoticias,
+  analisarRespostaDaColeta,
   montarPromptDeExtracao,
   validarUrlDeFonte,
   type FonteBoletim,
@@ -44,6 +44,9 @@ export interface DepsColeta {
 export interface NoticiasDaFonte {
   readonly fonte: FonteBoletim;
   readonly noticias: readonly NoticiaColetada[];
+  /** Quantas a IA devolveu antes do filtro de temas — diagnóstico do que foi barrado. */
+  readonly devolvidas: number;
+  readonly descartadasPorTema: number;
 }
 
 export interface ResultadoColeta {
@@ -185,21 +188,26 @@ export async function coletarNoticias(
       continue;
     }
 
-    const noticias = analisarNoticias(resposta, fonte.url, escolha.temas ?? []);
-    if (noticias === null) {
+    const analise = analisarRespostaDaColeta(resposta, fonte.url, escolha.temas ?? []);
+    if (analise === null) {
       avisos.push(`${fonte.nome}: a resposta do extrator não veio no formato esperado.`);
       fontesComFalha += 1;
       continue;
     }
 
+    const { noticias, devolvidas, descartadasPorTema } = analise;
     if (noticias.length > 0) {
-      porFonte.push({ fonte, noticias });
+      porFonte.push({ fonte, noticias, devolvidas, descartadasPorTema });
     } else {
       fontesSemNoticia += 1;
+      // O número vai no aviso: "nada encontrado" com a IA tendo trazido oito é
+      // problema nos temas, não na fonte — e só o número diz qual dos dois é.
       avisos.push(
-        escolha.temas !== undefined && escolha.temas.length > 0
-          ? `${fonte.nome}: nada encontrado sobre os temas da rotina.`
-          : `${fonte.nome}: nada encontrado que atenda à instrução.`,
+        descartadasPorTema > 0
+          ? `${fonte.nome}: a IA trouxe ${String(devolvidas)} notícia(s), mas nenhuma era dos temas da rotina.`
+          : escolha.temas !== undefined && escolha.temas.length > 0
+            ? `${fonte.nome}: nada encontrado sobre os temas da rotina.`
+            : `${fonte.nome}: nada encontrado que atenda à instrução.`,
       );
     }
   }

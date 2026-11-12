@@ -54,3 +54,27 @@ export function selecionarDoAcervo(
     .filter((n) => temas.length === 0 || noticiaDeAlgumTema(n, temas))
     .slice(0, Math.max(0, opcoes.maximo));
 }
+
+/**
+ * Completa uma edição curta com mais notícias, sem repetir e sem passar do
+ * teto. A mesma matéria pode chegar pela coleta e pela retrospectiva (ou
+ * pelo acervo); a chave junta URL e título pelo mesmo motivo de
+ * `selecionarDoAcervo`.
+ */
+export function completarSemRepetir(
+  base: readonly NoticiaColetada[],
+  extras: readonly NoticiaColetada[],
+  maximo: number,
+): NoticiaColetada[] {
+  const chave = (n: NoticiaColetada) => `${n.url.toLowerCase()}|${n.titulo.trim().toLowerCase()}`;
+  const vistas = new Set(base.map(chave));
+  const resultado = [...base];
+  for (const extra of extras) {
+    if (resultado.length >= maximo) break;
+    const k = chave(extra);
+    if (vistas.has(k)) continue;
+    vistas.add(k);
+    resultado.push(extra);
+  }
+  return resultado;
+}
