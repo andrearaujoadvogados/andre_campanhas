@@ -52,13 +52,21 @@ export const LOGO_EMAIL = {
 /**
  * A mesma arte em dourado, para fundo vinho — o cabeçalho do boletim.
  *
- * É a arte vinho recolorida pixel a pixel (só o RGB muda; o alfa é o mesmo),
- * não um logo diferente: sobre a faixa vinho a versão vinho sumiria, e um
- * cliente com imagens bloqueadas mostra o `alt` de qualquer modo.
+ * É a arte vinho recolorida pixel a pixel, não um logo diferente: sobre a
+ * faixa vinho a versão vinho sumiria, e um cliente com imagens bloqueadas
+ * mostra o `alt` de qualquer modo.
+ *
+ * A v2 traz o PRÓPRIO fundo vinho (#721420 exato, cantos arredondados), com
+ * 81px de respiro em volta da arte. Sobre a faixa ela não aparece; mas o Gmail
+ * do iPhone inverte a cor da faixa e nunca a de imagens — com o fundo
+ * transparente da v1, o dourado ficava sobre rosa e sumia. Onde a faixa ainda
+ * for invertida, o logo segue legível numa caixa vinho.
  */
 export const LOGO_EMAIL_CLARO = {
   ...LOGO_EMAIL,
-  src: 'https://campanhas.andrearaujoadvogados.com.br/marca/logo-email-claro-v1.png',
+  src: 'https://campanhas.andrearaujoadvogados.com.br/marca/logo-email-claro-v2.png',
+  /** Largura exibida: a arte a 230px, como na v1, mais o respiro (1202px no arquivo). */
+  width: 266,
 } as const;
 
 // ─── Blocos padrão ───────────────────────────────────────────────

@@ -9,6 +9,13 @@
 // vazia SEM erro — um `{{titulo}}` aqui sumiria no envio sem ninguém ver.
 
 import type { Block, Column, EmailDesign, Row } from './tipos.js';
+import {
+  cabecalhoParaModoEscuro,
+  classeDaColunaEscura,
+  classeDaSecaoEscura,
+  ehFundoEscuro,
+  envolverTextoEmFundoEscuro,
+} from './modo-escuro.js';
 
 function escAttr(value: string): string {
   return value
@@ -36,7 +43,12 @@ function marcar(codigo: string, ehAlvo: boolean): string {
   return `<mj-raw>${MARCA_INICIO}</mj-raw>\n${codigo}\n<mj-raw>${MARCA_FIM}</mj-raw>`;
 }
 
-function compileBlock(block: Block, design: EmailDesign): string {
+/**
+ * `sobreFundoEscuro`: o bloco está numa superfície escura (coluna com fundo
+ * próprio ou, sem ele, a linha) — o texto ganha as camadas que o mantêm claro
+ * no modo escuro do Gmail do iPhone (ver `modo-escuro.ts`).
+ */
+function compileBlock(block: Block, design: EmailDesign, sobreFundoEscuro: boolean): string {
   // O `<tr>` é nosso e o `<td>` é do usuário: sem envelope, o HTML cru entraria
   // no `<tbody>` fora de qualquer linha, e o cliente de e-mail o jogaria para
   // cima da tabela. Com ele, o bloco vira uma linha legítima da coluna.
@@ -47,7 +59,8 @@ function compileBlock(block: Block, design: EmailDesign): string {
     case 'text': {
       const color = block.attrs.color !== '' ? block.attrs.color : design.settings.textColor;
       const lineHeight = block.attrs.lineHeight ?? 1.6;
-      return `<mj-text font-size="${String(block.attrs.fontSize)}px" color="${escAttr(color)}" align="${block.attrs.align}" line-height="${String(lineHeight)}" padding="${escAttr(block.attrs.padding)}">${block.html}</mj-text>`;
+      const conteudo = sobreFundoEscuro ? envolverTextoEmFundoEscuro(block.html) : block.html;
+      return `<mj-text font-size="${String(block.attrs.fontSize)}px" color="${escAttr(color)}" align="${block.attrs.align}" line-height="${String(lineHeight)}" padding="${escAttr(block.attrs.padding)}">${conteudo}</mj-text>`;
     }
     case 'image': {
       const width =
@@ -89,11 +102,15 @@ function atributosDaColuna(col: Column): string {
   const attrs = col.attrs;
   if (attrs === undefined) return '';
   const partes: string[] = [];
-  if (attrs.backgroundColor !== undefined && attrs.backgroundColor !== '') {
-    partes.push(` background-color="${escAttr(attrs.backgroundColor)}"`);
+  const fundo = fundoProprioDaColuna(col);
+  if (fundo !== null) {
+    partes.push(` background-color="${escAttr(fundo)}"`);
+    if (ehFundoEscuro(fundo)) {
+      partes.push(` css-class="${classeDaColunaEscura(fundo, colunaTemRecuo(col))}"`);
+    }
   }
-  if (attrs.padding !== undefined && attrs.padding !== '') {
-    partes.push(` padding="${escAttr(attrs.padding)}"`);
+  if (colunaTemRecuo(col)) {
+    partes.push(` padding="${escAttr(attrs.padding ?? '')}"`);
   }
   if (attrs.borderRadius !== undefined && attrs.borderRadius > 0) {
     partes.push(` border-radius="${String(attrs.borderRadius)}px"`);
@@ -101,22 +118,39 @@ function atributosDaColuna(col: Column): string {
   return partes.join('');
 }
 
+function fundoProprioDaColuna(col: Column): string | null {
+  const fundo = col.attrs?.backgroundColor;
+  return fundo !== undefined && fundo !== '' ? fundo : null;
+}
+
+/** Com recuo, o MJML muda onde pinta o fundo da coluna (ver `classeDaColunaEscura`). */
+function colunaTemRecuo(col: Column): boolean {
+  const recuo = col.attrs?.padding;
+  return recuo !== undefined && recuo !== '';
+}
+
+/** Fundo que a linha pinta de ponta a ponta: o próprio ou, vazio, o do conteúdo. */
+function fundoDaLinha(row: Row, design: EmailDesign): string {
+  return row.attrs.backgroundColor !== ''
+    ? row.attrs.backgroundColor
+    : design.settings.contentBackground;
+}
+
 function compileRow(row: Row, design: EmailDesign, marca: Marca): string {
   const corpo =
     row.customHtml !== undefined && row.customHtml.trim() !== ''
       ? `  <mj-raw>${row.customHtml}</mj-raw>`
       : (() => {
-          const background =
-            row.attrs.backgroundColor !== ''
-              ? row.attrs.backgroundColor
-              : design.settings.contentBackground;
+          const background = fundoDaLinha(row, design);
           const columns = row.columns
             .map((col) => {
+              // O texto está sobre o fundo da coluna quando ela tem um; senão, sobre o da linha.
+              const sobreFundoEscuro = ehFundoEscuro(fundoProprioDaColuna(col) ?? background);
               const blocks = col.blocks
                 .map(
                   (block) =>
                     `      ${marcar(
-                      compileBlock(block, design),
+                      compileBlock(block, design, sobreFundoEscuro),
                       marca?.tipo === 'bloco' && marca.id === block.id,
                     )}`,
                 )
@@ -124,10 +158,35 @@ function compileRow(row: Row, design: EmailDesign, marca: Marca): string {
               return `    <mj-column width="${String(col.widthPct)}%"${atributosDaColuna(col)}>\n${blocks}\n    </mj-column>`;
             })
             .join('\n');
-          return `  <mj-section background-color="${escAttr(background)}" padding="${escAttr(row.attrs.padding)}">\n${columns}\n  </mj-section>`;
+          const marcaEscura = ehFundoEscuro(background)
+            ? ` css-class="${classeDaSecaoEscura(background)}"`
+            : '';
+          return `  <mj-section background-color="${escAttr(background)}" padding="${escAttr(row.attrs.padding)}"${marcaEscura}>\n${columns}\n  </mj-section>`;
         })();
 
   return marcar(corpo, marca?.tipo === 'linha' && marca.id === row.id);
+}
+
+/** As cores escuras que o design pinta — nas linhas e nas colunas com fundo próprio. */
+function coresEscurasDoDesign(design: EmailDesign): {
+  secoes: Set<string>;
+  colunasComRecuo: Set<string>;
+  colunasSemRecuo: Set<string>;
+} {
+  const secoes = new Set<string>();
+  const colunasComRecuo = new Set<string>();
+  const colunasSemRecuo = new Set<string>();
+  for (const row of design.rows) {
+    if (row.customHtml !== undefined && row.customHtml.trim() !== '') continue;
+    const fundo = fundoDaLinha(row, design);
+    if (ehFundoEscuro(fundo)) secoes.add(fundo);
+    for (const col of row.columns) {
+      const proprio = fundoProprioDaColuna(col);
+      if (proprio === null || !ehFundoEscuro(proprio)) continue;
+      (colunaTemRecuo(col) ? colunasComRecuo : colunasSemRecuo).add(proprio);
+    }
+  }
+  return { secoes, colunasComRecuo, colunasSemRecuo };
 }
 
 /**
@@ -158,7 +217,8 @@ export function compileDesignToMjml(design: EmailDesign, marca: Marca = null): s
   // tipo diz `number`, mas o JSON do banco não lê tipos. 600 é o que sempre foi.
   const largura = larguraDoConteudo(settings);
 
-  return `<mjml>
+  // `lang`: o leitor de tela pronuncia o e-mail em português, não em inglês.
+  return `<mjml lang="pt-BR" dir="ltr">
   <mj-head>
     <mj-attributes>
       <mj-all font-family="${escAttr(settings.fontFamily)}" />
@@ -167,6 +227,7 @@ export function compileDesignToMjml(design: EmailDesign, marca: Marca = null): s
     <mj-style>
       a { color: ${settings.linkColor}; }
     </mj-style>
+${cabecalhoParaModoEscuro(coresEscurasDoDesign(design))}
   </mj-head>
   <mj-body background-color="${escAttr(settings.bodyBackground)}" width="${String(largura)}px">
 ${rows}

@@ -259,7 +259,7 @@ describe('boletim montado da coleta — conteúdo não confiável', () => {
     });
 
     const mjml = compileDesignToMjml(design);
-    expect(mjml).toContain('<mjml>');
+    expect(mjml).toContain('<mjml');
     expect(mjml).toContain('DESTAQUE · STJ');
     expect(mjml.indexOf('Primeira')).toBeLessThan(mjml.indexOf('TAMBÉM NESTAS SEMANAS'));
     expect(mjml.indexOf('TAMBÉM NESTAS SEMANAS')).toBeLessThan(mjml.indexOf('Segunda'));
@@ -310,6 +310,35 @@ describe('logo do escritório no topo de todo e-mail', () => {
       expect(primeiro.src).toMatch(/logo-email-claro-v\d+\.png$/);
       expect(primeiro.alt).toBe('André Araújo Advogados');
     }
+  });
+
+  it('o logo claro traz o próprio fundo vinho — legível mesmo onde a faixa for invertida', () => {
+    // O Gmail do iPhone inverte a cor da faixa e nunca a de imagens: com fundo
+    // transparente, o dourado ficava sobre rosa. A v2 traz o vinho no arquivo,
+    // com respiro, e a faixa desconta esse respiro no recuo.
+    const faixa = criarLinhaCabecalhoBoletim();
+    const logo = faixa.columns[0]?.blocks[0];
+
+    expect(LOGO_EMAIL_CLARO.src).toMatch(/logo-email-claro-v2\.png$/);
+    expect(logo?.type === 'image' && logo.attrs.width).toBe(LOGO_EMAIL_CLARO.width);
+    expect(LOGO_EMAIL_CLARO.width).toBe(266);
+    expect(faixa.attrs.padding).toBe('12px 24px 8px 24px');
+  });
+
+  it('no boletim, a faixa e o card vinho ficam protegidos no Gmail — e só eles', () => {
+    const mjml = compileDesignToMjml(createBoletimDesign());
+
+    // A faixa é estrutura escura; o card é coluna escura dentro de linha branca.
+    expect(mjml.match(/css-class="aa-secao-721420"/g)).toHaveLength(1);
+    expect(mjml.match(/css-class="aa-coluna-721420"/g)).toHaveLength(1);
+    // Camadas só nos textos do card: chapéu, título e os três parágrafos.
+    expect(mjml.match(/<div class="gmail-blend-screen">/g)).toHaveLength(5);
+    expect(mjml.indexOf('gmail-blend-screen">')).toBeGreaterThan(
+      mjml.indexOf('css-class="aa-coluna-721420"'),
+    );
+    expect(mjml).toContain(
+      'u + .body .aa-fundo-721420 { background-image: linear-gradient(#721420, #721420) !important; }',
+    );
   });
 
   it('e-mail novo e boletim compilam com o logo no topo', () => {
